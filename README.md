@@ -134,7 +134,11 @@ Contamination masking
         ↓
 Complete CORE and FULL panels
         ↓
-Baseline PCA
+        Baseline PCA
+        ↓
+        SPY/XLF residualization
+        ↓
+        Variance decomposition
 ```
 
 The scripts deliberately keep the stages separate. Each step reads the previous stage's output and writes a named artifact that can be inspected or reused later.
@@ -194,6 +198,22 @@ $$
 The residuals are the part of each stock's return that is not explained by those two benchmark returns. PCA on the residual matrix will then be compared with PCA on the original returns.
 
 This comparison is intended to answer a specific question: does the financial-stock universe contain internal structure that is hidden by broad market and sector exposure?
+
+### Variance decomposition
+
+The residual analysis also keeps an explicit ledger of where the original variance goes. For each stock, the fitted SPY/XLF part and the residual part are additive:
+
+$$
+Var(r_i) = Var(\hat{r}_i) + Var(\epsilon_i)
+$$
+
+The residual covariance is then decomposed into its principal components. If `v_{i,k}` is the loading of stock `i` on residual component `k`, that component contributes:
+
+$$
+c_{i,k} = \lambda_k v_{i,k}^2
+$$
+
+This lets us report, for every stock, the share explained by the combined SPY/XLF fit, residual PC1, residual PC2-PC3, and residual PC4-PC12. The benchmark share is kept combined because separating SPY and XLF into two squared terms would double-count their covariance.
 
 ## Research roadmap
 
@@ -261,6 +281,7 @@ Completed:
 - Baseline covariance and correlation PCA on the CORE universe
 - Intraday-volatility profile and normalized PCA robustness check
 - SPY/XLF residualization and PCA of the remaining CORE structure
+- Variance ledger showing how benchmark and residual PCA components add back to raw variance
 - Initial code cleanup and local Git versioning
 
 Next:
@@ -297,6 +318,7 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 07_baseline_pca.py     run covariance and correlation PCA with baseline plots
 08_intraday_normalization.py  estimate intraday volatility and repeat PCA
 09_benchmark_residualization.py remove SPY/XLF exposure and run residual PCA
+10_variance_decomposition.py  reconcile raw variance with benchmark and residual PCA parts
 ```
 
 The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
