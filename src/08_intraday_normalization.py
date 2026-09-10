@@ -9,40 +9,12 @@ import numpy as np
 import pandas as pd
 
 from config import CORE_UNIVERSE, REPORTS_DIR, RETURN_CORE_FILE, ensure_project_directories
+from pca_utils import fit_pca, format_pca_summary
 
 
 OUT_DIR = REPORTS_DIR / "pca_intraday"
 BLUE = "#2F6B9A"
 GRID = "#D9DEE5"
-
-
-def run_pca(matrix):
-    values, vectors = np.linalg.eigh(matrix.to_numpy())
-    order = np.argsort(values)[::-1]
-    values, vectors = values[order], vectors[:, order]
-
-    # The sign is arbitrary; orient the largest coefficient positively.
-    for component in range(vectors.shape[1]):
-        pivot = np.argmax(np.abs(vectors[:, component]))
-        if vectors[pivot, component] < 0:
-            vectors[:, component] *= -1
-
-    explained = values / values.sum()
-    labels = [f"PC{i}" for i in range(1, len(values) + 1)]
-    summary = pd.DataFrame(
-        {
-            "eigenvalue": values,
-            "explained_pct": explained * 100,
-            "cumulative_pct": explained.cumsum() * 100,
-        },
-        index=labels,
-    )
-    loadings = pd.DataFrame(
-        vectors[:, :3],
-        index=matrix.columns,
-        columns=["PC1", "PC2", "PC3"],
-    )
-    return values, vectors, explained, summary, loadings
 
 
 def save_profile_plot(profile):
@@ -107,11 +79,16 @@ def main():
         normalized_returns.mean(),
         axis="columns",
     )
-    covariance = (centered.T @ centered) / (len(centered) - 1)
+    pca_result = fit_pca(normalized_returns, method="covariance")
+    covariance = pca_result.matrix
     covariance_diff = (covariance - centered.cov()).abs().to_numpy().max()
-    values, vectors, explained, summary, loadings = run_pca(covariance)
+    values = pca_result.eigenvalues
+    vectors = pca_result.eigenvectors
+    explained = pca_result.explained
+    summary = pca_result.summary
+    loadings = pca_result.weights.iloc[:, :3]
 
-    scores = centered.to_numpy() @ vectors
+    scores = pca_result.scores.to_numpy()
     score_error = np.max(
         np.abs(values - pd.DataFrame(scores).var(ddof=1).to_numpy())
     )
@@ -127,6 +104,7 @@ def main():
         "08_normalized_covariance_matrix.csv": covariance,
         "08_normalized_pca_summary.csv": summary,
         "08_normalized_pca_loadings_pc1_pc3.csv": loadings,
+        "08_normalized_technical_loadings_pc1_pc3.csv": pca_result.loadings.iloc[:, :3],
     }
     for filename, table in tables.items():
         table.to_csv(OUT_DIR / filename)
@@ -145,7 +123,7 @@ def main():
     print("\n=== INTRADAY PROFILE, START/END ===")
     print(pd.concat([profile.head(3), profile.tail(3)]).round(6).to_string())
     print("\n=== NORMALIZED PCA ===")
-    print(summary.round(4).to_string())
+    print(format_pca_summary(summary))
     print("\nPC1-PC3 loadings:")
     print(loadings.round(4).to_string())
     print(f"\nOutputs saved to: {OUT_DIR}")

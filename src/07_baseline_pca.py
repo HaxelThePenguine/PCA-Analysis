@@ -14,49 +14,11 @@ from config import (
     RETURN_CORE_FILE,
     ensure_project_directories,
 )
+from pca_utils import fit_pca, format_pca_summary
 
 
 OUT_DIR = REPORTS_DIR / "pca_baseline"
 COLORS = {"cov": "#2F6B9A", "corr": "#C4933F", "grid": "#D9DEE5"}
-
-
-def pca(matrix):
-    """Return sorted eigenvalues, eigenvectors, variance shares and tables."""
-
-    values, vectors = np.linalg.eigh(matrix.to_numpy())
-    order = np.argsort(values)[::-1]
-    values, vectors = values[order], vectors[:, order]
-
-    # Eigenvector signs are arbitrary; orient the largest coefficient positively.
-    for component in range(vectors.shape[1]):
-        pivot = np.argmax(np.abs(vectors[:, component]))
-        if vectors[pivot, component] < 0:
-            vectors[:, component] *= -1
-
-    explained = values / values.sum()
-    labels = [f"PC{i}" for i in range(1, len(values) + 1)]
-    summary = pd.DataFrame(
-        {
-            "eigenvalue": values,
-            "explained_pct": explained * 100,
-            "cumulative_pct": explained.cumsum() * 100,
-        },
-        index=labels,
-    )
-    loadings = pd.DataFrame(
-        vectors[:, :3],
-        index=matrix.columns,
-        columns=["PC1", "PC2", "PC3"],
-    )
-    return values, vectors, explained, summary, loadings
-
-
-def format_summary(summary):
-    table = summary.copy()
-    table["eigenvalue"] = table["eigenvalue"].map(lambda x: f"{x:.8e}")
-    for column in ("explained_pct", "cumulative_pct"):
-        table[column] = table[column].map(lambda x: f"{x:.4f}")
-    return table.to_string()
 
 
 def style_axis(axis, grid_axis="y"):
@@ -80,14 +42,12 @@ def save_line_plot(filename, title, ylabel, series, cumulative=False):
             color="#7B8794",
             linestyle="--",
             linewidth=0.9,
-            label="Soglia 80%",
+            label="80% threshold",
         )
         axis.set_ylim(0, 105)
 
     axis.set_title(title)
-    axis.set_xlabel(
-        "Numero di componenti" if cumulative else "Componente principale"
-    )
+    axis.set_xlabel("Number of components" if cumulative else "Principal component")
     axis.set_ylabel(ylabel)
     axis.set_xticks(components)
     axis.legend(frameon=False)
@@ -118,8 +78,8 @@ def save_pc1_plot(cov_loadings, corr_loadings):
         label="Correlation",
     )
     axis.axvline(0, color="#1F2933", linewidth=0.8)
-    axis.set_title("Baseline PCA: PC1 loadings")
-    axis.set_xlabel("Eigenvector loading")
+    axis.set_title("Baseline PCA: PC1 eigenvector weights")
+    axis.set_xlabel("Eigenvector weight")
     axis.set_yticks(positions)
     axis.set_yticklabels(order)
     axis.legend(frameon=False)
@@ -150,11 +110,14 @@ def main():
 
     covariance = (X.T @ X) / (len(X) - 1)
     covariance_diff = (covariance - returns.cov()).abs().to_numpy().max()
-    cov_values, cov_vectors, cov_explained, cov_summary, cov_loadings = pca(
-        covariance
-    )
+    covariance_result = fit_pca(returns, method="covariance")
+    cov_values = covariance_result.eigenvalues
+    cov_vectors = covariance_result.eigenvectors
+    cov_explained = covariance_result.explained
+    cov_summary = covariance_result.summary
+    cov_loadings = covariance_result.weights.iloc[:, :3]
 
-    scores = X.to_numpy() @ cov_vectors
+    scores = covariance_result.scores.to_numpy()
     score_error = np.max(
         np.abs(cov_values - pd.DataFrame(scores).var(ddof=1).to_numpy())
     )
@@ -176,12 +139,14 @@ def main():
         / ticker_summary["original_variance"]
     )
 
-    Z = X.divide(stds, axis="columns")
-    correlation = Z.cov()
+    correlation_result = fit_pca(returns, method="correlation")
+    correlation = correlation_result.matrix
     correlation_diff = (correlation - returns.corr()).abs().to_numpy().max()
-    corr_values, corr_vectors, corr_explained, corr_summary, corr_loadings = pca(
-        correlation
-    )
+    corr_values = correlation_result.eigenvalues
+    corr_vectors = correlation_result.eigenvectors
+    corr_explained = correlation_result.explained
+    corr_summary = correlation_result.summary
+    corr_loadings = correlation_result.weights.iloc[:, :3]
 
     tables = {
         "07_return_stats.csv": pd.DataFrame({"mean": means, "std": stds}),
@@ -191,6 +156,8 @@ def main():
         "07_correlation_summary.csv": corr_summary,
         "07_covariance_loadings_pc1_pc3.csv": cov_loadings,
         "07_correlation_loadings_pc1_pc3.csv": corr_loadings,
+        "07_covariance_technical_loadings_pc1_pc3.csv": covariance_result.loadings.iloc[:, :3],
+        "07_correlation_technical_loadings_pc1_pc3.csv": correlation_result.loadings.iloc[:, :3],
         "07_ticker_reconstruction.csv": ticker_summary,
     }
     for filename, table in tables.items():
@@ -225,12 +192,12 @@ def main():
     print(f"Correlation eigenvalue sum: {corr_values.sum():.12f}")
 
     print("\n=== COVARIANCE PCA ===")
-    print(format_summary(cov_summary))
+    print(format_pca_summary(cov_summary))
     print("\nPC1-PC3 loadings:")
     print(cov_loadings.round(4).to_string())
 
     print("\n=== CORRELATION PCA ===")
-    print(format_summary(corr_summary))
+    print(format_pca_summary(corr_summary))
     print("\nPC1-PC3 loadings:")
     print(corr_loadings.round(4).to_string())
 

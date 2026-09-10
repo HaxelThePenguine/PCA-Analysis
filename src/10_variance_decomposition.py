@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from benchmark_utils import residualize_against_benchmarks
 from config import (
     BENCHMARKS,
     CORE_UNIVERSE,
@@ -15,6 +16,7 @@ from config import (
     RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
+from pca_utils import fit_pca
 
 
 OUT_DIR = REPORTS_DIR / "variance_decomposition"
@@ -33,60 +35,28 @@ GROUP_LABELS = [
 GROUP_COLORS = ["#2f6690", "#d99a2b", "#e07a5f", "#9aa58b"]
 
 
-def run_pca(covariance):
-    """Return eigenvalues and eigenvectors of a covariance matrix."""
-
-    values, vectors = np.linalg.eigh(covariance.to_numpy())
-    order = np.argsort(values)[::-1]
-    values, vectors = values[order], vectors[:, order]
-
-    # The sign is arbitrary; orient the largest coefficient positively.
-    for component in range(vectors.shape[1]):
-        pivot = np.argmax(np.abs(vectors[:, component]))
-        if vectors[pivot, component] < 0:
-            vectors[:, component] *= -1
-
-    return values, vectors
-
-
 def build_variance_ledger(complete_panel, stocks):
     """Fit benchmarks and split each stock's variance into additive parts."""
 
-    benchmark_values = complete_panel.loc[:, list(BENCHMARKS)].to_numpy()
-    design = np.column_stack(
-        [np.ones(len(benchmark_values)), benchmark_values]
+    benchmark_result = residualize_against_benchmarks(
+        complete_panel,
+        stocks=stocks,
     )
-    stock_values = complete_panel[stocks].to_numpy()
-
-    coefficients = np.linalg.lstsq(design, stock_values, rcond=None)[0]
-    fitted_values = design @ coefficients
-    fitted_returns = pd.DataFrame(
-        fitted_values,
-        index=complete_panel.index,
-        columns=stocks,
-    )
-    residual_returns = pd.DataFrame(
-        stock_values - fitted_values,
-        index=complete_panel.index,
-        columns=stocks,
-    )
+    fitted_returns = benchmark_result["fitted_returns"]
+    residual_returns = benchmark_result["residual_returns"]
 
     raw_variance = complete_panel[stocks].var(ddof=1)
     benchmark_variance = fitted_returns.var(ddof=1)
     residual_variance = residual_returns.var(ddof=1)
 
-    centered_residuals = residual_returns.subtract(
-        residual_returns.mean(),
-        axis="columns",
-    )
-    residual_covariance = (
-        centered_residuals.T @ centered_residuals
-    ) / (len(centered_residuals) - 1)
-    values, vectors = run_pca(residual_covariance)
+    residual_pca = fit_pca(residual_returns, method="covariance")
+    residual_covariance = residual_pca.matrix
+    values = residual_pca.eigenvalues
+    vectors = residual_pca.eigenvectors
 
-    # vectors[i, j] is the loading of stock i on residual PC j.
-    # Therefore lambda_j * loading_ij^2 is PC j's contribution to
-    # stock i's residual variance.
+    # vectors[i, j] is the eigenvector weight of stock i on residual PC j.
+    # Therefore lambda_j * weight_ij^2 is PC j's contribution to stock i's
+    # residual variance.
     component_variance = (vectors**2) * values[None, :]
     component_labels = [
         f"residual_PC{component + 1}_variance"

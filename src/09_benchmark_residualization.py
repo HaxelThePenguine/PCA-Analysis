@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+from benchmark_utils import residualize_against_benchmarks
 from config import (
     BENCHMARKS,
     CORE_UNIVERSE,
@@ -10,46 +11,10 @@ from config import (
     RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
+from pca_utils import fit_pca, format_pca_summary
 
 
 OUT_DIR = REPORTS_DIR / "pca_residuals"
-
-
-def run_pca(matrix):
-    values, vectors = np.linalg.eigh(matrix.to_numpy())
-    order = np.argsort(values)[::-1]
-    values, vectors = values[order], vectors[:, order]
-
-    # The sign is arbitrary; orient the largest coefficient positively.
-    for component in range(vectors.shape[1]):
-        pivot = np.argmax(np.abs(vectors[:, component]))
-        if vectors[pivot, component] < 0:
-            vectors[:, component] *= -1
-
-    explained = values / values.sum()
-    labels = [f"PC{i}" for i in range(1, len(values) + 1)]
-    summary = pd.DataFrame(
-        {
-            "eigenvalue": values,
-            "explained_pct": explained * 100,
-            "cumulative_pct": explained.cumsum() * 100,
-        },
-        index=labels,
-    )
-    loadings = pd.DataFrame(
-        vectors[:, :3],
-        index=matrix.columns,
-        columns=["PC1", "PC2", "PC3"],
-    )
-    return values, vectors, explained, summary, loadings
-
-
-def format_summary(summary):
-    table = summary.copy()
-    table["eigenvalue"] = table["eigenvalue"].map(lambda x: f"{x:.8e}")
-    for column in ("explained_pct", "cumulative_pct"):
-        table[column] = table[column].map(lambda x: f"{x:.4f}")
-    return table.to_string()
 
 
 def main():
@@ -70,63 +35,29 @@ def main():
     if not complete_panel.index.is_monotonic_increasing:
         raise ValueError("The benchmark panel index is not sorted.")
 
-    benchmark_returns = complete_panel.loc[:, list(BENCHMARKS)].to_numpy()
-    design = np.column_stack(
-        [np.ones(len(benchmark_returns)), benchmark_returns]
+    benchmark_result = residualize_against_benchmarks(
+        complete_panel,
+        stocks=stocks,
     )
-    stock_returns = complete_panel[stocks].to_numpy()
+    betas = benchmark_result["coefficients"]
+    residual_returns = benchmark_result["residual_returns"]
+    diagnostics = benchmark_result["diagnostics"]
 
-    # One OLS fit per stock, written as a single least-squares system.
-    coefficients = np.linalg.lstsq(
-        design,
-        stock_returns,
-        rcond=None,
-    )[0]
-    betas = pd.DataFrame(
-        coefficients.T,
-        index=stocks,
-        columns=["alpha", "beta_SPY", "beta_XLF"],
-    )
-
-    fitted_returns = design @ coefficients
-    residual_returns = pd.DataFrame(
-        stock_returns - fitted_returns,
-        index=complete_panel.index,
-        columns=stocks,
-    )
-    raw_std = complete_panel[stocks].std()
-    residual_std = residual_returns.std()
-    diagnostics = pd.DataFrame(
-        {
-            "raw_std": raw_std,
-            "residual_std": residual_std,
-            "residual_mean": residual_returns.mean(),
-            "corr_resid_SPY": residual_returns.corrwith(
-                complete_panel["SPY"]
-            ),
-            "corr_resid_XLF": residual_returns.corrwith(
-                complete_panel["XLF"]
-            ),
-        }
-    )
-    diagnostics["r_squared"] = 1 - (residual_std / raw_std) ** 2
-    diagnostics["variance_removed_pct"] = diagnostics["r_squared"] * 100
-
-    centered_residuals = residual_returns.subtract(
-        residual_returns.mean(),
-        axis="columns",
-    )
-    residual_covariance = (
-        centered_residuals.T @ centered_residuals
-    ) / (len(centered_residuals) - 1)
+    residual_pca = fit_pca(residual_returns, method="covariance")
+    residual_covariance = residual_pca.matrix
     covariance_diff = (
-        residual_covariance - centered_residuals.cov()
+        residual_covariance - residual_returns.subtract(
+            residual_returns.mean(),
+            axis="columns",
+        ).cov()
     ).abs().to_numpy().max()
-    values, vectors, explained, summary, loadings = run_pca(
-        residual_covariance
-    )
+    values = residual_pca.eigenvalues
+    vectors = residual_pca.eigenvectors
+    explained = residual_pca.explained
+    summary = residual_pca.summary
+    loadings = residual_pca.weights.iloc[:, :3]
 
-    scores = centered_residuals.to_numpy() @ vectors
+    scores = residual_pca.scores.to_numpy()
     score_error = np.max(
         np.abs(
             values
@@ -141,6 +72,7 @@ def main():
         "09_residual_covariance_matrix.csv": residual_covariance,
         "09_residual_pca_summary.csv": summary,
         "09_residual_pca_loadings_pc1_pc3.csv": loadings,
+        "09_residual_technical_loadings_pc1_pc3.csv": residual_pca.loadings.iloc[:, :3],
     }
     for filename, table in tables.items():
         table.to_csv(OUT_DIR / filename)
@@ -160,7 +92,7 @@ def main():
     print("\n=== RESIDUAL DIAGNOSTICS ===")
     print(diagnostics.round(4).to_string())
     print("\n=== RESIDUAL PCA ===")
-    print(format_summary(summary))
+    print(format_pca_summary(summary))
     print("\nPC1-PC3 loadings:")
     print(loadings.round(4).to_string())
     print(f"\nOutputs saved to: {OUT_DIR}")

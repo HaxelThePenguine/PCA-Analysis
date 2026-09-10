@@ -99,7 +99,8 @@ alpaca_us_banks_1m/
 │   ├── daily_data_quality.csv
 │   ├── missing_matrix.parquet
 │   ├── common_missing_gaps.csv
-│   └── rolling_pca/
+│   ├── rolling_pca/
+│   └── internal_factor_isolation/
 ├── intermediate/
 │   ├── close_matrix.parquet
 │   ├── return_matrix.parquet
@@ -141,6 +142,8 @@ Complete CORE and FULL panels
         ↓
         Variance decomposition
         ↓
+        Internal factor isolation
+        ↓
         Rolling PCA
 ```
 
@@ -158,21 +161,37 @@ Returns are calculated within each trading session. The first minute of every se
 
 ## PCA methodology
 
-Let `r_t` be the vector of stock returns at minute `t`. PCA starts from the covariance matrix:
+Let `X` be the centered return matrix. For correlation PCA, `Z` is the same matrix after dividing each column by its sample standard deviation. PCA starts from the appropriate cross-sectional matrix:
 
 $$
-\Sigma = Cov(r_t)
+\Sigma = \frac{1}{n-1}X^\top X
 $$
 
-$$
-\Sigma v_k = \lambda_k v_k
-$$
-
-Here, `v_k` is the loading vector for component `k`, and `lambda_k` is the amount of variance associated with that component. The corresponding statistical factor return is:
+or, for correlation PCA,
 
 $$
-f_{k,t} = v_k' r_t
+R = \frac{1}{n-1}Z^\top Z
 $$
+
+The eigendecomposition is:
+
+$$
+R v_k = \lambda_k v_k
+$$
+
+The vector `v_k` is the normalized eigenvector used as a set of component weights. The factor scores are calculated afterwards as:
+
+$$
+f_k = Z v_k
+$$
+
+There are two related quantities that are often both called loadings. The files produced by the baseline scripts preserve the eigenvector weights `v_k` for backward compatibility. The conventional technical loadings are:
+
+$$
+L_{i,k} = \sqrt{\lambda_k}\,v_{i,k}
+$$
+
+For correlation PCA, `L_{i,k}` is the correlation between stock `i` and component `k`. The new reusable PCA module exposes both representations so that interpretation and projection do not get mixed.
 
 ### Covariance PCA
 
@@ -188,7 +207,7 @@ $$
 
 This gives each stock comparable marginal volatility and makes the result more focused on co-movement than on differences in individual volatility. It is the main baseline specification because volatility levels differ materially across the universe.
 
-The first baseline comparison will save eigenvalues, explained-variance ratios, cumulative explained variance, loadings for PC1 through PC3, the correlation matrix, and the associated plots.
+The first baseline comparison saves eigenvalues, explained-variance ratios, cumulative explained variance, eigenvector weights for PC1 through PC3, technical loadings, the correlation matrix, and the associated plots.
 
 ## Market and sector residualization
 
@@ -217,6 +236,68 @@ c_{i,k} = \lambda_k v_{i,k}^2
 $$
 
 This lets us report, for every stock, the share explained by the combined SPY/XLF fit, residual PC1, residual PC2-PC3, and residual PC4-PC12. The benchmark share is kept combined because separating SPY and XLF into two squared terms would double-count their covariance.
+
+## Internal factor isolation
+
+Once standard PCA has shown where the common variation lies, the next question is whether the factors can be made easier to interpret without pretending that the statistical components are economic causes. Script `12_internal_factor_isolation.py` compares three views of the same correlation-scaled stock panel:
+
+- standard PCA, which remains the variance-maximizing reference;
+- Varimax, which rotates the first three-component subspace toward a simpler loading pattern;
+- Elastic-Net Sparse PCA, which penalizes the component weights so that some become exactly zero while correlated stocks are less likely to be selected arbitrarily.
+
+### Varimax rotation
+
+Let `L` contain the conventional loadings of the first `K` PCA components. Varimax searches for an orthogonal rotation `Q`:
+
+$$
+L_{\mathrm{rot}} = LQ,
+\qquad Q^\top Q = I
+$$
+
+The rotation maximizes a simple-structure criterion:
+
+$$
+\max_Q\;\sum_{k=1}^{K}
+\left[
+\frac{1}{p}\sum_{i=1}^{p}L_{\mathrm{rot},i,k}^{4}
+-
+\left(\frac{1}{p}\sum_{i=1}^{p}L_{\mathrm{rot},i,k}^{2}\right)^2
+\right]
+$$
+
+Varimax does not remove a stock. It changes the coordinate system inside the selected factor subspace, so it is a useful interpretive lens when several components may be rotated without changing the represented subspace. The original criterion is due to [Kaiser (1958), *The Varimax Criterion for Analytic Rotation in Factor Analysis*](https://doi.org/10.1007/BF02289233).
+
+### Elastic-Net Sparse PCA
+
+Sparse PCA modifies the PCA reconstruction problem by adding an L1 penalty and an L2 penalty. In the implementation, `B` contains the sparse component weights and `A` keeps the auxiliary factors orthonormal:
+
+$$
+\min_{A,B}\;
+\lVert Z-ZBA^\top\rVert_F^2
++\lambda_2\lVert B\rVert_F^2
++\sum_{j=1}^{K}\lambda_{1,j}\lVert b_j\rVert_1,
+\qquad A^\top A=I
+$$
+
+The two penalties have different jobs:
+
+- `L1` (`lambda_1`) creates exact zero weights and controls sparsity;
+- `L2` (`lambda_2`) stabilizes correlated groups and reduces the tendency to keep one arbitrary representative.
+
+The method follows the regression formulation introduced by [Zou, Hastie, and Tibshirani (2006), *Sparse Principal Component Analysis*](https://doi.org/10.1198/106186006X113430). The Elastic-Net grouping motivation comes from [Zou and Hastie (2005), *Regularization and Variable Selection Via the Elastic Net*](https://doi.org/10.1111/j.1467-9868.2005.00503.x). The earlier direct L1-constrained approach, SCoTLASS, is documented by [Jolliffe, Trendafilov, and Uddin (2003), *A Modified Principal Component Technique Based on the LASSO*](https://doi.org/10.1198/1061860032148).
+
+The least-squares reconstruction used by the script is only an internal diagnostic of how much information the sparse score space retains. It is not an additional economic regression model. Sparse components can also lose the exact orthogonality and variance-ordering properties of ordinary PCA, so their reconstruction percentage is reported separately from ordinary PCA explained-variance shares. This distinction is also emphasized in the finance-oriented discussion by [Despois (2023), *Identifying and Interpreting the Factors in Factor Models via Sparsity: Different Approaches*](https://doi.org/10.1002/jae.2967).
+
+The project therefore uses the following hierarchy:
+
+```text
+Correlation PCA       official variance reference
+Varimax               interpretable rotation of the same subspace
+Elastic-Net Sparse PCA sparse exploratory factor composition
+Pure Lasso             sensitivity comparison, not the main result
+```
+
+The current penalty path records reconstruction and non-zero-weight counts for several `lambda_1` values, both with and without the `lambda_2` grouping term. A penalty will be considered useful only if the selected stocks are reasonably stable and the information loss is transparent; a visually sparse result alone is not sufficient evidence of a real factor.
 
 ## Research roadmap
 
@@ -279,11 +360,17 @@ This design is grounded in the following literature:
 - [Gospodinov (2017), *Asset Co-movements: Features and Challenges*](https://fraser.stlouisfed.org/title/working-papers-federal-reserve-bank-atlanta-8586/asset-co-movements-657145/content/fulltext/frbatl_wp_2017-11) uses 60- and 120-day rolling co-movement diagnostics and warns that apparent time variation can also arise from finite-sample uncertainty and overlapping windows.
 - [Zhang and Tong (2022), *Asymptotic Theory of Principal Component Analysis for Time Series Data with Cautionary Comments*](https://doi.org/10.1111/rssa.12793) show why time-series dependence matters for inference on PCA loadings and motivate bootstrap-based uncertainty checks.
 
-### 5. Covariance estimation and random-matrix diagnostics
+### 5. Internal factor composition
+
+The next analysis will compare standard correlation PCA with Varimax and Elastic-Net Sparse PCA. The purpose is not to force an economic story onto PC1, PC2, or PC3. It is to ask whether the statistical structure can be described using a smaller, more stable set of titles and whether that description survives benchmark residualization.
+
+The first pass uses three components and a transparent penalty path. Pure L1 and Elastic Net are both reported so that the grouping effect can be seen rather than assumed. A later version can add rolling sparse-factor stability and block bootstrap intervals once the static structure is understood.
+
+### 6. Covariance estimation and random-matrix diagnostics
 
 Sample covariance will be compared with shrinkage estimators such as Ledoit-Wolf, and potentially with exponentially weighted covariance. Random Matrix Theory will be used as a diagnostic benchmark for separating strong empirical components from noise. The Marchenko-Pastur distribution will not be treated as literal truth because the returns are not iid Gaussian observations.
 
-### 6. Residual dynamics and out-of-sample testing
+### 7. Residual dynamics and out-of-sample testing
 
 Only after the factor structure is understood will we study autocorrelation, mean reversion, stationarity, lead-lag relationships, and short-horizon forecasting. Any apparent signal must be evaluated walk-forward, out of sample, and with realistic transaction costs.
 
@@ -324,16 +411,19 @@ Completed:
 - Variance ledger showing how benchmark and residual PCA components add back to raw variance
 - Initial code cleanup and local Git versioning
 - Descriptive rolling covariance/correlation PCA with 20- and 60-session windows
+- Reusable PCA and benchmark-residualization modules
+- Internal factor-isolation script with Varimax and Elastic-Net Sparse PCA
 
 Next:
 
-- Review the remaining outliers and invalid-value checks
+- Inspect the Varimax loading maps and the L1/L2 sparsity path
+- Compare sparse-factor support across raw and benchmark-residualized returns
 - Review the rolling PCA diagnostics and identify stress-window candidates
 - Add block-bootstrap confidence bands before making formal rolling-inference claims
 
 Later:
 
-- Rolling PCA and stress-regime comparison
+- Rolling Sparse PCA and stress-regime comparison
 - Shrinkage covariance
 - Random-matrix diagnostics
 - Residual dynamics
@@ -362,7 +452,10 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 09_benchmark_residualization.py remove SPY/XLF exposure and run residual PCA
 10_variance_decomposition.py  reconcile raw variance with benchmark and residual PCA parts
 11_rolling_pca.py             run descriptive 20/60-session rolling PCA diagnostics
+12_internal_factor_isolation.py  compare PCA, Varimax, and Elastic-Net Sparse PCA
 ```
+
+The reusable numerical helpers live in `src/pca_utils.py`; benchmark projection and residualization are shared through `src/benchmark_utils.py`. The numbered scripts call these modules instead of maintaining separate PCA implementations.
 
 The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
 
@@ -375,4 +468,6 @@ The downloader filename contains a historical typo (`crwal`). It is kept for com
 - Avoid look-ahead bias in any future predictive experiment.
 - Remember that PCA eigenvector signs are arbitrary.
 - Support economic labels with actual loadings and constituent composition.
+- Treat Varimax and Sparse PCA as interpretive tools, not causal identification.
+- Do not interpret sparse zero weights as proof that a stock has no economic exposure.
 - Treat the CORE universe as the primary specification and the FULL universe as a robustness check.

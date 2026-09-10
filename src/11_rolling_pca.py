@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from benchmark_utils import residualize_against_benchmarks
 from config import (
     BENCHMARKS,
     CORE_UNIVERSE,
@@ -16,6 +17,7 @@ from config import (
     RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
+from pca_utils import fit_pca
 
 
 OUT_DIR = REPORTS_DIR / "rolling_pca"
@@ -41,46 +43,6 @@ GRID_COLOR = "#D9DEE5"
 STOCKS = list(CORE_UNIVERSE)
 
 
-def orient_eigenvectors(vectors):
-    """Use a reproducible sign convention for each eigenvector."""
-
-    vectors = vectors.copy()
-    for component in range(vectors.shape[1]):
-        pivot = np.argmax(np.abs(vectors[:, component]))
-        if vectors[pivot, component] < 0:
-            vectors[:, component] *= -1
-    return vectors
-
-
-def run_pca(data, method):
-    """Return eigenvalues, vectors, explained shares, and effective dimension."""
-
-    centered = data.subtract(data.mean(), axis="columns")
-    if method == "correlation":
-        scales = centered.std(ddof=1)
-        if scales.isna().any() or (scales <= 0).any():
-            raise ValueError("Correlation PCA found a zero-variance security.")
-        matrix_data = centered.divide(scales, axis="columns")
-    elif method == "covariance":
-        matrix_data = centered
-    else:
-        raise ValueError(f"Unknown PCA method: {method}")
-
-    values, vectors = np.linalg.eigh(
-        (matrix_data.T @ matrix_data).to_numpy() / (len(matrix_data) - 1)
-    )
-    order = np.argsort(values)[::-1]
-    values = values[order]
-    vectors = orient_eigenvectors(vectors[:, order])
-
-    if values[-1] < -1e-12:
-        raise ValueError("PCA produced a materially negative eigenvalue.")
-    values = np.maximum(values, 0.0)
-    explained = values / values.sum()
-    effective_dimension = 1.0 / np.square(explained).sum()
-    return values, vectors, explained, effective_dimension
-
-
 def build_intraday_normalized_returns(stock_returns):
     """Normalize each ticker by its full-sample minute-of-day volatility profile."""
 
@@ -104,34 +66,14 @@ def build_intraday_normalized_returns(stock_returns):
 def residualize_window(window_panel):
     """Remove the SPY/XLF exposure estimated inside one rolling window."""
 
-    benchmark_values = window_panel.loc[:, list(BENCHMARKS)].to_numpy()
-    design = np.column_stack([np.ones(len(window_panel)), benchmark_values])
-    stock_values = window_panel[STOCKS].to_numpy()
-    coefficients = np.linalg.lstsq(design, stock_values, rcond=None)[0]
-    fitted_values = design @ coefficients
-    residual_values = stock_values - fitted_values
-
-    raw_variance = stock_values.var(axis=0, ddof=1)
-    residual_variance = residual_values.var(axis=0, ddof=1)
-    r_squared = 1 - residual_variance / raw_variance
-    betas = pd.DataFrame(
-        coefficients.T,
-        index=STOCKS,
-        columns=["alpha", "beta_SPY", "beta_XLF"],
+    benchmark_result = residualize_against_benchmarks(
+        window_panel,
+        stocks=STOCKS,
     )
-    diagnostics = pd.DataFrame(
-        {
-            "r_squared": r_squared,
-            "variance_removed_pct": 100 * r_squared,
-            "residual_std": np.sqrt(residual_variance),
-        },
-        index=STOCKS,
-    ).join(betas)
-    residuals = pd.DataFrame(
-        residual_values,
-        index=window_panel.index,
-        columns=STOCKS,
-    )
+    residuals = benchmark_result["residual_returns"]
+    diagnostics = benchmark_result["diagnostics"][
+        ["r_squared", "variance_removed_pct", "residual_std"]
+    ].join(benchmark_result["coefficients"])
     diagnostics["max_abs_residual_benchmark_corr"] = 0.0
     for benchmark in BENCHMARKS:
         diagnostics["max_abs_residual_benchmark_corr"] = np.maximum(
@@ -203,10 +145,11 @@ def collect_rolling_results(complete_panel, normalized_returns, sessions, codes)
 
             for transformation, data in transformed_data.items():
                 for method in PCA_METHODS:
-                    values, vectors, explained, effective_dimension = run_pca(
-                        data,
-                        method,
-                    )
+                    pca_result = fit_pca(data, method=method)
+                    values = pca_result.eigenvalues
+                    vectors = pca_result.eigenvectors
+                    explained = pca_result.explained
+                    effective_dimension = 1.0 / np.square(explained).sum()
                     key = (window_size, transformation, method)
                     similarity = np.nan
                     if key in previous_pc1:
