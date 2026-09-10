@@ -258,18 +258,18 @@ Completed:
 - Contaminated-return masking
 - Complete-panel construction
 - CORE and FULL research datasets
+- Baseline covariance and correlation PCA on the CORE universe
+- Intraday-volatility profile and normalized PCA robustness check
 - Initial code cleanup and local Git versioning
 
 Next:
 
-- Run the baseline covariance-versus-correlation PCA
-- Inspect the eigenstructure and loadings before adding normalization or residualization
+- Align the CORE panel with SPY and XLF without filling missing benchmark returns
+- Residualize stock returns against market and financial-sector exposure
 - Review the remaining outliers and invalid-value checks
 
 Later:
 
-- Intraday normalization
-- SPY/XLF residualization
 - Rolling PCA and stress-regime comparison
 - Shrinkage covariance
 - Random-matrix diagnostics
@@ -294,6 +294,8 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 04-check_returns.py    inspect return distributions and extremes
 05-clean_returns.py    remove bad sessions and contaminated returns
 06_save_universes.py   save the CORE and FULL research panels
+07_baseline_pca.py     run covariance and correlation PCA with baseline plots
+08_intraday_normalization.py  estimate intraday volatility and repeat PCA
 ```
 
 The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
