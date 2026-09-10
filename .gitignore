@@ -9,4 +9,4 @@ alpaca_us_banks_1m/raw/
 alpaca_us_banks_1m/intermediate/
 alpaca_us_banks_1m/processed/
 alpaca_us_banks_1m/reports/*.parquet
-
+alpaca_us_banks_1m/reports/pca_baseline/
