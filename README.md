@@ -143,9 +143,9 @@ The scripts deliberately keep the stages separate. Each step reads the previous 
 
 For security `i` and minute `t`, the return is:
 
-```text
-r_i,t = log(P_i,t) - log(P_i,t-1)
-```
+$$
+r_{i,t} = \log(P_{i,t}) - \log(P_{i,t-1})
+$$
 
 Returns are calculated within each trading session. The first minute of every session is set to missing so that the overnight close-to-open move is not mixed into a one-minute intraday return.
 
@@ -153,16 +153,19 @@ Returns are calculated within each trading session. The first minute of every se
 
 Let `r_t` be the vector of stock returns at minute `t`. PCA starts from the covariance matrix:
 
-```text
-Sigma = Cov(r_t)
-Sigma v_k = lambda_k v_k
-```
+$$
+\Sigma = Cov(r_t)
+$$
+
+$$
+\Sigma v_k = \lambda_k v_k
+$$
 
 Here, `v_k` is the loading vector for component `k`, and `lambda_k` is the amount of variance associated with that component. The corresponding statistical factor return is:
 
-```text
-f_k,t = v_k' r_t
-```
+$$
+f_{k,t} = v_k' r_t
+$$
 
 ### Covariance PCA
 
@@ -172,9 +175,9 @@ Covariance PCA works with centered returns and preserves the original volatility
 
 Correlation PCA first standardizes each security:
 
-```text
-z_i,t = (r_i,t - mu_i) / sigma_i
-```
+$$
+z_{i,t} = \frac{r_{i,t} - \mu_i}{\sigma_i}
+$$
 
 This gives each stock comparable marginal volatility and makes the result more focused on co-movement than on differences in individual volatility. It is the main baseline specification because volatility levels differ materially across the universe.
 
@@ -184,12 +187,9 @@ The first baseline comparison will save eigenvalues, explained-variance ratios, 
 
 After the raw-return baseline, broad market and financial-sector exposure will be removed using SPY and XLF:
 
-```text
-r_i,t = alpha_i
-        + beta_i,M * r_SPY,t
-        + beta_i,F * r_XLF,t
-        + epsilon_i,t
-```
+$$
+r_{i,t} = \alpha_i + \beta_{i,M} r_{SPY,t} + \beta_{i,F} r_{XLF,t} + \epsilon_{i,t}
+$$
 
 The residuals are the part of each stock's return that is not explained by those two benchmark returns. PCA on the residual matrix will then be compared with PCA on the original returns.
 
@@ -215,9 +215,9 @@ Rolling PCA will track eigenvalues, PC1 explained variance, loading stability, a
 
 When comparing eigenvectors across windows, the sign is normalized through an absolute dot product because the sign of an eigenvector is arbitrary.
 
-```text
-similarity_k(t, t + delta) = abs(v_k(t)' v_k(t + delta))
-```
+$$
+S_k(t,t+\Delta) = |v_k(t)' v_k(t+\Delta)|
+$$
 
 ### 5. Covariance estimation and random-matrix diagnostics
 
