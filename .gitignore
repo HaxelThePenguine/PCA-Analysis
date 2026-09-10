@@ -13,3 +13,4 @@ alpaca_us_banks_1m/reports/pca_baseline/
 alpaca_us_banks_1m/reports/pca_intraday/
 alpaca_us_banks_1m/reports/pca_residuals/
 alpaca_us_banks_1m/reports/variance_decomposition/
+alpaca_us_banks_1m/reports/rolling_pca/

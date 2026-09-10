@@ -98,7 +98,8 @@ alpaca_us_banks_1m/
 │   ├── data_quality_summary.csv
 │   ├── daily_data_quality.csv
 │   ├── missing_matrix.parquet
-│   └── common_missing_gaps.csv
+│   ├── common_missing_gaps.csv
+│   └── rolling_pca/
 ├── intermediate/
 │   ├── close_matrix.parquet
 │   ├── return_matrix.parquet
@@ -139,6 +140,8 @@ Complete CORE and FULL panels
         SPY/XLF residualization
         ↓
         Variance decomposition
+        ↓
+        Rolling PCA
 ```
 
 The scripts deliberately keep the stages separate. Each step reads the previous stage's output and writes a named artifact that can be inspected or reused later.
@@ -257,6 +260,8 @@ The first rolling implementation will run both correlation PCA and covariance PC
 - intraday-normalized returns;
 - SPY/XLF residual returns.
 
+`11_rolling_pca.py` implements this first descriptive pass. The intraday-normalized series uses the same fixed full-sample minute-of-day profile as the earlier robustness check; this is acceptable for descriptive comparison, but it must be replaced with a past-only profile before any forecasting or walk-forward test.
+
 For each window we will record PC1 explained variance, cumulative variance explained by the first three components, effective dimension, loading similarity to the previous window, benchmark variance removed, and residual PC1 strength. This makes the interpretation explicit:
 
 - a change in raw PCA that disappears after SPY/XLF residualization is benchmark-associated;
@@ -318,11 +323,13 @@ Completed:
 - SPY/XLF residualization and PCA of the remaining CORE structure
 - Variance ledger showing how benchmark and residual PCA components add back to raw variance
 - Initial code cleanup and local Git versioning
+- Descriptive rolling covariance/correlation PCA with 20- and 60-session windows
 
 Next:
 
 - Review the remaining outliers and invalid-value checks
-- Compare residual structure across rolling and stress windows
+- Review the rolling PCA diagnostics and identify stress-window candidates
+- Add block-bootstrap confidence bands before making formal rolling-inference claims
 
 Later:
 
@@ -354,6 +361,7 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 08_intraday_normalization.py  estimate intraday volatility and repeat PCA
 09_benchmark_residualization.py remove SPY/XLF exposure and run residual PCA
 10_variance_decomposition.py  reconcile raw variance with benchmark and residual PCA parts
+11_rolling_pca.py             run descriptive 20/60-session rolling PCA diagnostics
 ```
 
 The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
