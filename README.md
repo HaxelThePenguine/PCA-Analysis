@@ -260,13 +260,13 @@ Completed:
 - CORE and FULL research datasets
 - Baseline covariance and correlation PCA on the CORE universe
 - Intraday-volatility profile and normalized PCA robustness check
+- SPY/XLF residualization and PCA of the remaining CORE structure
 - Initial code cleanup and local Git versioning
 
 Next:
 
-- Align the CORE panel with SPY and XLF without filling missing benchmark returns
-- Residualize stock returns against market and financial-sector exposure
 - Review the remaining outliers and invalid-value checks
+- Compare residual structure across rolling and stress windows
 
 Later:
 
@@ -296,6 +296,7 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 06_save_universes.py   save the CORE and FULL research panels
 07_baseline_pca.py     run covariance and correlation PCA with baseline plots
 08_intraday_normalization.py  estimate intraday volatility and repeat PCA
+09_benchmark_residualization.py remove SPY/XLF exposure and run residual PCA
 ```
 
 The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
