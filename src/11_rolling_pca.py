@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from config import (
+    BENCHMARKS,
     CORE_UNIVERSE,
     REPORTS_DIR,
     RETURN_MATRIX_CLEAN_FILE,
@@ -18,7 +19,6 @@ from config import (
 
 
 OUT_DIR = REPORTS_DIR / "rolling_pca"
-BENCHMARKS = ["SPY", "XLF"]
 WINDOWS = (20, 60)
 STEP_SESSIONS = 5
 TRANSFORMATIONS = (
@@ -104,7 +104,7 @@ def build_intraday_normalized_returns(stock_returns):
 def residualize_window(window_panel):
     """Remove the SPY/XLF exposure estimated inside one rolling window."""
 
-    benchmark_values = window_panel[BENCHMARKS].to_numpy()
+    benchmark_values = window_panel.loc[:, list(BENCHMARKS)].to_numpy()
     design = np.column_stack([np.ones(len(window_panel)), benchmark_values])
     stock_values = window_panel[STOCKS].to_numpy()
     coefficients = np.linalg.lstsq(design, stock_values, rcond=None)[0]
@@ -456,7 +456,7 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     all_returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)
-    required = STOCKS + BENCHMARKS
+    required = STOCKS + list(BENCHMARKS)
     missing = [symbol for symbol in required if symbol not in all_returns.columns]
     if missing:
         raise ValueError(f"Missing columns: {missing}")

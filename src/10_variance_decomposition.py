@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from config import (
+    BENCHMARKS,
     CORE_UNIVERSE,
     REPORTS_DIR,
     RETURN_MATRIX_CLEAN_FILE,
@@ -17,7 +18,6 @@ from config import (
 
 
 OUT_DIR = REPORTS_DIR / "variance_decomposition"
-BENCHMARKS = ["SPY", "XLF"]
 GROUP_COLUMNS = [
     "benchmark_pct",
     "residual_PC1_pct",
@@ -52,7 +52,7 @@ def run_pca(covariance):
 def build_variance_ledger(complete_panel, stocks):
     """Fit benchmarks and split each stock's variance into additive parts."""
 
-    benchmark_values = complete_panel[BENCHMARKS].to_numpy()
+    benchmark_values = complete_panel.loc[:, list(BENCHMARKS)].to_numpy()
     design = np.column_stack(
         [np.ones(len(benchmark_values)), benchmark_values]
     )
@@ -291,7 +291,7 @@ def main():
 
     all_returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)
     stocks = list(CORE_UNIVERSE)
-    required = stocks + BENCHMARKS
+    required = stocks + list(BENCHMARKS)
     missing = [symbol for symbol in required if symbol not in all_returns.columns]
     if missing:
         raise ValueError(f"Missing columns: {missing}")

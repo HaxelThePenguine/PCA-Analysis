@@ -25,7 +25,8 @@ BANKS = (
     "KEY", "GS", "MS", "FHN", "CFG", "SYF",
 )
 
-BENCHMARKS = ("XLF", "SPY")
+# Keep this order aligned with the beta columns used by residualization.
+BENCHMARKS = ("SPY", "XLF")
 SYMBOLS = BANKS + BENCHMARKS
 
 CORE_UNIVERSE = (

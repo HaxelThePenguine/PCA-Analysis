@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from config import (
+    BENCHMARKS,
     CORE_UNIVERSE,
     REPORTS_DIR,
     RETURN_MATRIX_CLEAN_FILE,
@@ -12,7 +13,6 @@ from config import (
 
 
 OUT_DIR = REPORTS_DIR / "pca_residuals"
-BENCHMARKS = ["SPY", "XLF"]
 
 
 def run_pca(matrix):
@@ -58,7 +58,7 @@ def main():
 
     all_returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)
     stocks = list(CORE_UNIVERSE)
-    required = stocks + BENCHMARKS
+    required = stocks + list(BENCHMARKS)
     missing = [symbol for symbol in required if symbol not in all_returns.columns]
     if missing:
         raise ValueError(f"Missing columns: {missing}")
@@ -70,7 +70,7 @@ def main():
     if not complete_panel.index.is_monotonic_increasing:
         raise ValueError("The benchmark panel index is not sorted.")
 
-    benchmark_returns = complete_panel[BENCHMARKS].to_numpy()
+    benchmark_returns = complete_panel.loc[:, list(BENCHMARKS)].to_numpy()
     design = np.column_stack(
         [np.ones(len(benchmark_returns)), benchmark_returns]
     )
@@ -137,7 +137,7 @@ def main():
     tables = {
         "09_betas_spy_xlf.csv": betas,
         "09_residual_diagnostics.csv": diagnostics,
-        "09_benchmark_correlation.csv": complete_panel[BENCHMARKS].corr(),
+        "09_benchmark_correlation.csv": complete_panel.loc[:, list(BENCHMARKS)].corr(),
         "09_residual_covariance_matrix.csv": residual_covariance,
         "09_residual_pca_summary.csv": summary,
         "09_residual_pca_loadings_pc1_pc3.csv": loadings,
