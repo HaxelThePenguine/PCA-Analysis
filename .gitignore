@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+
+# Raw and generated market-data files are kept outside version control.
+alpaca_us_banks_1m/chunks/
+alpaca_us_banks_1m/raw/
+alpaca_us_banks_1m/intermediate/
+alpaca_us_banks_1m/processed/
+alpaca_us_banks_1m/reports/*.parquet
+

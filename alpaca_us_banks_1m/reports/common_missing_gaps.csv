@@ -1,0 +1,6 @@
+ny_time,BAC,COF,JPM,HBAN,WFC,USB,RF,SCHW,C,AXP,TFC,FITB,KEY,GS,MS,FHN,CFG,SYF,XLF,SPY,n_missing,missing_pct
+2023-06-05 09:52:00-04:00,True,True,True,False,True,True,True,True,True,True,True,False,True,True,True,True,True,True,True,True,18,90.0
+2023-06-05 09:53:00-04:00,True,True,True,False,True,True,True,True,True,True,True,False,True,True,True,True,True,True,True,True,18,90.0
+2023-06-05 09:54:00-04:00,True,True,True,False,True,True,True,True,True,True,True,False,True,True,True,True,True,True,True,True,18,90.0
+2023-06-05 09:55:00-04:00,True,True,True,False,True,True,True,True,True,True,True,False,True,True,True,True,True,True,True,True,18,90.0
+2024-08-26 12:49:00-04:00,False,True,False,False,False,False,False,False,False,True,False,False,False,True,True,True,False,False,False,False,5,25.0
