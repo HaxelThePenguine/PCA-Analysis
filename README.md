@@ -239,6 +239,41 @@ $$
 S_k(t,t+\Delta) = |v_k(t)' v_k(t+\Delta)|
 $$
 
+#### Rolling-window design and literature rationale
+
+The rolling analysis will use trading sessions as the time unit. This keeps a window tied to an economically meaningful number of market days and avoids treating weekends, holidays, and early closes as ordinary observations. The window length is a design choice rather than a universal constant: shorter windows react faster to regime changes but produce noisier covariance and PCA estimates, while longer windows are more stable but can average together distinct regimes.
+
+The primary specification will use a **20-session window** with a **5-session step**. Twenty sessions are approximately one month of trading and contain about 7,800 scheduled one-minute slots per stock; in this cleaned sample, early closes and data-quality exclusions leave roughly 7,500-7,800 usable observations. This is a reasonable compromise for a 12-stock cross-section: it is short enough to detect changes around stress periods, while high-frequency sampling supplies many observations inside the calendar window. The count is not an effective independent sample size because intraday returns can be dependent and affected by microstructure noise. High-frequency factor research explicitly motivates short rolling intervals for this reason, including one-month windows for time-varying betas.
+
+The analysis will repeat every comparison with a **60-session window**, also evaluated every five sessions. Sixty sessions are approximately one quarter and provide a slower, more stable view of the same structure. Sixty-day rolling correlations are also a familiar diagnostic in the co-movement literature. The 60-session result is therefore a robustness and persistence check, not a claim that three months is intrinsically optimal.
+
+We will not use a one-week window as the main estimate. High-frequency PCA papers show that very short horizons can be informative when the cross-section and estimator are designed for that setting, but our first implementation uses a simple rolling sample covariance/correlation matrix on a small 12-stock universe. A one-week estimate would be more sensitive to individual events, missing observations, microstructure effects, and estimation noise. It remains a useful stress-sensitivity experiment later.
+
+The five-session step is chosen for readable weekly monitoring. Because neighbouring rolling windows overlap, the resulting observations are not independent. We will not interpret a smooth rolling chart as a sequence of independent tests; confidence bands or block-bootstrap checks will be added before making formal claims about changes in loadings or eigenvalues.
+
+The first rolling implementation will run both correlation PCA and covariance PCA on:
+
+- raw returns;
+- intraday-normalized returns;
+- SPY/XLF residual returns.
+
+For each window we will record PC1 explained variance, cumulative variance explained by the first three components, effective dimension, loading similarity to the previous window, benchmark variance removed, and residual PC1 strength. This makes the interpretation explicit:
+
+- a change in raw PCA that disappears after SPY/XLF residualization is benchmark-associated;
+- a change that remains in residual PCA is evidence of internal financial-stock structure;
+- a change in covariance PCA without a comparable change in correlation PCA is primarily a volatility-scale effect;
+- a short-lived isolated spike is a regime or event candidate, not proof of a persistent factor.
+
+Rolling PCA can locate timing, persistence, and structural changes. It cannot by itself establish that an external variable caused them. To investigate external explanations, the rolling results must later be aligned with independent series and event dates, such as market volatility, interest rates, credit conditions, or documented market events. SPY and XLF are treated as benchmark-associated controls, not as exogenous causal instruments, especially because XLF contains financial stocks.
+
+This design is grounded in the following literature:
+
+- [Aït-Sahalia and Xiu (2019), *Principal Component Analysis of High-Frequency Data*](https://doi.org/10.1080/01621459.2017.1401542) study time-varying high-frequency principal components and show that their explanatory power can change materially during stress periods.
+- [Aït-Sahalia, Kalnina, and Xiu (2020), *High-Frequency Factor Models and Regressions*](https://doi.org/10.1016/j.jeconom.2020.01.007) discuss short rolling intervals such as one month, the time variation of betas, and the ability of high-frequency observations to reduce estimation noise.
+- [Pelger (2019), *Large-dimensional factor modeling based on high-frequency observations*](https://doi.org/10.1016/j.jeconom.2018.09.004) shows why high-frequency factor methods can study short horizons, while also making clear that the appropriate horizon depends on the estimator and the cross-section.
+- [Gospodinov (2017), *Asset Co-movements: Features and Challenges*](https://fraser.stlouisfed.org/title/working-papers-federal-reserve-bank-atlanta-8586/asset-co-movements-657145/content/fulltext/frbatl_wp_2017-11) uses 60- and 120-day rolling co-movement diagnostics and warns that apparent time variation can also arise from finite-sample uncertainty and overlapping windows.
+- [Zhang and Tong (2022), *Asymptotic Theory of Principal Component Analysis for Time Series Data with Cautionary Comments*](https://doi.org/10.1111/rssa.12793) show why time-series dependence matters for inference on PCA loadings and motivate bootstrap-based uncertainty checks.
+
 ### 5. Covariance estimation and random-matrix diagnostics
 
 Sample covariance will be compared with shrinkage estimators such as Ledoit-Wolf, and potentially with exponentially weighted covariance. Random Matrix Theory will be used as a diagnostic benchmark for separating strong empirical components from noise. The Marchenko-Pastur distribution will not be treated as literal truth because the returns are not iid Gaussian observations.
