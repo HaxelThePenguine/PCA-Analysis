@@ -61,14 +61,14 @@ def main():
     required = stocks + BENCHMARKS
     missing = [symbol for symbol in required if symbol not in all_returns.columns]
     if missing:
-        raise ValueError(f"Colonne mancanti: {missing}")
+        raise ValueError(f"Missing columns: {missing}")
 
     panel = all_returns.loc[:, required]
     complete_panel = panel.dropna(how="any")
     if complete_panel.index.has_duplicates:
-        raise ValueError("Il pannello benchmark contiene indici duplicati.")
+        raise ValueError("The benchmark panel contains duplicate index values.")
     if not complete_panel.index.is_monotonic_increasing:
-        raise ValueError("L'indice del pannello benchmark non è ordinato.")
+        raise ValueError("The benchmark panel index is not sorted.")
 
     benchmark_returns = complete_panel[BENCHMARKS].to_numpy()
     design = np.column_stack(
@@ -146,24 +146,24 @@ def main():
         table.to_csv(OUT_DIR / filename)
 
     print("=== SPY/XLF RESIDUALIZATION ===")
-    print(f"Pannello iniziale: {panel.shape}")
-    print(f"Pannello completo: {complete_panel.shape}")
-    print(f"Osservazioni mantenute: {100 * len(complete_panel) / len(panel):.2f}%")
-    print(f"Correlazione residui-SPY/XLF: {diagnostics[['corr_resid_SPY', 'corr_resid_XLF']].abs().to_numpy().max():.3e}")
+    print(f"Initial panel: {panel.shape}")
+    print(f"Complete panel: {complete_panel.shape}")
+    print(f"Observations retained: {100 * len(complete_panel) / len(panel):.2f}%")
+    print(f"Maximum residual-SPY/XLF correlation: {diagnostics[['corr_resid_SPY', 'corr_resid_XLF']].abs().to_numpy().max():.3e}")
     print(f"Covariance check: {covariance_diff:.3e}")
     print(f"Score/eigenvalue check: {score_error:.3e}")
-    print(f"PC1 residua: {explained[0] * 100:.4f}%")
-    print(f"Prime 3 PC residue: {explained[:3].sum() * 100:.4f}%")
+    print(f"Residual PC1: {explained[0] * 100:.4f}%")
+    print(f"First 3 residual PCs: {explained[:3].sum() * 100:.4f}%")
 
     print("\n=== BETAS ===")
     print(betas.round(4).to_string())
-    print("\n=== DIAGNOSTICA RESIDUI ===")
+    print("\n=== RESIDUAL DIAGNOSTICS ===")
     print(diagnostics.round(4).to_string())
-    print("\n=== PCA RESIDUI ===")
+    print("\n=== RESIDUAL PCA ===")
     print(format_summary(summary))
-    print("\nCoefficienti PC1-PC3:")
+    print("\nPC1-PC3 loadings:")
     print(loadings.round(4).to_string())
-    print(f"\nOutput salvati in: {OUT_DIR}")
+    print(f"\nOutputs saved to: {OUT_DIR}")
 
 
 if __name__ == "__main__":

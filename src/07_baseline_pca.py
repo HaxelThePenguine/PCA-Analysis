@@ -108,18 +108,18 @@ def save_pc1_plot(cov_loadings, corr_loadings):
         cov_loadings.loc[order, "PC1"],
         height=width,
         color=COLORS["cov"],
-        label="Covarianza",
+        label="Covariance",
     )
     axis.barh(
         positions + width / 2,
         corr_loadings.loc[order, "PC1"],
         height=width,
         color=COLORS["corr"],
-        label="Correlazione",
+        label="Correlation",
     )
     axis.axvline(0, color="#1F2933", linewidth=0.8)
-    axis.set_title("PCA baseline: coefficienti della PC1")
-    axis.set_xlabel("Coefficiente dell'autovettore")
+    axis.set_title("Baseline PCA: PC1 loadings")
+    axis.set_xlabel("Eigenvector loading")
     axis.set_yticks(positions)
     axis.set_yticklabels(order)
     axis.legend(frameon=False)
@@ -136,13 +136,13 @@ def main():
     returns = pd.read_parquet(RETURN_CORE_FILE)
     missing = [symbol for symbol in CORE_UNIVERSE if symbol not in returns.columns]
     if missing:
-        raise ValueError(f"CORE incompleto; simboli mancanti: {missing}")
+        raise ValueError(f"Incomplete CORE panel; missing symbols: {missing}")
     returns = returns.loc[:, list(CORE_UNIVERSE)]
 
     if returns.isna().any().any():
-        raise ValueError("Il pannello CORE contiene NaN.")
+        raise ValueError("The CORE panel contains NaN values.")
     if returns.index.has_duplicates or not returns.index.is_monotonic_increasing:
-        raise ValueError("L'indice del pannello CORE non è valido.")
+        raise ValueError("The CORE panel index is invalid.")
 
     means = returns.mean()
     stds = returns.std(ddof=1)
@@ -197,19 +197,19 @@ def main():
         table.to_csv(OUT_DIR / filename)
 
     series = [
-        ("Covarianza", cov_explained, COLORS["cov"]),
-        ("Correlazione", corr_explained, COLORS["corr"]),
+        ("Covariance", cov_explained, COLORS["cov"]),
+        ("Correlation", corr_explained, COLORS["corr"]),
     ]
     save_line_plot(
         "07_scree_variance.png",
-        "PCA baseline: varianza spiegata per componente",
-        "Varianza spiegata (%)",
+        "Baseline PCA: explained variance by component",
+        "Explained variance (%)",
         series,
     )
     save_line_plot(
         "07_cumulative_variance.png",
-        "PCA baseline: varianza cumulata",
-        "Varianza cumulata (%)",
+        "Baseline PCA: cumulative explained variance",
+        "Cumulative explained variance (%)",
         series,
         cumulative=True,
     )
@@ -220,23 +220,23 @@ def main():
     print(f"Date: {returns.index.min()} -> {returns.index.max()}")
     print(f"Covariance check: {covariance_diff:.3e}")
     print(f"Score/eigenvalue check: {score_error:.3e}")
-    print(f"Prime 3 componenti: {reconstruction_pct:.4f}% spiegato")
+    print(f"First 3 components: {reconstruction_pct:.4f}% explained")
     print(f"Correlation check: {correlation_diff:.3e}")
-    print(f"Somma autovalori correlazione: {corr_values.sum():.12f}")
+    print(f"Correlation eigenvalue sum: {corr_values.sum():.12f}")
 
-    print("\n=== PCA COVARIANZA ===")
+    print("\n=== COVARIANCE PCA ===")
     print(format_summary(cov_summary))
-    print("\nCoefficienti PC1-PC3:")
+    print("\nPC1-PC3 loadings:")
     print(cov_loadings.round(4).to_string())
 
-    print("\n=== PCA CORRELAZIONE ===")
+    print("\n=== CORRELATION PCA ===")
     print(format_summary(corr_summary))
-    print("\nCoefficienti PC1-PC3:")
+    print("\nPC1-PC3 loadings:")
     print(corr_loadings.round(4).to_string())
 
-    print("\n=== VARIANZA SPIEGATA PER TITOLO, PRIME 3 PC ===")
+    print("\n=== EXPLAINED VARIANCE BY STOCK, FIRST 3 PCS ===")
     print(ticker_summary[["explained_pct"]].round(2).to_string())
-    print(f"\nOutput salvati in: {OUT_DIR}")
+    print(f"\nOutputs saved to: {OUT_DIR}")
 
 
 if __name__ == "__main__":

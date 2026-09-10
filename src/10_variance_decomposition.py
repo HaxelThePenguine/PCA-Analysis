@@ -26,9 +26,9 @@ GROUP_COLUMNS = [
 ]
 GROUP_LABELS = [
     "Benchmark SPY/XLF",
-    "Residuo PC1",
-    "Residui PC2-PC3",
-    "Residui PC4-PC12",
+    "Residual PC1",
+    "Residuals PC2-PC3",
+    "Residuals PC4-PC12",
 ]
 GROUP_COLORS = ["#2f6690", "#d99a2b", "#e07a5f", "#9aa58b"]
 
@@ -151,9 +151,9 @@ def build_global_summary(results):
 
     components = {
         "Benchmark SPY/XLF": benchmark_total,
-        "Residuo PC1": eigenvalues[0],
-        "Residui PC2-PC3": eigenvalues[1:3].sum(),
-        "Residui PC4-PC12": eigenvalues[3:].sum(),
+        "Residual PC1": eigenvalues[0],
+        "Residuals PC2-PC3": eigenvalues[1:3].sum(),
+        "Residuals PC4-PC12": eigenvalues[3:].sum(),
     }
     summary = pd.DataFrame(
         {
@@ -162,8 +162,8 @@ def build_global_summary(results):
     )
     summary["share_of_raw_pct"] = 100 * summary["variance"] / raw_total
     summary["share_of_residual_pct"] = np.nan
-    summary.loc["Residuo PC1":, "share_of_residual_pct"] = (
-        100 * summary.loc["Residuo PC1":, "variance"] / residual_total
+    summary.loc["Residual PC1":, "share_of_residual_pct"] = (
+        100 * summary.loc["Residual PC1":, "variance"] / residual_total
     )
     summary.loc["Benchmark SPY/XLF", "share_of_residual_pct"] = 0.0
     return summary
@@ -194,7 +194,7 @@ def plot_stock_decomposition(ledger, complete_panel):
     start = complete_panel.index[0].strftime("%Y-%m-%d")
     end = complete_panel.index[-1].strftime("%Y-%m-%d")
     axis.set_title(
-        "Scomposizione della varianza per titolo",
+        "Variance decomposition by stock",
         loc="left",
         color="#252525",
         pad=18,
@@ -202,12 +202,12 @@ def plot_stock_decomposition(ledger, complete_panel):
     axis.text(
         0,
         1.015,
-        f"Quota della varianza grezza | pannello completo {start}–{end} | n={len(complete_panel):,}",
+        f"Raw variance share | complete panel {start}-{end} | n={len(complete_panel):,}",
         transform=axis.transAxes,
         color="#666666",
         fontsize=9,
     )
-    axis.set_xlabel("Percentuale della varianza grezza")
+    axis.set_xlabel("Percentage of raw variance")
     axis.set_xlim(0, 100)
     axis.set_xticks([0, 25, 50, 75, 100])
     axis.grid(axis="x", color="#d9d9d9", linewidth=0.7)
@@ -233,7 +233,7 @@ def plot_global_decomposition(summary):
     for label, color in zip(GROUP_LABELS, GROUP_COLORS):
         value = summary.loc[label, "share_of_raw_pct"]
         axis.barh(
-            ["Universo CORE"],
+            ["CORE universe"],
             [value],
             left=left,
             label=label,
@@ -254,7 +254,7 @@ def plot_global_decomposition(summary):
         left += value
 
     axis.set_title(
-        "Scomposizione aggregata della varianza",
+        "Aggregate variance decomposition",
         loc="left",
         color="#252525",
         pad=18,
@@ -262,13 +262,13 @@ def plot_global_decomposition(summary):
     axis.text(
         0,
         1.08,
-        "Denominatore: somma delle varianze grezze dei dodici titoli",
+        "Denominator: sum of raw variances across the twelve stocks",
         transform=axis.transAxes,
         color="#666666",
         fontsize=9,
     )
     axis.set_xlim(0, 100)
-    axis.set_xlabel("Percentuale della varianza grezza")
+    axis.set_xlabel("Percentage of raw variance")
     axis.set_xticks([0, 25, 50, 75, 100])
     axis.grid(axis="x", color="#d9d9d9", linewidth=0.7)
     axis.set_axisbelow(True)
@@ -294,14 +294,14 @@ def main():
     required = stocks + BENCHMARKS
     missing = [symbol for symbol in required if symbol not in all_returns.columns]
     if missing:
-        raise ValueError(f"Colonne mancanti: {missing}")
+        raise ValueError(f"Missing columns: {missing}")
 
     panel = all_returns.loc[:, required]
     complete_panel = panel.dropna(how="any")
     if complete_panel.index.has_duplicates:
-        raise ValueError("Il pannello benchmark contiene indici duplicati.")
+        raise ValueError("The benchmark panel contains duplicate index values.")
     if not complete_panel.index.is_monotonic_increasing:
-        raise ValueError("L'indice del pannello benchmark non è ordinato.")
+        raise ValueError("The benchmark panel index is not sorted.")
 
     results = build_variance_ledger(complete_panel, stocks)
     ledger = results["ledger"]
@@ -322,22 +322,22 @@ def main():
     plot_stock_decomposition(ledger, complete_panel)
     plot_global_decomposition(global_summary)
 
-    print("=== SCOMPOSIZIONE DELLA VARIANZA ===")
-    print(f"Pannello completo: {complete_panel.shape}")
-    print(f"Periodo: {complete_panel.index[0]} -> {complete_panel.index[-1]}")
-    print("\nQuota della varianza grezza per titolo (%):")
+    print("=== VARIANCE DECOMPOSITION ===")
+    print(f"Complete panel: {complete_panel.shape}")
+    print(f"Period: {complete_panel.index[0]} -> {complete_panel.index[-1]}")
+    print("\nRaw variance share by stock (%):")
     print(ledger[GROUP_COLUMNS + ["total_pct"]].round(2).to_string())
-    print("\nScomposizione aggregata (% della varianza grezza totale):")
+    print("\nAggregate decomposition (% of total raw variance):")
     print(global_summary[["share_of_raw_pct"]].round(2).to_string())
     print(
-        "\nErrore massimo identità raw = benchmark + residuo:",
+        "\nMaximum error in raw = benchmark + residual identity:",
         f"{ledger['variance_identity_error'].max():.3e}",
     )
     print(
-        "Errore massimo somma componenti residue = residuo:",
+        "Maximum error in residual component sum = residual variance:",
         f"{(results['component_variance'].sum(axis=1) - results['residual_variance']).abs().max():.3e}",
     )
-    print(f"\nOutput salvati in: {OUT_DIR}")
+    print(f"\nOutputs saved to: {OUT_DIR}")
 
 
 if __name__ == "__main__":

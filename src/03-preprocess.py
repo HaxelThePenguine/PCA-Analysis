@@ -99,7 +99,7 @@ prices_clean = prices.ffill()
 # RETURNS
 # ============================================================
 
-# Identifica la sessione NY
+# Identify the New York session
 session = pd.Series(
     prices_clean.index.date,
     index=prices_clean.index,
@@ -110,8 +110,8 @@ log_prices = np.log(prices_clean)
 returns = log_prices.diff()
 
 
-# Non vogliamo trasformare overnight returns
-# in falsi "1-minute returns".
+# Do not turn overnight returns
+# into fake "1-minute returns".
 new_session = session != session.shift(1)
 
 returns.loc[new_session] = np.nan

@@ -48,9 +48,9 @@ def run_pca(matrix):
 def save_profile_plot(profile):
     fig, axis = plt.subplots(figsize=(9, 5))
     axis.plot(profile.index, profile["mean_volatility"], color=BLUE, linewidth=1.6)
-    axis.set_title("Volatilità intraday media del pannello CORE")
-    axis.set_xlabel("Minuti dall'apertura")
-    axis.set_ylabel("Deviazione standard del rendimento")
+    axis.set_title("Average intraday volatility of the CORE panel")
+    axis.set_xlabel("Minutes from market open")
+    axis.set_ylabel("Return standard deviation")
     axis.grid(axis="y", color=GRID, linewidth=0.8)
     axis.set_axisbelow(True)
     axis.spines["top"].set_visible(False)
@@ -67,11 +67,11 @@ def main():
     returns = pd.read_parquet(RETURN_CORE_FILE)
     missing = [symbol for symbol in CORE_UNIVERSE if symbol not in returns.columns]
     if missing:
-        raise ValueError(f"CORE incompleto; simboli mancanti: {missing}")
+        raise ValueError(f"Incomplete CORE panel; missing symbols: {missing}")
     returns = returns.loc[:, list(CORE_UNIVERSE)]
 
     if returns.isna().any().any():
-        raise ValueError("Il pannello CORE contiene NaN.")
+        raise ValueError("The CORE panel contains NaN values.")
 
     minute_from_open = pd.Series(
         returns.index.hour * 60 + returns.index.minute - (9 * 60 + 30),
@@ -94,11 +94,11 @@ def main():
     scale = volatility_profile.loc[minute_from_open.to_numpy()].copy()
     scale.index = returns.index
     if scale.isna().any().any() or (scale <= 0).any().any():
-        raise ValueError("Profilo di volatilità non valido.")
+        raise ValueError("Invalid volatility profile.")
 
     normalized_returns = returns.divide(scale)
     if not np.isfinite(normalized_returns.to_numpy()).all():
-        raise ValueError("I rendimenti normalizzati contengono valori non finiti.")
+        raise ValueError("Normalized returns contain non-finite values.")
 
     normalized_profile = normalized_returns.groupby(minute_from_open).std(ddof=1)
     normalization_error = np.max(np.abs(normalized_profile.to_numpy() - 1))
@@ -134,21 +134,21 @@ def main():
 
     print("=== INTRADAY NORMALIZATION ===")
     print(f"Panel: {returns.shape} | NaN: 0")
-    print(f"Profilo: minuto {profile.index.min()} -> {profile.index.max()}")
-    print(f"Osservazioni per minuto: {observations.min()} -> {observations.max()}")
-    print(f"Controllo volatilita normalizzata: {normalization_error:.3e}")
+    print(f"Profile: minute {profile.index.min()} -> {profile.index.max()}")
+    print(f"Observations per minute: {observations.min()} -> {observations.max()}")
+    print(f"Normalized volatility check: {normalization_error:.3e}")
     print(f"Covariance check: {covariance_diff:.3e}")
     print(f"Score/eigenvalue check: {score_error:.3e}")
-    print(f"Somma autovalori: {values.sum():.8f}")
-    print(f"Prime 3 componenti: {explained[:3].sum() * 100:.4f}% spiegato")
+    print(f"Eigenvalue sum: {values.sum():.8f}")
+    print(f"First 3 components: {explained[:3].sum() * 100:.4f}% explained")
 
-    print("\n=== PROFILO INTRADAY, INIZIO/FINE ===")
+    print("\n=== INTRADAY PROFILE, START/END ===")
     print(pd.concat([profile.head(3), profile.tail(3)]).round(6).to_string())
-    print("\n=== PCA NORMALIZZATA ===")
+    print("\n=== NORMALIZED PCA ===")
     print(summary.round(4).to_string())
-    print("\nCoefficienti PC1-PC3:")
+    print("\nPC1-PC3 loadings:")
     print(loadings.round(4).to_string())
-    print(f"\nOutput salvati in: {OUT_DIR}")
+    print(f"\nOutputs saved to: {OUT_DIR}")
 
 
 if __name__ == "__main__":

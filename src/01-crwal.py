@@ -43,7 +43,7 @@ SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
 
 if not API_KEY or not SECRET_KEY:
     raise RuntimeError(
-        "ALPACA_API_KEY / ALPACA_SECRET_KEY non trovate."
+        "ALPACA_API_KEY / ALPACA_SECRET_KEY not found."
     )
 
 
@@ -69,8 +69,8 @@ trading_client = TradingClient(
 
 def to_ny_timestamp(value):
     """
-    Converte una timestamp del calendario Alpaca
-    in America/New_York.
+    Convert an Alpaca calendar timestamp
+    to America/New_York.
     """
 
     ts = pd.Timestamp(value)
@@ -121,9 +121,9 @@ def month_chunks(start_date, end_date):
 
 def date_to_utc(local_date):
     """
-    Mezzanotte New York -> UTC.
+    New York midnight -> UTC.
 
-    Serve a evitare ambiguità con DST.
+    Avoids DST ambiguity.
     """
 
     ts = pd.Timestamp(local_date)
@@ -208,7 +208,7 @@ early_closes = calendar_df[
 
 if not early_closes.empty:
 
-    print("\nEarly closes rilevate:")
+    print("\nEarly closes detected:")
 
     print(
         early_closes[
@@ -222,7 +222,7 @@ if not early_closes.empty:
     )
 
 
-# lookup veloce per il filtro intraday
+# Fast lookup for the intraday filter
 
 calendar_filter = calendar_df[
     [
@@ -256,7 +256,7 @@ for label, chunk_start, chunk_end in month_chunks(
     if success_file.exists():
 
         print(
-            f"[SKIP] {label} già completo"
+            f"[SKIP] {label} already complete"
         )
 
         continue
@@ -288,8 +288,8 @@ for label, chunk_start, chunk_end in month_chunks(
 
         feed=DataFeed.SIP,
 
-        # Manteniamo il feed RAW.
-        # È preferibile per studiare anche i volumi.
+        # Keep the raw feed.
+        # This is preferable when volumes are also being studied.
         adjustment=Adjustment.RAW,
     )
 
@@ -318,9 +318,9 @@ for label, chunk_start, chunk_end in month_chunks(
         except Exception as error:
 
             print(
-                f"  Errore tentativo "
+                f"  Attempt "
                 f"{attempt}/{MAX_RETRIES}: "
-                f"{error}"
+                f"failed: {error}"
             )
 
             if attempt == MAX_RETRIES:
@@ -332,7 +332,7 @@ for label, chunk_start, chunk_end in month_chunks(
             )
 
             print(
-                f"  Retry fra "
+                f"  Retrying in "
                 f"{wait_seconds}s..."
             )
 
@@ -350,7 +350,7 @@ for label, chunk_start, chunk_end in month_chunks(
     if df.empty:
 
         print(
-            "  Nessun dato restituito."
+            "  No data returned."
         )
 
         continue
@@ -390,7 +390,7 @@ for label, chunk_start, chunk_end in month_chunks(
 
 
     # ========================================================
-    # MERGE CON MARKET CALENDAR
+    # MERGE WITH MARKET CALENDAR
     # ========================================================
 
     df = df.merge(
@@ -401,7 +401,7 @@ for label, chunk_start, chunk_end in month_chunks(
 
 
     # ========================================================
-    # SOLO REGULAR MARKET HOURS
+    # REGULAR MARKET HOURS ONLY
     # ========================================================
 
     df = df[
@@ -459,7 +459,7 @@ for label, chunk_start, chunk_end in month_chunks(
     # ========================================================
 
     print(
-        f"  Barre RTH: {len(df):,}"
+                f"  RTH bars: {len(df):,}"
     )
 
     missing_symbols = []
@@ -474,7 +474,7 @@ for label, chunk_start, chunk_end in month_chunks(
 
             print(
                 f"  WARNING: {symbol} "
-                f"0 barre"
+                f"0 bars"
             )
 
             missing_symbols.append(symbol)
@@ -499,12 +499,12 @@ for label, chunk_start, chunk_end in month_chunks(
 
     if missing_symbols:
         raise RuntimeError(
-            f"Download incompleto per {label}; "
-            "mese non marcato come completo. "
-            f"Simboli senza barre: {', '.join(missing_symbols)}"
+            f"Download incomplete for {label}; "
+            "month not marked as complete. "
+            f"Symbols without bars: {', '.join(missing_symbols)}"
         )
 
-    # Solo dopo aver completato il mese per tutti i simboli.
+    # Mark success only after the month is complete for every symbol.
 
     success_file.touch()
 
@@ -514,7 +514,7 @@ for label, chunk_start, chunk_end in month_chunks(
 
 
 # ============================================================
-# CONSOLIDATE PER SYMBOL
+# CONSOLIDATE BY SYMBOL
 # ============================================================
 
 print("\n=== CONSOLIDATION ===")
@@ -536,7 +536,7 @@ for symbol in SYMBOLS:
     if not files:
 
         print(
-            "nessun file"
+            "no files found"
         )
 
         continue
@@ -577,7 +577,7 @@ for symbol in SYMBOLS:
     )
 
     print(
-        f"{len(symbol_df):,} barre"
+        f"{len(symbol_df):,} bars"
     )
 
 
@@ -875,7 +875,7 @@ print(
 )
 
 print(
-    "DOWNLOAD COMPLETATO"
+    "DOWNLOAD COMPLETE"
 )
 
 print(
@@ -887,7 +887,7 @@ print(
 )
 
 print(
-    "\nParquet per ticker:"
+    "\nParquet files by ticker:"
 )
 
 for symbol in SYMBOLS:
@@ -897,7 +897,7 @@ for symbol in SYMBOLS:
     )
 
 print(
-    "\nReport:"
+    "\nReports:"
 )
 
 print(

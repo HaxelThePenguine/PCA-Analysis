@@ -37,7 +37,7 @@ for _, row in calendar.iterrows():
     if market_close.tzinfo is None:
         market_close = market_close.tz_localize(NY_TZ)
 
-    # ultima barra = close - 1 minuto
+    # Last bar = close - 1 minute.
     minutes = pd.date_range(
         start=market_open,
         end=market_close - pd.Timedelta(minutes=1),
@@ -225,4 +225,4 @@ common_gaps.to_csv(
     COMMON_MISSING_GAPS_FILE,
 )
 
-print("\nReport salvati.")
+print("\nReports saved.")
