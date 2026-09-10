@@ -1,249 +1,97 @@
-# Intraday Statistical Factor Extraction & Residual Dynamics in US Financials
+# Intraday Statistical Factor Extraction in US Financials
 
-## Overview
+## Why this project exists
 
-This project studies the intraday statistical structure of large U.S. financial stocks using 1-minute market data.
+Most PCA examples begin with a perfectly clean matrix, draw a scree plot, and stop there. This project is interested in what comes before and after that picture.
 
-The main objective is to extract latent common factors with **Principal Component Analysis (PCA)** and related spectral methods, then study whether the residual components show useful structure such as:
+We start from one-minute SIP market data for a group of large U.S. financial stocks. The first job is to build a synchronized return panel without hiding the difficult parts of the data: missing bars, feed gaps, early closes, trading halts, and extreme market moves. Once that foundation is reliable, we use PCA and related methods to understand how much of the cross-sectional movement is genuinely common across the stocks.
 
-- mean reversion,
-- persistence,
-- lead-lag effects,
-- regime dependence,
-- changing correlation patterns,
-- and short-horizon predictability.
+The longer-term question is whether anything left after removing the broad common factors has a stable structure. If residual movements show persistence, mean reversion, or lead-lag relationships, they may deserve further research. That signal would still need to survive walk-forward testing, realistic transaction costs, and an honest out-of-sample evaluation before it could be considered useful.
 
-The project focuses heavily on **data quality, synchronization, covariance estimation, and out-of-sample robustness**.
+## Questions we want to answer
 
----
+The project is organized around a few practical research questions:
 
-## Research Idea
+1. When these financial stocks move together, how much of that movement can be explained by one dominant common factor?
+2. Does the factor structure become more concentrated during periods of market stress, such as the regional-bank crisis in March 2023?
+3. Are the results materially different when we use covariance PCA, which preserves volatility differences, versus correlation PCA, which puts the securities on a comparable scale?
+4. After removing broad market and financial-sector exposure through SPY and XLF, is there still a meaningful internal structure among the financial stocks?
+5. Do the residual components contain any repeatable short-horizon behavior, or do they look like noise once data quality and multiple testing are taken seriously?
 
-At each minute $t$, the vector of financial-stock returns is
+The project is descriptive first and predictive later. No residual pattern will be treated as an alpha signal until it has been tested out of sample and after trading frictions have been included.
 
-$$
-\mathbf{r}_t =
-\begin{bmatrix}
-r_{1,t} \\
-r_{2,t} \\
-\vdots \\
-r_{N,t}
-\end{bmatrix}
-\in \mathbb{R}^{N}
-$$
+## Data scope
 
-The covariance matrix of returns is
+Historical data comes from Alpaca Market Data using the SIP feed.
 
-$$
-\Sigma = \operatorname{Cov}(\mathbf{r}_t)
-$$
+| Item | Choice |
+| --- | --- |
+| Frequency | 1-minute bars |
+| Fields | timestamp, open, high, low, close, volume, trade_count, vwap |
+| Period | 2023-01-01 through 2026-09-09 |
+| Sessions | 924 regular U.S. trading sessions |
+| Normal session | 09:30 to 16:00 America/New_York |
+| Expected full-session bars | 390 per symbol, adjusted for early closes |
 
-PCA solves the eigenvalue problem
+The market calendar supplied by Alpaca is used to handle early-close sessions rather than assuming that every day has exactly 390 observations.
 
-$$
-\Sigma \mathbf{v}_k = \lambda_k \mathbf{v}_k
-$$
+### Instruments
 
-where:
-
-- $\mathbf{v}_k$ is the eigenvector associated with the $k$-th principal component;
-- $\lambda_k$ is the corresponding eigenvalue;
-- $\lambda_k$ measures the variance explained by that component.
-
-The return of the $k$-th statistical factor is defined as
-
-$$
-f_{k,t} = \mathbf{v}_k^\top \mathbf{r}_t
-$$
-
-The analysis will study both the dominant factors and the residual dynamics left after removing them.
-
----
-
-# Dataset
-
-Historical market data is retrieved from **Alpaca Market Data** using the SIP feed.
-
-Frequency:
+The downloaded universe contains 18 financial stocks and two broad benchmarks:
 
 ```text
-1-minute OHLCV
-```
-
-Available fields:
-
-```text
-timestamp
-open
-high
-low
-close
-volume
-trade_count
-vwap
-```
-
-Period:
-
-```text
-2023-01-01
-to
-2026-09-09
-```
-
-Only regular U.S. trading sessions are used.
-
-Normal trading hours:
-
-```text
-09:30 – 16:00 America/New_York
-```
-
-Early-close sessions are handled through the actual market calendar.
-
-The downloaded dataset contains:
-
-```text
-924 trading sessions
-~358,920 expected minute observations per symbol
-```
-
----
-
-# Universe
-
-Current financial universe:
-
-```text
-BAC
-COF
-JPM
-HBAN
-WFC
-USB
-RF
-SCHW
-C
-AXP
-TFC
-FITB
-KEY
-GS
-MS
-FHN
-CFG
-SYF
-```
+Financial stocks:
+BAC, COF, JPM, HBAN, WFC, USB, RF, SCHW, C, AXP,
+TFC, FITB, KEY, GS, MS, FHN, CFG, SYF
 
 Benchmarks:
-
-```text
-XLF
-SPY
+XLF, SPY
 ```
 
-The final PCA universe may be narrower depending on economic comparability and data quality.
+The analysis uses two explicit universes:
 
----
+| Universe | Constituents | Purpose |
+| --- | ---: | --- |
+| CORE | 12 | Primary PCA specification with high retention and a coherent bank/financial cross-section |
+| FULL | 18 | Robustness check that includes all downloaded financial stocks |
 
-# Data Quality
+CORE contains `JPM`, `BAC`, `WFC`, `C`, `USB`, `TFC`, `KEY`, `RF`, `FITB`, `CFG`, `HBAN`, and `MS`.
 
-Before estimating any covariance matrix, the full dataset was checked for missing one-minute bars.
+FULL contains all 18 financial stocks listed above. SPY and XLF remain available as benchmarks and residualization factors, but are not part of either stock universe.
 
-Coverage is defined as
+## Data-quality decisions
 
-$$
-C_i =
-\frac{N_i^{\mathrm{observed}}}
-{N_i^{\mathrm{expected}}}
-$$
+Data treatment is part of the research, not a detail to hide. The following decisions are recorded explicitly so that later PCA results can be reproduced and challenged.
 
-Most securities show extremely high coverage.
+### Common feed gap
 
-Representative results:
+Between 09:52 and 09:55 ET on 2023-06-05, 18 of the 20 instruments were missing at the same time. This is treated as a systemic market-data gap. Those timestamps are removed globally rather than forward-filled across the panel.
 
-| Symbol | Coverage |
-| ------ | -------: |
-| BAC    | 99.999% |
-| JPM    | 99.998% |
-| USB    | 99.994% |
-| C      | 99.990% |
-| WFC    | 99.983% |
-| MS     | 99.934% |
-| CFG    | 99.866% |
-| COF    | 99.435% |
-| AXP    | 99.429% |
-| GS     | 98.413% |
+### Missing bar does not necessarily mean no trading
 
-The temporal structure of missing observations is also analyzed, since the same coverage percentage can come from very different market situations.
+A security can have no OHLC bar for a minute even though transactions were present in the raw SIP data. This was verified for GS on 2025-09-12 at 09:50 ET, where many odd-lot trades were present.
 
----
+Previous-tick sampling is used only to construct a synchronized price series. Returns directly affected by an imputed price are marked as contaminated and excluded from the complete PCA panel.
 
-# Missing-Bar Analysis
+If a price is missing at time `t`, both the synthetic return at `t` and the return at `t+1` are excluded. The second return may contain the whole move accumulated since the last observed price.
 
-A minute-by-symbol missing-data matrix was created:
+### Known bad session
 
-$$
-M_{i,t} =
-\begin{cases}
-1, & \text{if the bar is missing} \\
-0, & \text{if the bar is observed}
-\end{cases}
-$$
+The full session on 2023-01-24 is removed from return analysis because of the NYSE opening-auction malfunction and subsequent trade cancellations. The large early-session moves from that day are not treated as ordinary observations.
 
-This allows missing observations to be separated into three main categories.
+### Stress periods and extreme returns
 
-## Systemic Data Gaps
+The March 2023 regional-bank crisis remains in the research data because it is economically meaningful for the questions we are asking. Large returns are not clipped or winsorized automatically. They are investigated first to determine whether they reflect real market events, data problems, or a security-specific halt.
 
-On **2023-06-05 between 09:52 and 09:55 ET**, 18 instruments were simultaneously missing, including SPY, XLF, JPM, and BAC.
+## Data layout
 
-These timestamps are treated as common market-data gaps and removed from the full panel.
-
-## Security-Specific Gaps
-
-Some securities have isolated missing bars while the rest of the market is trading normally.
-
-This appears more often in names such as:
-
-```text
-GS
-AXP
-COF
-FHN
-SYF
-```
-
-A missing OHLC bar can occur even when transactions happened during that minute, depending on SIP trade conditions and bar-construction rules.
-
-Short isolated gaps can therefore be handled through previous-tick price sampling while keeping an explicit imputation flag.
-
-## Trading Halts and Stress Events
-
-Long contiguous gaps are handled separately.
-
-A clear example appears on **2023-03-13**, during the regional banking crisis, with missing intervals affecting names such as:
-
-```text
-SCHW
-RF
-FHN
-KEY
-```
-
-These periods are treated as special market events and tracked with dedicated flags.
-
----
-
-# Data Structure
-
-Raw observations are stored as compressed Parquet files and kept unchanged.
+Raw observations are stored as compressed Parquet files and are treated as immutable.
 
 ```text
 alpaca_us_banks_1m/
-│
 ├── raw/
-│   └── by_symbol/
-├── chunks/
+│   └── by_symbol/              raw one-minute files, one per instrument
+├── chunks/                     monthly download chunks and completion markers
 ├── metadata/
 │   └── market_calendar.csv
 ├── reports/
@@ -263,14 +111,11 @@ alpaca_us_banks_1m/
     └── return_full.parquet
 ```
 
-The raw Parquet files are immutable. Intermediate files are rebuilt by the
-preprocessing step, while the processed files are the cleaned research inputs.
+The raw and generated data folders are excluded from Git through `.gitignore`. This keeps the code repository small and avoids treating a large local research dataset as source code.
 
----
+## Preprocessing pipeline
 
-# Preprocessing Pipeline
-
-The planned preprocessing pipeline is:
+The pipeline follows a simple sequence:
 
 ```text
 Raw SIP minute bars
@@ -279,279 +124,187 @@ Market-calendar alignment
         ↓
 Systemic-gap removal
         ↓
-Missing-bar classification
+Missing-bar inspection
         ↓
-Corporate-action handling
+Cross-sectional price synchronization
         ↓
-Cross-sectional synchronization
+Within-session log returns
         ↓
-Short-gap treatment
+Contamination masking
         ↓
-1-minute log returns
+Complete CORE and FULL panels
         ↓
-Intraday seasonality normalization
-        ↓
-SPY / XLF residualization
-        ↓
-PCA
+Baseline PCA
 ```
 
-One-minute log returns are defined as
+The scripts deliberately keep the stages separate. Each step reads the previous stage's output and writes a named artifact that can be inspected or reused later.
 
-$$
-r_{i,t}
-=
-\log P_{i,t}
--
-\log P_{i,t-1}
-=
-\log\left(
-\frac{P_{i,t}}{P_{i,t-1}}
-\right)
-$$
+### One-minute returns
 
-Returns are calculated within each trading session so that overnight moves do not become artificial one-minute observations.
-
----
-
-# Intraday Normalization
-
-Intraday volatility changes significantly during the session, with higher activity near the market open and close.
-
-Minute-of-day volatility is estimated as
-
-$$
-\sigma_i(m)
-=
-\operatorname{StdDev}
-\left(
-r_{i,t}
-\mid
-m_t = m
-\right)
-$$
-
-where $m_t$ denotes the minute of the trading session associated with observation $t$.
-
-Normalized returns can then be constructed as
-
-$$
-\tilde{r}_{i,t}
-=
-\frac{r_{i,t}}
-{\sigma_i(m_t)}
-$$
-
-This helps prevent highly volatile parts of the session from dominating covariance estimation.
-
----
-
-# Market and Sector Residualization
-
-A second specification removes broad market and sector exposure through the regression
-
-$$
-r_{i,t}
-=
-\alpha_i
-+
-\beta_{i,M} r_{\mathrm{SPY},t}
-+
-\beta_{i,F} r_{\mathrm{XLF},t}
-+
-\varepsilon_{i,t}
-$$
-
-The estimated residual return is
-
-$$
-\hat{\varepsilon}_{i,t}
-=
-r_{i,t}
--
-\hat{\alpha}_i
--
-\hat{\beta}_{i,M} r_{\mathrm{SPY},t}
--
-\hat{\beta}_{i,F} r_{\mathrm{XLF},t}
-$$
-
-PCA will then be compared across:
+For security `i` and minute `t`, the return is:
 
 ```text
-raw returns
-vs
-SPY/XLF residual returns
+r_i,t = log(P_i,t) - log(P_i,t-1)
 ```
 
----
+Returns are calculated within each trading session. The first minute of every session is set to missing so that the overnight close-to-open move is not mixed into a one-minute intraday return.
 
-# PCA and Extensions
+## PCA methodology
 
-Given the cleaned return matrix
-
-$$
-R =
-\begin{bmatrix}
-\mathbf{r}_1^\top \\
-\mathbf{r}_2^\top \\
-\vdots \\
-\mathbf{r}_T^\top
-\end{bmatrix}
-\in \mathbb{R}^{T \times N}
-$$
-
-the sample covariance matrix is
-
-$$
-\Sigma
-=
-\frac{1}{T-1}
-R^\top R
-$$
-
-assuming that the return matrix has been centered.
-
-The covariance matrix is decomposed as
-
-$$
-\Sigma
-=
-V \Lambda V^\top
-$$
-
-where:
-
-- $V$ contains the eigenvectors;
-- $\Lambda$ is the diagonal matrix of eigenvalues.
-
-The project will study:
-
-- eigenvalue spectrum,
-- explained variance,
-- eigenvector loadings,
-- eigenportfolio returns,
-- rolling PCA,
-- eigenvector stability,
-- covariance shrinkage,
-- random-matrix noise diagnostics,
-- residual mean reversion,
-- regime changes,
-- lead-lag relationships.
-
-Stress periods such as the March 2023 banking crisis will also be analyzed separately.
-
----
-
-# Robustness Tests
-
-Results will be compared across different specifications:
+Let `r_t` be the vector of stock returns at minute `t`. PCA starts from the covariance matrix:
 
 ```text
-Core high-coverage universe
-vs
-Full universe
-
-Raw returns
-vs
-Intraday-normalized returns
-
-Raw returns
-vs
-SPY/XLF residual returns
-
-Sample covariance
-vs
-Shrinkage covariance
-
-1-minute frequency
-vs
-5-minute aggregation
+Sigma = Cov(r_t)
+Sigma v_k = lambda_k v_k
 ```
 
-These comparisons help measure how sensitive the PCA structure is to data treatment and model specification.
+Here, `v_k` is the loading vector for component `k`, and `lambda_k` is the amount of variance associated with that component. The corresponding statistical factor return is:
 
----
+```text
+f_k,t = v_k' r_t
+```
 
-# Current Status
+### Covariance PCA
+
+Covariance PCA works with centered returns and preserves the original volatility scale of each security. Higher-volatility stocks therefore have more influence on the estimated covariance structure.
+
+### Correlation PCA
+
+Correlation PCA first standardizes each security:
+
+```text
+z_i,t = (r_i,t - mu_i) / sigma_i
+```
+
+This gives each stock comparable marginal volatility and makes the result more focused on co-movement than on differences in individual volatility. It is the main baseline specification because volatility levels differ materially across the universe.
+
+The first baseline comparison will save eigenvalues, explained-variance ratios, cumulative explained variance, loadings for PC1 through PC3, the correlation matrix, and the associated plots.
+
+## Market and sector residualization
+
+After the raw-return baseline, broad market and financial-sector exposure will be removed using SPY and XLF:
+
+```text
+r_i,t = alpha_i
+        + beta_i,M * r_SPY,t
+        + beta_i,F * r_XLF,t
+        + epsilon_i,t
+```
+
+The residuals are the part of each stock's return that is not explained by those two benchmark returns. PCA on the residual matrix will then be compared with PCA on the original returns.
+
+This comparison is intended to answer a specific question: does the financial-stock universe contain internal structure that is hidden by broad market and sector exposure?
+
+## Research roadmap
+
+### 1. Baseline PCA
+
+Run covariance and correlation PCA on `return_core.parquet` before applying any intraday normalization. This gives us a transparent reference point and lets us understand the raw geometry of the data before adding more choices.
+
+### 2. Intraday seasonality
+
+Volatility is usually higher near the open and close. We will estimate volatility by minute of day for each security and repeat PCA on returns scaled by that intraday profile. The goal is to see whether the apparent factor structure is being driven mainly by the market clock.
+
+### 3. Market and sector residuals
+
+We will remove SPY and XLF exposure and compare the residual eigenstructure with the raw-return result. Any interpretation of a residual component will be based on its actual loadings and constituent composition, not on intuition alone.
+
+### 4. Rolling and stress-regime analysis
+
+Rolling PCA will track eigenvalues, PC1 explained variance, loading stability, and eigenvector rotation through time. Stress windows such as March 2023 will be examined separately to test whether correlation rises and effective cross-sectional dimensionality falls during crisis conditions.
+
+When comparing eigenvectors across windows, the sign is normalized through an absolute dot product because the sign of an eigenvector is arbitrary.
+
+```text
+similarity_k(t, t + delta) = abs(v_k(t)' v_k(t + delta))
+```
+
+### 5. Covariance estimation and random-matrix diagnostics
+
+Sample covariance will be compared with shrinkage estimators such as Ledoit-Wolf, and potentially with exponentially weighted covariance. Random Matrix Theory will be used as a diagnostic benchmark for separating strong empirical components from noise. The Marchenko-Pastur distribution will not be treated as literal truth because the returns are not iid Gaussian observations.
+
+### 6. Residual dynamics and out-of-sample testing
+
+Only after the factor structure is understood will we study autocorrelation, mean reversion, stationarity, lead-lag relationships, and short-horizon forecasting. Any apparent signal must be evaluated walk-forward, out of sample, and with realistic transaction costs.
+
+## Robustness checks
+
+The main comparisons are:
+
+```text
+CORE universe             vs FULL universe
+Covariance PCA             vs Correlation PCA
+Raw returns                vs Intraday-normalized returns
+Raw returns                vs SPY/XLF residual returns
+1-minute data              vs 5-minute aggregation
+Sample covariance          vs Shrinkage covariance
+All periods                vs Stress periods excluded
+Full-quality names         vs Lower-coverage names such as GS
+```
+
+The purpose of these checks is not to accumulate techniques. It is to understand which conclusions survive reasonable changes in data treatment and model specification.
+
+## Current status
 
 Completed:
 
-- [x] Historical SIP data download
-- [x] 2023–2026 dataset construction
-- [x] Market-calendar and early-close handling
-- [x] Monthly chunking and resume support
-- [x] Per-symbol and per-day data-quality reports
-- [x] Missing-data matrix
-- [x] Systemic-gap detection
-- [x] Initial classification of security-specific gaps
-- [x] Synchronized price and return matrices
-- [x] Contamination masking and complete-panel construction
-- [x] CORE and FULL research universes
+- Historical SIP data acquisition
+- Official session-calendar handling, including early closes
+- Monthly download chunking and resume support
+- Per-symbol and per-day data-quality reports
+- Minute-level missing-data matrix and systemic-gap detection
+- Initial classification of security-specific missing bars and stress intervals
+- Within-session log-return construction
+- Contaminated-return masking
+- Complete-panel construction
+- CORE and FULL research datasets
+- Initial code cleanup and local Git versioning
 
-In progress:
+Next:
 
-- [ ] Baseline covariance and correlation PCA
-- [ ] Outlier and invalid-value review
+- Run the baseline covariance-versus-correlation PCA
+- Inspect the eigenstructure and loadings before adding normalization or residualization
+- Review the remaining outliers and invalid-value checks
 
-Planned:
+Later:
 
-- [ ] Static and rolling PCA
-- [ ] Eigenportfolio analysis
-- [ ] Eigenvalue and eigenvector stability
-- [ ] Shrinkage covariance
-- [ ] Random Matrix Theory diagnostics
-- [ ] Residual dynamics
-- [ ] Walk-forward testing
-- [ ] Transaction-cost analysis
+- Intraday normalization
+- SPY/XLF residualization
+- Rolling PCA and stress-regime comparison
+- Shrinkage covariance
+- Random-matrix diagnostics
+- Residual dynamics
+- Walk-forward testing and transaction-cost analysis
 
----
+## Reproducibility
 
-# Reproducibility
-
-API credentials are read from environment variables:
+The downloader reads credentials from environment variables:
 
 ```text
 ALPACA_API_KEY
 ALPACA_SECRET_KEY
 ```
 
-Suggested `.gitignore`:
+Install the Python dependencies listed in `requirements.txt`. The current scripts can then be run from the project root in this order:
 
 ```text
-.env
-.venv/
-__pycache__/
-
-alpaca_us_banks_1m/chunks/
-alpaca_us_banks_1m/raw/
-alpaca_us_banks_1m/intermediate/
-alpaca_us_banks_1m/processed/
-
-*.parquet
+01-crwal.py             download or resume raw SIP data and build reports
+02-inspect_missing.py   inspect the minute-by-symbol missing matrix
+03-preprocess.py       build synchronized prices and returns
+04-check_returns.py    inspect return distributions and extremes
+05-clean_returns.py    remove bad sessions and contaminated returns
+06_save_universes.py   save the CORE and FULL research panels
 ```
 
-Main technologies:
+The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
 
-```text
-Python
-pandas
-NumPy
-SciPy
-scikit-learn
-statsmodels
-PyArrow
-Alpaca Market Data
-```
+## Research principles
 
----
-
-# Goal
-
-The final objective is to understand the latent structure of intraday financial-stock returns and test whether the information left outside the dominant common factors contains stable predictive structure.
-
-The main questions are:
-
-1. **Which common statistical factors dominate intraday U.S. financial stocks?**
-2. **How stable are these factors across time and stress regimes?**
-3. **Do residual components contain exploitable short-horizon structure?**
+- Never overwrite raw Alpaca Parquet files during analysis.
+- Do not interpret a missing OHLC bar as proof that no trades occurred.
+- Do not mix overnight returns with one-minute intraday returns.
+- Do not clip extreme returns without investigating their economic or data origin.
+- Avoid look-ahead bias in any future predictive experiment.
+- Remember that PCA eigenvector signs are arbitrary.
+- Support economic labels with actual loadings and constituent composition.
+- Treat the CORE universe as the primary specification and the FULL universe as a robustness check.

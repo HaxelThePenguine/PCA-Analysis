@@ -5,4 +5,4 @@ pandas
 pyarrow
 scikit-learn
 scipy
-
+statsmodels
