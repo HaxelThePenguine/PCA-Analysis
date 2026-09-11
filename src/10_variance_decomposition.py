@@ -1,5 +1,10 @@
 """Decompose stock variance into SPY/XLF and residual PCA components."""
 
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -16,7 +21,9 @@ from config import (
     RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
+from data_utils import load_panel, save_csv_tables
 from pca_utils import fit_pca
+from plotting_utils import save_figure, style_axis
 
 
 OUT_DIR = REPORTS_DIR / "variance_decomposition"
@@ -35,7 +42,10 @@ GROUP_LABELS = [
 GROUP_COLORS = ["#2f6690", "#d99a2b", "#e07a5f", "#9aa58b"]
 
 
-def build_variance_ledger(complete_panel, stocks):
+def build_variance_ledger(
+    complete_panel: pd.DataFrame,
+    stocks: Sequence[str],
+) -> dict[str, Any]:
     """Fit benchmarks and split each stock's variance into additive parts."""
 
     benchmark_result = residualize_against_benchmarks(
@@ -45,7 +55,8 @@ def build_variance_ledger(complete_panel, stocks):
     fitted_returns = benchmark_result["fitted_returns"]
     residual_returns = benchmark_result["residual_returns"]
 
-    raw_variance = complete_panel[stocks].var(ddof=1)
+    stock_columns = list(stocks)
+    raw_variance = complete_panel[stock_columns].var(ddof=1)
     benchmark_variance = fitted_returns.var(ddof=1)
     residual_variance = residual_returns.var(ddof=1)
 
@@ -64,7 +75,7 @@ def build_variance_ledger(complete_panel, stocks):
     ]
     component_variance = pd.DataFrame(
         component_variance,
-        index=stocks,
+        index=stock_columns,
         columns=component_labels,
     )
     component_pct = component_variance.divide(
@@ -111,7 +122,7 @@ def build_variance_ledger(complete_panel, stocks):
     }
 
 
-def build_global_summary(results):
+def build_global_summary(results: dict[str, Any]) -> pd.DataFrame:
     """Aggregate the decomposition using total variance as the denominator."""
 
     raw_total = results["raw_variance"].sum()
@@ -139,7 +150,10 @@ def build_global_summary(results):
     return summary
 
 
-def plot_stock_decomposition(ledger, complete_panel):
+def plot_stock_decomposition(
+    ledger: pd.DataFrame,
+    complete_panel: pd.DataFrame,
+) -> None:
     """Save a 100% stacked bar chart for the twelve stocks."""
 
     figure, axis = plt.subplots(figsize=(11, 7))
@@ -180,10 +194,12 @@ def plot_stock_decomposition(ledger, complete_panel):
     axis.set_xlabel("Percentage of raw variance")
     axis.set_xlim(0, 100)
     axis.set_xticks([0, 25, 50, 75, 100])
-    axis.grid(axis="x", color="#d9d9d9", linewidth=0.7)
-    axis.set_axisbelow(True)
-    axis.spines["top"].set_visible(False)
-    axis.spines["right"].set_visible(False)
+    style_axis(
+        axis,
+        grid_axis="x",
+        grid_color="#d9d9d9",
+        grid_linewidth=0.7,
+    )
     axis.legend(
         loc="lower center",
         bbox_to_anchor=(0.5, -0.2),
@@ -191,11 +207,10 @@ def plot_stock_decomposition(ledger, complete_panel):
         frameon=False,
     )
     figure.tight_layout()
-    figure.savefig(OUT_DIR / "10_variance_decomposition_by_stock.png", dpi=180)
-    plt.close(figure)
+    save_figure(figure, OUT_DIR / "10_variance_decomposition_by_stock.png")
 
 
-def plot_global_decomposition(summary):
+def plot_global_decomposition(summary: pd.DataFrame) -> None:
     """Save the same decomposition aggregated across the full universe."""
 
     figure, axis = plt.subplots(figsize=(10, 4.0))
@@ -240,10 +255,12 @@ def plot_global_decomposition(summary):
     axis.set_xlim(0, 100)
     axis.set_xlabel("Percentage of raw variance")
     axis.set_xticks([0, 25, 50, 75, 100])
-    axis.grid(axis="x", color="#d9d9d9", linewidth=0.7)
-    axis.set_axisbelow(True)
-    axis.spines["top"].set_visible(False)
-    axis.spines["right"].set_visible(False)
+    style_axis(
+        axis,
+        grid_axis="x",
+        grid_color="#d9d9d9",
+        grid_linewidth=0.7,
+    )
     figure.legend(
         loc="lower center",
         bbox_to_anchor=(0.5, 0.03),
@@ -251,42 +268,39 @@ def plot_global_decomposition(summary):
         frameon=False,
     )
     figure.subplots_adjust(left=0.13, right=0.98, top=0.78, bottom=0.34)
-    figure.savefig(OUT_DIR / "10_variance_decomposition_global.png", dpi=180)
-    plt.close(figure)
+    save_figure(figure, OUT_DIR / "10_variance_decomposition_global.png")
 
 
-def main():
+def main() -> None:
     ensure_project_directories()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    all_returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)
     stocks = list(CORE_UNIVERSE)
     required = stocks + list(BENCHMARKS)
-    missing = [symbol for symbol in required if symbol not in all_returns.columns]
-    if missing:
-        raise ValueError(f"Missing columns: {missing}")
-
-    panel = all_returns.loc[:, required]
-    complete_panel = panel.dropna(how="any")
-    if complete_panel.index.has_duplicates:
-        raise ValueError("The benchmark panel contains duplicate index values.")
-    if not complete_panel.index.is_monotonic_increasing:
-        raise ValueError("The benchmark panel index is not sorted.")
+    complete_panel = load_panel(
+        RETURN_MATRIX_CLEAN_FILE,
+        required,
+        context="Benchmark panel",
+        drop_incomplete=True,
+    )
 
     results = build_variance_ledger(complete_panel, stocks)
     ledger = results["ledger"]
     global_summary = build_global_summary(results)
 
-    ledger.to_csv(OUT_DIR / "10_variance_ledger.csv")
-    results["component_variance"].to_csv(
-        OUT_DIR / "10_residual_pc_contributions_variance.csv"
-    )
-    results["component_pct"].to_csv(
-        OUT_DIR / "10_residual_pc_contributions_pct_of_raw.csv"
-    )
-    global_summary.to_csv(OUT_DIR / "10_global_variance_decomposition.csv")
-    results["residual_covariance"].to_csv(
-        OUT_DIR / "10_residual_covariance_matrix.csv"
+    save_csv_tables(
+        {
+            "10_variance_ledger.csv": ledger,
+            "10_residual_pc_contributions_variance.csv": results[
+                "component_variance"
+            ],
+            "10_residual_pc_contributions_pct_of_raw.csv": results[
+                "component_pct"
+            ],
+            "10_global_variance_decomposition.csv": global_summary,
+            "10_residual_covariance_matrix.csv": results["residual_covariance"],
+        },
+        OUT_DIR,
     )
 
     plot_stock_decomposition(ledger, complete_panel)
@@ -303,9 +317,13 @@ def main():
         "\nMaximum error in raw = benchmark + residual identity:",
         f"{ledger['variance_identity_error'].max():.3e}",
     )
+    residual_component_error = (
+        results["component_variance"].sum(axis=1)
+        - results["residual_variance"]
+    ).abs().max()
     print(
         "Maximum error in residual component sum = residual variance:",
-        f"{(results['component_variance'].sum(axis=1) - results['residual_variance']).abs().max():.3e}",
+        f"{residual_component_error:.3e}",
     )
     print(f"\nOutputs saved to: {OUT_DIR}")
 

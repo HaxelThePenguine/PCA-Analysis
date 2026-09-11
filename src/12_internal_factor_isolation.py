@@ -1,5 +1,9 @@
 """Compare PCA, Varimax, and Elastic-Net Sparse PCA factor structures."""
 
+from __future__ import annotations
+
+from typing import Any
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -9,7 +13,7 @@ from matplotlib.colors import TwoSlopeNorm
 import numpy as np
 import pandas as pd
 
-from benchmark_utils import residualize_against_benchmarks
+from benchmark_utils import ResidualizationResult, residualize_against_benchmarks
 from config import (
     BENCHMARKS,
     CORE_UNIVERSE,
@@ -17,11 +21,14 @@ from config import (
     RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
+from data_utils import load_panel
 from pca_utils import (
+    PCAResult,
     fit_elastic_net_sparse_pca,
     fit_pca,
     fit_varimax,
 )
+from plotting_utils import save_figure, style_axis
 
 
 OUT_DIR = REPORTS_DIR / "internal_factor_isolation"
@@ -38,26 +45,21 @@ METHOD_COLORS = {
 }
 
 
-def load_complete_panel():
+def load_complete_panel() -> pd.DataFrame:
     """Load the complete CORE plus benchmark panel used by this study."""
 
-    all_returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)
     required = STOCKS + list(BENCHMARKS)
-    missing = [column for column in required if column not in all_returns.columns]
-    if missing:
-        raise ValueError(f"Missing columns: {missing}")
-
-    panel = all_returns.loc[:, required].dropna(how="any")
-    if panel.empty:
-        raise ValueError("The complete benchmark panel is empty.")
-    if panel.isna().any().any():
-        raise ValueError("The complete benchmark panel contains NaN values.")
-    if panel.index.has_duplicates or not panel.index.is_monotonic_increasing:
-        raise ValueError("The complete benchmark panel index is invalid.")
-    return panel
+    return load_panel(
+        RETURN_MATRIX_CLEAN_FILE,
+        required,
+        context="Complete benchmark panel",
+        drop_incomplete=True,
+    )
 
 
-def build_factor_panels(panel):
+def build_factor_panels(
+    panel: pd.DataFrame,
+) -> tuple[dict[str, pd.DataFrame], ResidualizationResult]:
     """Return raw and benchmark-residualized stock panels."""
 
     residualization = residualize_against_benchmarks(panel, stocks=STOCKS)
@@ -67,7 +69,12 @@ def build_factor_panels(panel):
     }, residualization
 
 
-def loading_rows(transformation, method, weights, loadings):
+def loading_rows(
+    transformation: str,
+    method: str,
+    weights: pd.DataFrame,
+    loadings: pd.DataFrame,
+) -> list[dict[str, Any]]:
     """Convert a factor loading matrix into a tidy table."""
 
     rows = []
@@ -91,14 +98,14 @@ def loading_rows(transformation, method, weights, loadings):
 
 
 def method_metrics(
-    transformation,
-    method,
-    component_names,
-    weights,
-    reconstruction_pct,
-    score_correlation,
-    explained=None,
-):
+    transformation: str,
+    method: str,
+    component_names: list[str],
+    weights: pd.DataFrame,
+    reconstruction_pct: float,
+    score_correlation: pd.DataFrame,
+    explained: np.ndarray | None = None,
+) -> list[dict[str, Any]]:
     """Summarize interpretability and reconstruction diagnostics."""
 
     rows = []
@@ -134,7 +141,10 @@ def method_metrics(
     return rows
 
 
-def fit_transformation(transformation, data):
+def fit_transformation(
+    transformation: str,
+    data: pd.DataFrame,
+) -> dict[str, Any]:
     """Fit all requested factor views for one stock transformation."""
 
     pca_result = fit_pca(data, method="correlation")
@@ -248,7 +258,11 @@ def fit_transformation(transformation, data):
     }
 
 
-def fit_sparse_penalty_path(transformation, data, pca_result):
+def fit_sparse_penalty_path(
+    transformation: str,
+    data: pd.DataFrame,
+    pca_result: PCAResult,
+) -> list[dict[str, Any]]:
     """Evaluate Lasso and Elastic-Net sparsity/reconstruction trade-offs."""
 
     rows = []
@@ -286,14 +300,7 @@ def fit_sparse_penalty_path(transformation, data, pca_result):
     return rows
 
 
-def style_axis(axis, grid_axis="y"):
-    axis.grid(axis=grid_axis, color=GRID_COLOR, linewidth=0.8)
-    axis.set_axisbelow(True)
-    axis.spines["top"].set_visible(False)
-    axis.spines["right"].set_visible(False)
-
-
-def plot_loading_heatmaps(loadings):
+def plot_loading_heatmaps(loadings: pd.DataFrame) -> None:
     """Compare standard, rotated, and sparse loading structures."""
 
     transformations = ["raw", "benchmark_residual"]
@@ -389,15 +396,14 @@ def plot_loading_heatmaps(loadings):
         wspace=0.26,
         hspace=0.30,
     )
-    figure.savefig(
+    save_figure(
+        figure,
         OUT_DIR / "12_factor_loading_heatmaps.png",
-        dpi=180,
-        bbox_inches="tight",
+        tight_bbox=True,
     )
-    plt.close(figure)
 
 
-def plot_sparse_path(path):
+def plot_sparse_path(path: pd.DataFrame) -> None:
     """Plot the sparsity/reconstruction trade-off for both penalties."""
 
     figure, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=False)
@@ -433,10 +439,7 @@ def plot_sparse_path(path):
         upper = max(values_for_axis) + 0.03
         axis.set_ylim(lower, upper)
         axis.set_ylabel("Reconstruction variance retained (%)")
-        axis.grid(axis="y", color=GRID_COLOR, linewidth=0.8)
-        axis.set_axisbelow(True)
-        axis.spines["top"].set_visible(False)
-        axis.spines["right"].set_visible(False)
+        style_axis(axis, grid_color=GRID_COLOR)
     handles, labels = axes[0].get_legend_handles_labels()
     figure.legend(
         handles,
@@ -467,15 +470,14 @@ def plot_sparse_path(path):
         top=0.74,
         wspace=0.12,
     )
-    figure.savefig(
+    save_figure(
+        figure,
         OUT_DIR / "12_sparse_penalty_path.png",
-        dpi=180,
-        bbox_inches="tight",
+        tight_bbox=True,
     )
-    plt.close(figure)
 
 
-def main():
+def main() -> None:
     ensure_project_directories()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -530,7 +532,7 @@ def main():
     print("=== INTERNAL FACTOR ISOLATION ===")
     print(f"Complete panel: {panel.shape}")
     print(f"Period: {panel.index[0]} -> {panel.index[-1]}")
-    print(f"Primary method: correlation PCA")
+    print("Primary method: correlation PCA")
     print(
         "Selected Sparse PCA penalties: "
         f"L1={SELECTED_L1:.2f}, L2={ELASTIC_NET_L2:.2f}"

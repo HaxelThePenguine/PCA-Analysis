@@ -1,5 +1,9 @@
 """Baseline covariance/correlation PCA on the CORE return panel."""
 
+from __future__ import annotations
+
+from collections.abc import Sequence
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -14,21 +18,23 @@ from config import (
     RETURN_CORE_FILE,
     ensure_project_directories,
 )
+from data_utils import load_panel, save_csv_tables
 from pca_utils import fit_pca, format_pca_summary
+from plotting_utils import save_figure, style_axis
 
 
 OUT_DIR = REPORTS_DIR / "pca_baseline"
 COLORS = {"cov": "#2F6B9A", "corr": "#C4933F", "grid": "#D9DEE5"}
 
 
-def style_axis(axis, grid_axis="y"):
-    axis.grid(axis=grid_axis, color=COLORS["grid"], linewidth=0.8)
-    axis.set_axisbelow(True)
-    axis.spines["top"].set_visible(False)
-    axis.spines["right"].set_visible(False)
-
-
-def save_line_plot(filename, title, ylabel, series, cumulative=False):
+def save_line_plot(
+    filename: str,
+    title: str,
+    ylabel: str,
+    series: Sequence[tuple[str, np.ndarray, str]],
+    *,
+    cumulative: bool = False,
+) -> None:
     components = np.arange(1, len(series[0][1]) + 1)
     fig, axis = plt.subplots(figsize=(8, 5))
 
@@ -51,13 +57,15 @@ def save_line_plot(filename, title, ylabel, series, cumulative=False):
     axis.set_ylabel(ylabel)
     axis.set_xticks(components)
     axis.legend(frameon=False)
-    style_axis(axis)
+    style_axis(axis, grid_color=COLORS["grid"])
     fig.tight_layout()
-    fig.savefig(OUT_DIR / filename, dpi=180, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, OUT_DIR / filename, tight_bbox=True)
 
 
-def save_pc1_plot(cov_loadings, corr_loadings):
+def save_pc1_plot(
+    cov_loadings: pd.DataFrame,
+    corr_loadings: pd.DataFrame,
+) -> None:
     order = corr_loadings["PC1"].sort_values().index
     positions = np.arange(len(order))
     width = 0.38
@@ -83,26 +91,20 @@ def save_pc1_plot(cov_loadings, corr_loadings):
     axis.set_yticks(positions)
     axis.set_yticklabels(order)
     axis.legend(frameon=False)
-    style_axis(axis, grid_axis="x")
+    style_axis(axis, grid_axis="x", grid_color=COLORS["grid"])
     fig.tight_layout()
-    fig.savefig(OUT_DIR / "07_pc1_loadings.png", dpi=180, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, OUT_DIR / "07_pc1_loadings.png", tight_bbox=True)
 
 
-def main():
+def main() -> None:
     ensure_project_directories()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    returns = pd.read_parquet(RETURN_CORE_FILE)
-    missing = [symbol for symbol in CORE_UNIVERSE if symbol not in returns.columns]
-    if missing:
-        raise ValueError(f"Incomplete CORE panel; missing symbols: {missing}")
-    returns = returns.loc[:, list(CORE_UNIVERSE)]
-
-    if returns.isna().any().any():
-        raise ValueError("The CORE panel contains NaN values.")
-    if returns.index.has_duplicates or not returns.index.is_monotonic_increasing:
-        raise ValueError("The CORE panel index is invalid.")
+    returns = load_panel(
+        RETURN_CORE_FILE,
+        CORE_UNIVERSE,
+        context="CORE panel",
+    )
 
     means = returns.mean()
     stds = returns.std(ddof=1)
@@ -143,7 +145,6 @@ def main():
     correlation = correlation_result.matrix
     correlation_diff = (correlation - returns.corr()).abs().to_numpy().max()
     corr_values = correlation_result.eigenvalues
-    corr_vectors = correlation_result.eigenvectors
     corr_explained = correlation_result.explained
     corr_summary = correlation_result.summary
     corr_loadings = correlation_result.weights.iloc[:, :3]
@@ -160,8 +161,7 @@ def main():
         "07_correlation_technical_loadings_pc1_pc3.csv": correlation_result.loadings.iloc[:, :3],
         "07_ticker_reconstruction.csv": ticker_summary,
     }
-    for filename, table in tables.items():
-        table.to_csv(OUT_DIR / filename)
+    save_csv_tables(tables, OUT_DIR)
 
     series = [
         ("Covariance", cov_explained, COLORS["cov"]),

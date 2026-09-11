@@ -4,6 +4,8 @@ All paths are resolved from the project root so the scripts can be run from
 the repository root, an IDE, or another working directory.
 """
 
+from __future__ import annotations
+
 from datetime import date, time
 from pathlib import Path
 
@@ -63,16 +65,19 @@ MISSING_MATRIX_FILE = REPORTS_DIR / "missing_matrix.parquet"
 COMMON_MISSING_GAPS_FILE = REPORTS_DIR / "common_missing_gaps.csv"
 
 
-def ensure_project_directories():
+PROJECT_DIRECTORIES = (
+    DATASET_DIR,
+    CHUNKS_DIR,
+    RAW_SYMBOL_DIR,
+    INTERMEDIATE_DIR,
+    PROCESSED_DIR,
+    REPORTS_DIR,
+    METADATA_DIR,
+)
+
+
+def ensure_project_directories() -> None:
     """Create only the project folders needed by the pipeline."""
 
-    for directory in (
-        DATASET_DIR,
-        CHUNKS_DIR,
-        RAW_SYMBOL_DIR,
-        INTERMEDIATE_DIR,
-        PROCESSED_DIR,
-        REPORTS_DIR,
-        METADATA_DIR,
-    ):
+    for directory in PROJECT_DIRECTORIES:
         directory.mkdir(parents=True, exist_ok=True)

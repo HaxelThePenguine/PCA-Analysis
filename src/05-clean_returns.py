@@ -1,3 +1,7 @@
+"""Remove known bad sessions and returns contaminated by missing candles."""
+
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 
@@ -11,94 +15,68 @@ from config import (
     ensure_project_directories,
 )
 
-ensure_project_directories()
 
-returns = pd.read_parquet(RETURN_MATRIX_FILE)
-missing = pd.read_parquet(MISSING_MASK_FILE)
+def build_contaminated_mask(
+    missing: pd.DataFrame,
+    returns: pd.DataFrame,
+) -> pd.DataFrame:
+    """Mark returns at and immediately after every forward-filled candle."""
 
-
-# ============================================================
-# 1. REMOVE KNOWN BAD MARKET-DATA DAY
-# ============================================================
-
-bad_session = pd.Index(returns.index.date).isin(BAD_SESSION_DATES)
-returns.loc[bad_session, :] = np.nan
-
-
-# ============================================================
-# 2. REMOVE RETURNS AFFECTED BY MISSING CANDLES
-# ============================================================
-
-# If candle t is missing:
-#
-# t     -> synthetic 0 return after forward fill
-# t+1   -> contains movement accumulated since last real price
-#
-# Therefore both returns are contaminated.
-
-missing = (
-    missing
-    .reindex(index=returns.index, columns=returns.columns)
-    .fillna(False)
-    .astype(bool)
-)
-contaminated = missing | missing.shift(1, fill_value=False)
-
-returns_clean = returns.mask(contaminated)
+    aligned = (
+        missing.reindex(index=returns.index, columns=returns.columns)
+        .fillna(False)
+        .astype(bool)
+    )
+    return aligned | aligned.shift(1, fill_value=False)
 
 
-# ============================================================
-# 3. COMPLETE CROSS-SECTIONAL PANEL
-# ============================================================
+def clean_returns(
+    returns: pd.DataFrame,
+    missing: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Apply the configured session and candle-contamination filters."""
 
-# PCA requires all securities observed at the same timestamp.
-#
-# We simply discard timestamps containing any NaN.
+    cleaned_input = returns.copy()
+    bad_session = pd.Index(cleaned_input.index.date).isin(BAD_SESSION_DATES)
+    cleaned_input.loc[bad_session, :] = np.nan
 
-returns_complete = returns_clean.dropna(how="any")
-
-
-# ============================================================
-# REPORT
-# ============================================================
-
-print("\n=== CLEANING REPORT ===\n")
-
-print(f"Original rows:       {len(returns):,}")
-print(f"Clean complete rows: {len(returns_complete):,}")
-
-removed = len(returns) - len(returns_complete)
-
-print(f"Removed rows:        {removed:,}")
-print(
-    f"Retained:            "
-    f"{100 * len(returns_complete) / len(returns):.2f}%"
-)
-
-print("\nMissing values after cleaning:")
-print(returns_complete.isna().sum())
+    contaminated = build_contaminated_mask(missing, cleaned_input)
+    cleaned = cleaned_input.mask(contaminated)
+    complete = cleaned.dropna(how="any")
+    return cleaned, complete, contaminated
 
 
-# ============================================================
-# SAVE
-# ============================================================
+def print_cleaning_report(original: pd.DataFrame, complete: pd.DataFrame) -> None:
+    """Print row retention and completeness diagnostics."""
 
-returns_clean.to_parquet(
-    RETURN_MATRIX_CLEAN_FILE,
-    compression="zstd",
-)
+    removed = len(original) - len(complete)
+    print("\n=== CLEANING REPORT ===\n")
+    print(f"Original rows:       {len(original):,}")
+    print(f"Clean complete rows: {len(complete):,}")
+    print(f"Removed rows:        {removed:,}")
+    print(f"Retained:            {100 * len(complete) / len(original):.2f}%")
+    print("\nMissing values after cleaning:")
+    print(complete.isna().sum())
 
-returns_complete.to_parquet(
-    RETURN_MATRIX_COMPLETE_FILE,
-    compression="zstd",
-)
 
-contaminated.to_parquet(
-    CONTAMINATED_MASK_FILE,
-    compression="zstd",
-)
+def main() -> None:
+    """Clean the raw return matrix and persist all masks and panels."""
 
-print("\nSaved:")
-print("return_matrix_clean.parquet")
-print("return_matrix_complete.parquet")
-print("contaminated_mask.parquet")
+    ensure_project_directories()
+    returns = pd.read_parquet(RETURN_MATRIX_FILE)
+    missing = pd.read_parquet(MISSING_MASK_FILE)
+    cleaned, complete, contaminated = clean_returns(returns, missing)
+
+    print_cleaning_report(returns, complete)
+    cleaned.to_parquet(RETURN_MATRIX_CLEAN_FILE, compression="zstd")
+    complete.to_parquet(RETURN_MATRIX_COMPLETE_FILE, compression="zstd")
+    contaminated.to_parquet(CONTAMINATED_MASK_FILE, compression="zstd")
+
+    print("\nSaved:")
+    print("return_matrix_clean.parquet")
+    print("return_matrix_complete.parquet")
+    print("contaminated_mask.parquet")
+
+
+if __name__ == "__main__":
+    main()

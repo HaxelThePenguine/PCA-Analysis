@@ -1,11 +1,14 @@
 """Descriptive rolling covariance and correlation PCA on the CORE panel."""
 
+from __future__ import annotations
+
 import matplotlib
 
 matplotlib.use("Agg")
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
 import numpy as np
 import pandas as pd
 
@@ -17,7 +20,9 @@ from config import (
     RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
+from data_utils import load_panel, normalize_intraday_volatility
 from pca_utils import fit_pca
+from plotting_utils import save_figure
 
 
 OUT_DIR = REPORTS_DIR / "rolling_pca"
@@ -43,27 +48,17 @@ GRID_COLOR = "#D9DEE5"
 STOCKS = list(CORE_UNIVERSE)
 
 
-def build_intraday_normalized_returns(stock_returns):
+def build_intraday_normalized_returns(
+    stock_returns: pd.DataFrame,
+) -> pd.DataFrame:
     """Normalize each ticker by its full-sample minute-of-day volatility profile."""
 
-    minute_from_open = pd.Series(
-        stock_returns.index.hour * 60
-        + stock_returns.index.minute
-        - (9 * 60 + 30),
-        index=stock_returns.index,
-    )
-    profile = stock_returns.groupby(minute_from_open).std(ddof=1)
-    scale = profile.loc[minute_from_open.to_numpy()].copy()
-    scale.index = stock_returns.index
-    if scale.isna().any().any() or (scale <= 0).any().any():
-        raise ValueError("Invalid intraday volatility profile.")
-    normalized = stock_returns.divide(scale)
-    if not np.isfinite(normalized.to_numpy()).all():
-        raise ValueError("Intraday-normalized returns contain non-finite values.")
-    return normalized
+    return normalize_intraday_volatility(stock_returns).normalized_returns
 
 
-def residualize_window(window_panel):
+def residualize_window(
+    window_panel: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Remove the SPY/XLF exposure estimated inside one rolling window."""
 
     benchmark_result = residualize_against_benchmarks(
@@ -83,7 +78,7 @@ def residualize_window(window_panel):
     return residuals, diagnostics
 
 
-def session_index(index):
+def session_index(index: pd.DatetimeIndex) -> tuple[pd.Index, np.ndarray]:
     """Return unique trading sessions and an integer session code per row."""
 
     dates = np.asarray(index.date)
@@ -91,7 +86,7 @@ def session_index(index):
     return pd.Index(sessions, name="session_date"), codes
 
 
-def rolling_starts(n_sessions, window_size):
+def rolling_starts(n_sessions: int, window_size: int) -> list[int]:
     """Return regular starts and always include the final trailing window."""
 
     last_start = n_sessions - window_size
@@ -103,7 +98,12 @@ def rolling_starts(n_sessions, window_size):
     return starts
 
 
-def collect_rolling_results(complete_panel, normalized_returns, sessions, codes):
+def collect_rolling_results(
+    complete_panel: pd.DataFrame,
+    normalized_returns: pd.DataFrame,
+    sessions: pd.Index,
+    codes: np.ndarray,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Run both PCA variants for each transformation and rolling window."""
 
     metrics = []
@@ -213,16 +213,20 @@ def collect_rolling_results(complete_panel, normalized_returns, sessions, codes)
     )
 
 
-def style_axis(axis):
+def style_axis(axis: Axes) -> None:
+    """Apply the project style plus concise date formatting."""
+
     axis.grid(axis="y", color=GRID_COLOR, linewidth=0.8)
     axis.set_axisbelow(True)
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
     axis.xaxis.set_major_locator(mdates.AutoDateLocator())
-    axis.xaxis.set_major_formatter(mdates.ConciseDateFormatter(axis.xaxis.get_major_locator()))
+    axis.xaxis.set_major_formatter(
+        mdates.ConciseDateFormatter(axis.xaxis.get_major_locator())
+    )
 
 
-def plot_correlation_metrics(metrics):
+def plot_correlation_metrics(metrics: pd.DataFrame) -> None:
     """Plot the main rolling correlation-PCA diagnostics."""
 
     correlation = metrics[metrics["pca_method"] == "correlation"]
@@ -286,15 +290,14 @@ def plot_correlation_metrics(metrics):
         fontsize=9,
     )
     figure.tight_layout(rect=[0, 0, 1, 0.94])
-    figure.savefig(
+    save_figure(
+        figure,
         OUT_DIR / "11_rolling_correlation_metrics.png",
-        dpi=180,
-        bbox_inches="tight",
+        tight_bbox=True,
     )
-    plt.close(figure)
 
 
-def plot_loading_stability(metrics):
+def plot_loading_stability(metrics: pd.DataFrame) -> None:
     """Plot sign-invariant PC1 similarity to the previous rolling window."""
 
     correlation = metrics[metrics["pca_method"] == "correlation"]
@@ -352,15 +355,14 @@ def plot_loading_stability(metrics):
         fontsize=9,
     )
     figure.tight_layout(rect=[0, 0, 1, 0.90])
-    figure.savefig(
+    save_figure(
+        figure,
         OUT_DIR / "11_pc1_loading_stability.png",
-        dpi=180,
-        bbox_inches="tight",
+        tight_bbox=True,
     )
-    plt.close(figure)
 
 
-def plot_benchmark_variance_removed(metrics):
+def plot_benchmark_variance_removed(metrics: pd.DataFrame) -> None:
     """Plot the average rolling variance share removed by SPY and XLF."""
 
     residual = metrics[
@@ -386,31 +388,24 @@ def plot_benchmark_variance_removed(metrics):
     axis.legend(frameon=False)
     style_axis(axis)
     figure.tight_layout()
-    figure.savefig(
+    save_figure(
+        figure,
         OUT_DIR / "11_benchmark_variance_removed.png",
-        dpi=180,
-        bbox_inches="tight",
+        tight_bbox=True,
     )
-    plt.close(figure)
 
 
-def main():
+def main() -> None:
     ensure_project_directories()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    all_returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)
     required = STOCKS + list(BENCHMARKS)
-    missing = [symbol for symbol in required if symbol not in all_returns.columns]
-    if missing:
-        raise ValueError(f"Missing columns: {missing}")
-
-    panel = all_returns.loc[:, required].dropna(how="any")
-    if panel.empty:
-        raise ValueError("The complete benchmark panel is empty.")
-    if panel.isna().any().any():
-        raise ValueError("The complete benchmark panel contains NaN values.")
-    if panel.index.has_duplicates or not panel.index.is_monotonic_increasing:
-        raise ValueError("The complete benchmark panel index is invalid.")
+    panel = load_panel(
+        RETURN_MATRIX_CLEAN_FILE,
+        required,
+        context="Complete benchmark panel",
+        drop_incomplete=True,
+    )
 
     sessions, codes = session_index(panel.index)
     if len(sessions) < max(WINDOWS):

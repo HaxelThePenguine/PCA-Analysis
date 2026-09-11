@@ -1,3 +1,7 @@
+"""Create complete CORE and FULL analysis universes."""
+
+from __future__ import annotations
+
 import pandas as pd
 
 from config import (
@@ -8,57 +12,46 @@ from config import (
     RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
+from data_utils import require_columns
 
 
-ensure_project_directories()
+def build_complete_universe(
+    returns: pd.DataFrame,
+    symbols: tuple[str, ...],
+) -> pd.DataFrame:
+    """Select an ordered universe and retain only complete timestamps."""
+
+    columns = require_columns(returns, symbols, context="Clean return matrix")
+    return returns.loc[:, columns].dropna(how="any")
 
 
-# ============================================================
-# LOAD
-# ============================================================
+def print_universe_summary(name: str, panel: pd.DataFrame) -> None:
+    """Print shape and completeness for one saved universe."""
 
-returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)
-
-
-# ============================================================
-# BUILD COMPLETE PANELS
-# ============================================================
-
-core = returns[list(CORE_UNIVERSE)].dropna(how="any")
-full = returns[list(FULL_UNIVERSE)].dropna(how="any")
+    print(f"\n{name}")
+    print(f"Shape: {panel.shape}")
+    print(f"Rows:  {len(panel):,}")
+    print(f"NaN:   {int(panel.isna().sum().sum())}")
 
 
-# ============================================================
-# SAVE
-# ============================================================
+def main() -> None:
+    """Build and save both configured analysis universes."""
 
-core.to_parquet(
-    RETURN_CORE_FILE,
-    compression="zstd",
-)
+    ensure_project_directories()
+    returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)
+    core = build_complete_universe(returns, CORE_UNIVERSE)
+    full = build_complete_universe(returns, FULL_UNIVERSE)
 
-full.to_parquet(
-    RETURN_FULL_FILE,
-    compression="zstd",
-)
+    core.to_parquet(RETURN_CORE_FILE, compression="zstd")
+    full.to_parquet(RETURN_FULL_FILE, compression="zstd")
+
+    print("\n=== DATASETS SAVED ===")
+    print_universe_summary("CORE", core)
+    print_universe_summary("FULL", full)
+    print("\nFiles:")
+    print(RETURN_CORE_FILE)
+    print(RETURN_FULL_FILE)
 
 
-# ============================================================
-# REPORT
-# ============================================================
-
-print("\n=== DATASETS SAVED ===\n")
-
-print("CORE")
-print(f"Shape: {core.shape}")
-print(f"Rows:  {len(core):,}")
-print(f"NaN:   {int(core.isna().sum().sum())}")
-
-print("\nFULL")
-print(f"Shape: {full.shape}")
-print(f"Rows:  {len(full):,}")
-print(f"NaN:   {int(full.isna().sum().sum())}")
-
-print("\nFiles:")
-print(RETURN_CORE_FILE)
-print(RETURN_FULL_FILE)
+if __name__ == "__main__":
+    main()

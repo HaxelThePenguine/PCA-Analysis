@@ -1,14 +1,24 @@
+"""Download, consolidate, and assess Alpaca SIP minute bars.
+
+The historical filename is intentionally retained for pipeline compatibility.
+Network access and credentials are required only when :func:`main` runs, so
+the module can be imported safely by tests and development tools.
+"""
+
+from __future__ import annotations
+
 import os
 import time
-from datetime import date, timedelta
+from collections.abc import Iterator, Sequence
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
-
-from alpaca.data.enums import DataFeed, Adjustment
+from alpaca.data.enums import Adjustment, DataFeed
 from alpaca.data.historical.stock import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
-
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetCalendarRequest
 
@@ -29,816 +39,20 @@ from config import (
 )
 
 
-BASE_DIR = DATASET_DIR
-SYMBOLS_DIR = RAW_SYMBOL_DIR
-ensure_project_directories()
-
-
-# ============================================================
-# API KEYS
-# ============================================================
-
-API_KEY = os.getenv("ALPACA_API_KEY")
-SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
-
-if not API_KEY or not SECRET_KEY:
-    raise RuntimeError(
-        "ALPACA_API_KEY / ALPACA_SECRET_KEY not found."
-    )
-
-
-# ============================================================
-# CLIENTS
-# ============================================================
-
-data_client = StockHistoricalDataClient(
-    API_KEY,
-    SECRET_KEY,
-)
-
-trading_client = TradingClient(
-    API_KEY,
-    SECRET_KEY,
-    paper=True,
-)
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def to_ny_timestamp(value):
-    """
-    Convert an Alpaca calendar timestamp
-    to America/New_York.
-    """
-
-    ts = pd.Timestamp(value)
-
-    if ts.tzinfo is None:
-        return ts.tz_localize(NY_TZ)
-
-    return ts.tz_convert(NY_TZ)
-
-
-def month_chunks(start_date, end_date):
-    """
-    Produce intervalli mensili [start, end)
-    """
-
-    current = date(
-        start_date.year,
-        start_date.month,
-        1,
-    )
-
-    final_exclusive = end_date + timedelta(days=1)
-
-    while current < final_exclusive:
-
-        if current.month == 12:
-            next_month = date(
-                current.year + 1,
-                1,
-                1,
-            )
-        else:
-            next_month = date(
-                current.year,
-                current.month + 1,
-                1,
-            )
-
-        chunk_start = max(current, start_date)
-        chunk_end = min(next_month, final_exclusive)
-
-        label = f"{current.year}-{current.month:02d}"
-
-        yield label, chunk_start, chunk_end
-
-        current = next_month
-
-
-def date_to_utc(local_date):
-    """
-    New York midnight -> UTC.
-
-    Avoids DST ambiguity.
-    """
-
-    ts = pd.Timestamp(local_date)
-
-    ts = ts.tz_localize(NY_TZ)
-
-    return ts.tz_convert(UTC_TZ).to_pydatetime()
-
-
-# ============================================================
-# MARKET CALENDAR
-# ============================================================
-
-print("\n=== MARKET CALENDAR ===")
-
-calendar_request = GetCalendarRequest(
-    start=START_DATE,
-    end=END_DATE,
-)
-
-calendar = trading_client.get_calendar(
-    calendar_request
-)
-
-calendar_rows = []
-
-for session in calendar:
-
-    session_open = to_ny_timestamp(
-        session.open
-    )
-
-    session_close = to_ny_timestamp(
-        session.close
-    )
-
-    open_minute = (
-        session_open.hour * 60
-        + session_open.minute
-    )
-
-    close_minute = (
-        session_close.hour * 60
-        + session_close.minute
-    )
-
-    expected_bars = (
-        close_minute - open_minute
-    )
-
-    calendar_rows.append(
-        {
-            "date": session.date,
-            "session_open": session_open,
-            "session_close": session_close,
-            "open_minute": open_minute,
-            "close_minute": close_minute,
-            "expected_bars": expected_bars,
-        }
-    )
-
-
-calendar_df = pd.DataFrame(calendar_rows)
-
-calendar_df.to_csv(
-    CALENDAR_FILE,
-    index=False,
-)
-
-print(
-    f"Trading days: {len(calendar_df)}"
-)
-
-print(
-    f"Expected minute-bars per symbol: "
-    f"{calendar_df['expected_bars'].sum():,}"
-)
-
-early_closes = calendar_df[
-    calendar_df["expected_bars"] < 390
+BAR_COLUMNS = [
+    "symbol",
+    "timestamp",
+    "ny_time",
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "trade_count",
+    "vwap",
 ]
-
-if not early_closes.empty:
-
-    print("\nEarly closes detected:")
-
-    print(
-        early_closes[
-            [
-                "date",
-                "session_open",
-                "session_close",
-                "expected_bars",
-            ]
-        ].to_string(index=False)
-    )
-
-
-# Fast lookup for the intraday filter
-
-calendar_filter = calendar_df[
-    [
-        "date",
-        "open_minute",
-        "close_minute",
-        "expected_bars",
-    ]
-].copy()
-
-
-# ============================================================
-# DOWNLOAD MONTH BY MONTH
-# ============================================================
-
-print("\n=== DOWNLOAD ===")
-
-for label, chunk_start, chunk_end in month_chunks(
-    START_DATE,
-    END_DATE,
-):
-
-    chunk_dir = CHUNKS_DIR / label
-
-    success_file = chunk_dir / "_SUCCESS"
-
-    # --------------------------------------------------------
-    # RESUME
-    # --------------------------------------------------------
-
-    if success_file.exists():
-
-        print(
-            f"[SKIP] {label} already complete"
-        )
-
-        continue
-
-    chunk_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    print(
-        f"\n[DOWNLOAD] {label}"
-    )
-
-    print(
-        f"  {chunk_start} -> {chunk_end}"
-    )
-
-    request = StockBarsRequest(
-        symbol_or_symbols=list(SYMBOLS),
-        timeframe=TimeFrame.Minute,
-
-        start=date_to_utc(
-            chunk_start
-        ),
-
-        end=date_to_utc(
-            chunk_end
-        ),
-
-        feed=DataFeed.SIP,
-
-        # Keep the raw feed.
-        # This is preferable when volumes are also being studied.
-        adjustment=Adjustment.RAW,
-    )
-
-
-    # ========================================================
-    # RETRY
-    # ========================================================
-
-    bars_response = None
-
-    for attempt in range(
-        1,
-        MAX_RETRIES + 1,
-    ):
-
-        try:
-
-            bars_response = (
-                data_client.get_stock_bars(
-                    request
-                )
-            )
-
-            break
-
-        except Exception as error:
-
-            print(
-                f"  Attempt "
-                f"{attempt}/{MAX_RETRIES}: "
-                f"failed: {error}"
-            )
-
-            if attempt == MAX_RETRIES:
-                raise
-
-            wait_seconds = min(
-                2 ** attempt,
-                60,
-            )
-
-            print(
-                f"  Retrying in "
-                f"{wait_seconds}s..."
-            )
-
-            time.sleep(
-                wait_seconds
-            )
-
-
-    # ========================================================
-    # DATAFRAME
-    # ========================================================
-
-    df = bars_response.df
-
-    if df.empty:
-
-        print(
-            "  No data returned."
-        )
-
-        continue
-
-    df = (
-        df
-        .reset_index()
-        .copy()
-    )
-
-
-    # ========================================================
-    # TIMEZONE
-    # ========================================================
-
-    df["timestamp"] = pd.to_datetime(
-        df["timestamp"],
-        utc=True,
-    )
-
-    df["ny_time"] = (
-        df["timestamp"]
-        .dt
-        .tz_convert(NY_TZ)
-    )
-
-    df["date"] = (
-        df["ny_time"]
-        .dt
-        .date
-    )
-
-    df["minute_of_day"] = (
-        df["ny_time"].dt.hour * 60
-        + df["ny_time"].dt.minute
-    )
-
-
-    # ========================================================
-    # MERGE WITH MARKET CALENDAR
-    # ========================================================
-
-    df = df.merge(
-        calendar_filter,
-        on="date",
-        how="inner",
-    )
-
-
-    # ========================================================
-    # REGULAR MARKET HOURS ONLY
-    # ========================================================
-
-    df = df[
-        (
-            df["minute_of_day"]
-            >= df["open_minute"]
-        )
-        &
-        (
-            df["minute_of_day"]
-            < df["close_minute"]
-        )
-    ].copy()
-
-
-    # ========================================================
-    # CLEANUP
-    # ========================================================
-
-    df = df[
-        [
-            "symbol",
-            "timestamp",
-            "ny_time",
-            "date",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "trade_count",
-            "vwap",
-        ]
-    ]
-
-    df = (
-        df
-        .drop_duplicates(
-            subset=[
-                "symbol",
-                "timestamp",
-            ]
-        )
-        .sort_values(
-            [
-                "symbol",
-                "timestamp",
-            ]
-        )
-    )
-
-
-    # ========================================================
-    # SAVE ONE FILE PER SYMBOL / MONTH
-    # ========================================================
-
-    print(
-                f"  RTH bars: {len(df):,}"
-    )
-
-    missing_symbols = []
-
-    for symbol in SYMBOLS:
-
-        symbol_df = df[
-            df["symbol"] == symbol
-        ].copy()
-
-        if symbol_df.empty:
-
-            print(
-                f"  WARNING: {symbol} "
-                f"0 bars"
-            )
-
-            missing_symbols.append(symbol)
-            continue
-
-        output_file = (
-            chunk_dir
-            / f"{symbol}.parquet"
-        )
-
-        symbol_df.to_parquet(
-            output_file,
-            index=False,
-            compression="zstd",
-        )
-
-        print(
-            f"  {symbol:<5} "
-            f"{len(symbol_df):>7,}"
-        )
-
-
-    if missing_symbols:
-        raise RuntimeError(
-            f"Download incomplete for {label}; "
-            "month not marked as complete. "
-            f"Symbols without bars: {', '.join(missing_symbols)}"
-        )
-
-    # Mark success only after the month is complete for every symbol.
-
-    success_file.touch()
-
-    print(
-        f"[OK] {label}"
-    )
-
-
-# ============================================================
-# CONSOLIDATE BY SYMBOL
-# ============================================================
-
-print("\n=== CONSOLIDATION ===")
-
-for symbol in SYMBOLS:
-
-    print(
-        f"\n{symbol}:",
-        end=" ",
-        flush=True,
-    )
-
-    files = sorted(
-        CHUNKS_DIR.glob(
-            f"*/{symbol}.parquet"
-        )
-    )
-
-    if not files:
-
-        print(
-            "no files found"
-        )
-
-        continue
-
-    frames = [
-        pd.read_parquet(file)
-        for file in files
-    ]
-
-    symbol_df = pd.concat(
-        frames,
-        ignore_index=True,
-    )
-
-    symbol_df["timestamp"] = pd.to_datetime(
-        symbol_df["timestamp"],
-        utc=True,
-    )
-
-    symbol_df = (
-        symbol_df
-        .drop_duplicates(
-            subset=["timestamp"]
-        )
-        .sort_values("timestamp")
-        .reset_index(drop=True)
-    )
-
-    output_file = (
-        SYMBOLS_DIR
-        / f"{symbol}.parquet"
-    )
-
-    symbol_df.to_parquet(
-        output_file,
-        index=False,
-        compression="zstd",
-    )
-
-    print(
-        f"{len(symbol_df):,} bars"
-    )
-
-
-# ============================================================
-# QUALITY REPORT
-# ============================================================
-
-print("\n=== QUALITY REPORT ===")
-
-expected = (
-    calendar_df[
-        [
-            "date",
-            "expected_bars",
-        ]
-    ]
-    .copy()
-)
-
-expected["date"] = pd.to_datetime(
-    expected["date"]
-).dt.date
-
-
-daily_reports = []
-
-
-for symbol in SYMBOLS:
-
-    file = (
-        SYMBOLS_DIR
-        / f"{symbol}.parquet"
-    )
-
-    if not file.exists():
-        continue
-
-    data = pd.read_parquet(
-        file
-    )
-
-    data["date"] = pd.to_datetime(
-        data["date"]
-    ).dt.date
-
-    observed = (
-        data.groupby("date")
-        .size()
-        .rename("observed_bars")
-        .reset_index()
-    )
-
-    daily = expected.merge(
-        observed,
-        on="date",
-        how="left",
-    )
-
-    daily["observed_bars"] = (
-        daily["observed_bars"]
-        .fillna(0)
-        .astype(int)
-    )
-
-    daily["missing_bars"] = (
-        daily["expected_bars"]
-        - daily["observed_bars"]
-    )
-
-    daily["coverage"] = (
-        daily["observed_bars"]
-        / daily["expected_bars"]
-    )
-
-    daily["symbol"] = symbol
-
-    daily_reports.append(
-        daily
-    )
-
-
-daily_quality = pd.concat(
-    daily_reports,
-    ignore_index=True,
-)
-
-
-daily_quality.to_csv(
-    REPORTS_DIR
-    / "daily_data_quality.csv",
-    index=False,
-)
-
-
-# ============================================================
-# SUMMARY
-# ============================================================
-
-quality_summary = (
-    daily_quality
-    .groupby("symbol")
-    .agg(
-        trading_days=(
-            "date",
-            "nunique",
-        ),
-
-        expected_bars=(
-            "expected_bars",
-            "sum",
-        ),
-
-        observed_bars=(
-            "observed_bars",
-            "sum",
-        ),
-
-        missing_bars=(
-            "missing_bars",
-            "sum",
-        ),
-
-        avg_daily_coverage=(
-            "coverage",
-            "mean",
-        ),
-
-        worst_daily_coverage=(
-            "coverage",
-            "min",
-        ),
-    )
-)
-
-
-quality_summary[
-    "total_coverage"
-] = (
-    quality_summary[
-        "observed_bars"
-    ]
-    /
-    quality_summary[
-        "expected_bars"
-    ]
-)
-
-
-# ============================================================
-# LIQUIDITY STATS
-# ============================================================
-
-liquidity_rows = []
-
-for symbol in SYMBOLS:
-
-    file = (
-        SYMBOLS_DIR
-        / f"{symbol}.parquet"
-    )
-
-    if not file.exists():
-        continue
-
-    data = pd.read_parquet(
-        file,
-        columns=[
-            "volume",
-            "trade_count",
-        ],
-    )
-
-    liquidity_rows.append(
-        {
-            "symbol": symbol,
-
-            "median_volume": (
-                data["volume"]
-                .median()
-            ),
-
-            "mean_volume": (
-                data["volume"]
-                .mean()
-            ),
-
-            "median_trade_count": (
-                data["trade_count"]
-                .median()
-            ),
-
-            "mean_trade_count": (
-                data["trade_count"]
-                .mean()
-            ),
-        }
-    )
-
-
-liquidity_df = (
-    pd.DataFrame(
-        liquidity_rows
-    )
-    .set_index("symbol")
-)
-
-
-quality_summary = (
-    quality_summary
-    .join(liquidity_df)
-)
-
-
-quality_summary[
-    "total_coverage_pct"
-] = (
-    quality_summary[
-        "total_coverage"
-    ]
-    * 100
-)
-
-quality_summary[
-    "avg_daily_coverage_pct"
-] = (
-    quality_summary[
-        "avg_daily_coverage"
-    ]
-    * 100
-)
-
-quality_summary[
-    "worst_daily_coverage_pct"
-] = (
-    quality_summary[
-        "worst_daily_coverage"
-    ]
-    * 100
-)
-
-
-quality_summary = (
-    quality_summary
-    .sort_values(
-        "total_coverage_pct",
-        ascending=False,
-    )
-)
-
-
-quality_summary.to_csv(
-    REPORTS_DIR
-    / "data_quality_summary.csv"
-)
-
-
-# ============================================================
-# DISPLAY FINAL REPORT
-# ============================================================
-
-columns = [
+QUALITY_DISPLAY_COLUMNS = [
     "trading_days",
     "expected_bars",
     "observed_bars",
@@ -849,65 +63,385 @@ columns = [
     "median_trade_count",
 ]
 
-print(
-    "\n"
-    + quality_summary[
-        columns
-    ]
-    .round(
-        {
-            "total_coverage_pct": 3,
-            "worst_daily_coverage_pct": 2,
-            "median_volume": 0,
-            "median_trade_count": 0,
-        }
+
+def read_credentials() -> tuple[str, str]:
+    """Read the Alpaca credentials required by the downloader."""
+
+    api_key = os.getenv("ALPACA_API_KEY")
+    secret_key = os.getenv("ALPACA_SECRET_KEY")
+    if not api_key or not secret_key:
+        raise RuntimeError("ALPACA_API_KEY / ALPACA_SECRET_KEY not found.")
+    return api_key, secret_key
+
+
+def create_clients() -> tuple[StockHistoricalDataClient, TradingClient]:
+    """Create authenticated historical-data and paper-trading clients."""
+
+    api_key, secret_key = read_credentials()
+    return (
+        StockHistoricalDataClient(api_key, secret_key),
+        TradingClient(api_key, secret_key, paper=True),
     )
-    .to_string()
-)
 
 
-# ============================================================
-# FINAL INFO
-# ============================================================
+def to_ny_timestamp(value: object) -> pd.Timestamp:
+    """Convert an Alpaca calendar timestamp to New York time."""
 
-print(
-    "\n===================================="
-)
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is None:
+        return timestamp.tz_localize(NY_TZ)
+    return timestamp.tz_convert(NY_TZ)
 
-print(
-    "DOWNLOAD COMPLETE"
-)
 
-print(
-    "===================================="
-)
+def month_chunks(
+    start_date: date,
+    end_date: date,
+) -> Iterator[tuple[str, date, date]]:
+    """Yield labeled monthly half-open intervals covering the date range."""
 
-print(
-    f"\nDataset: {BASE_DIR.resolve()}"
-)
+    current = date(start_date.year, start_date.month, 1)
+    final_exclusive = end_date + timedelta(days=1)
+    while current < final_exclusive:
+        next_month = (
+            date(current.year + 1, 1, 1)
+            if current.month == 12
+            else date(current.year, current.month + 1, 1)
+        )
+        yield (
+            f"{current.year}-{current.month:02d}",
+            max(current, start_date),
+            min(next_month, final_exclusive),
+        )
+        current = next_month
 
-print(
-    "\nParquet files by ticker:"
-)
 
-for symbol in SYMBOLS:
+def date_to_utc(local_date: date) -> datetime:
+    """Convert New York midnight to an unambiguous UTC datetime."""
+
+    return (
+        pd.Timestamp(local_date)
+        .tz_localize(NY_TZ)
+        .tz_convert(UTC_TZ)
+        .to_pydatetime()
+    )
+
+
+def build_market_calendar(
+    trading_client: TradingClient,
+    start_date: date = START_DATE,
+    end_date: date = END_DATE,
+) -> pd.DataFrame:
+    """Fetch and structure the market calendar used by every download filter."""
+
+    request = GetCalendarRequest(start=start_date, end=end_date)
+    rows = []
+    for session in trading_client.get_calendar(request):
+        session_open = to_ny_timestamp(session.open)
+        session_close = to_ny_timestamp(session.close)
+        open_minute = session_open.hour * 60 + session_open.minute
+        close_minute = session_close.hour * 60 + session_close.minute
+        rows.append(
+            {
+                "date": session.date,
+                "session_open": session_open,
+                "session_close": session_close,
+                "open_minute": open_minute,
+                "close_minute": close_minute,
+                "expected_bars": close_minute - open_minute,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def print_calendar_summary(calendar: pd.DataFrame) -> None:
+    """Print session totals and any detected early closes."""
+
+    print("\n=== MARKET CALENDAR ===")
+    print(f"Trading days: {len(calendar)}")
+    print(f"Expected minute-bars per symbol: {calendar['expected_bars'].sum():,}")
+
+    early_closes = calendar[calendar["expected_bars"] < 390]
+    if not early_closes.empty:
+        print("\nEarly closes detected:")
+        print(
+            early_closes[
+                ["date", "session_open", "session_close", "expected_bars"]
+            ].to_string(index=False)
+        )
+
+
+def request_bars_with_retry(
+    data_client: StockHistoricalDataClient,
+    request: StockBarsRequest,
+) -> Any:
+    """Fetch one chunk with bounded exponential backoff."""
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            return data_client.get_stock_bars(request)
+        except Exception as error:
+            print(f"  Attempt {attempt}/{MAX_RETRIES}: failed: {error}")
+            if attempt == MAX_RETRIES:
+                raise
+            wait_seconds = min(2**attempt, 60)
+            print(f"  Retrying in {wait_seconds}s...")
+            time.sleep(wait_seconds)
+    raise RuntimeError("Unreachable retry state.")
+
+
+def regular_session_bars(
+    bars: pd.DataFrame,
+    calendar_filter: pd.DataFrame,
+) -> pd.DataFrame:
+    """Normalize timestamps and retain unique regular-session minute bars."""
+
+    frame = bars.reset_index().copy()
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    frame["ny_time"] = frame["timestamp"].dt.tz_convert(NY_TZ)
+    frame["date"] = frame["ny_time"].dt.date
+    frame["minute_of_day"] = frame["ny_time"].dt.hour * 60 + frame["ny_time"].dt.minute
+    frame = frame.merge(calendar_filter, on="date", how="inner")
+    in_session = (
+        (frame["minute_of_day"] >= frame["open_minute"])
+        & (frame["minute_of_day"] < frame["close_minute"])
+    )
+    return (
+        frame.loc[in_session, BAR_COLUMNS]
+        .drop_duplicates(subset=["symbol", "timestamp"])
+        .sort_values(["symbol", "timestamp"])
+    )
+
+
+def save_chunk_by_symbol(
+    bars: pd.DataFrame,
+    chunk_dir: Path,
+    symbols: Sequence[str] = SYMBOLS,
+) -> None:
+    """Persist one monthly Parquet file per symbol or fail atomically."""
+
+    print(f"  RTH bars: {len(bars):,}")
+    missing_symbols = []
+    for symbol in symbols:
+        symbol_bars = bars[bars["symbol"] == symbol].copy()
+        if symbol_bars.empty:
+            print(f"  WARNING: {symbol} 0 bars")
+            missing_symbols.append(symbol)
+            continue
+        symbol_bars.to_parquet(
+            chunk_dir / f"{symbol}.parquet",
+            index=False,
+            compression="zstd",
+        )
+        print(f"  {symbol:<5} {len(symbol_bars):>7,}")
+
+    if missing_symbols:
+        raise RuntimeError(
+            "Download incomplete; month not marked as complete. "
+            f"Symbols without bars: {', '.join(missing_symbols)}"
+        )
+
+
+def download_chunks(
+    data_client: StockHistoricalDataClient,
+    calendar: pd.DataFrame,
+) -> None:
+    """Download every incomplete monthly chunk and mark complete chunks."""
+
+    calendar_filter = calendar[
+        ["date", "open_minute", "close_minute", "expected_bars"]
+    ].copy()
+    print("\n=== DOWNLOAD ===")
+
+    for label, chunk_start, chunk_end in month_chunks(START_DATE, END_DATE):
+        chunk_dir = CHUNKS_DIR / label
+        success_file = chunk_dir / "_SUCCESS"
+        if success_file.exists():
+            print(f"[SKIP] {label} already complete")
+            continue
+
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+        print(f"\n[DOWNLOAD] {label}")
+        print(f"  {chunk_start} -> {chunk_end}")
+        request = StockBarsRequest(
+            symbol_or_symbols=list(SYMBOLS),
+            timeframe=TimeFrame.Minute,
+            start=date_to_utc(chunk_start),
+            end=date_to_utc(chunk_end),
+            feed=DataFeed.SIP,
+            adjustment=Adjustment.RAW,
+        )
+        response = request_bars_with_retry(data_client, request)
+        if response.df.empty:
+            print("  No data returned.")
+            continue
+
+        bars = regular_session_bars(response.df, calendar_filter)
+        try:
+            save_chunk_by_symbol(bars, chunk_dir)
+        except RuntimeError as error:
+            raise RuntimeError(f"Download incomplete for {label}; {error}") from error
+        success_file.touch()
+        print(f"[OK] {label}")
+
+
+def consolidate_symbol(symbol: str) -> pd.DataFrame | None:
+    """Combine all monthly files for one symbol into a deduplicated history."""
+
+    files = sorted(CHUNKS_DIR.glob(f"*/{symbol}.parquet"))
+    if not files:
+        return None
+
+    frame = pd.concat(
+        [pd.read_parquet(path) for path in files],
+        ignore_index=True,
+    )
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    return (
+        frame.drop_duplicates(subset=["timestamp"])
+        .sort_values("timestamp")
+        .reset_index(drop=True)
+    )
+
+
+def consolidate_all_symbols(symbols: Sequence[str] = SYMBOLS) -> None:
+    """Write one complete Parquet history per symbol."""
+
+    print("\n=== CONSOLIDATION ===")
+    for symbol in symbols:
+        print(f"\n{symbol}:", end=" ", flush=True)
+        frame = consolidate_symbol(symbol)
+        if frame is None:
+            print("no files found")
+            continue
+        frame.to_parquet(
+            RAW_SYMBOL_DIR / f"{symbol}.parquet",
+            index=False,
+            compression="zstd",
+        )
+        print(f"{len(frame):,} bars")
+
+
+def build_daily_quality(
+    calendar: pd.DataFrame,
+    symbols: Sequence[str] = SYMBOLS,
+) -> pd.DataFrame:
+    """Measure expected versus observed bars for every symbol and session."""
+
+    expected = calendar[["date", "expected_bars"]].copy()
+    expected["date"] = pd.to_datetime(expected["date"]).dt.date
+    reports = []
+
+    for symbol in symbols:
+        path = RAW_SYMBOL_DIR / f"{symbol}.parquet"
+        if not path.exists():
+            continue
+        data = pd.read_parquet(path)
+        data["date"] = pd.to_datetime(data["date"]).dt.date
+        observed = data.groupby("date").size().rename("observed_bars").reset_index()
+        daily = expected.merge(observed, on="date", how="left")
+        daily["observed_bars"] = daily["observed_bars"].fillna(0).astype(int)
+        daily["missing_bars"] = daily["expected_bars"] - daily["observed_bars"]
+        daily["coverage"] = daily["observed_bars"] / daily["expected_bars"]
+        daily["symbol"] = symbol
+        reports.append(daily)
+
+    if not reports:
+        raise RuntimeError("No consolidated symbol data is available.")
+    return pd.concat(reports, ignore_index=True)
+
+
+def build_liquidity_summary(
+    symbols: Sequence[str] = SYMBOLS,
+) -> pd.DataFrame:
+    """Aggregate minute-bar volume and trade-count statistics by symbol."""
+
+    rows = []
+    for symbol in symbols:
+        path = RAW_SYMBOL_DIR / f"{symbol}.parquet"
+        if not path.exists():
+            continue
+        data = pd.read_parquet(path, columns=["volume", "trade_count"])
+        rows.append(
+            {
+                "symbol": symbol,
+                "median_volume": data["volume"].median(),
+                "mean_volume": data["volume"].mean(),
+                "median_trade_count": data["trade_count"].median(),
+                "mean_trade_count": data["trade_count"].mean(),
+            }
+        )
+    return pd.DataFrame(rows).set_index("symbol")
+
+
+def build_quality_summary(daily_quality: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate daily coverage and join per-symbol liquidity statistics."""
+
+    summary = daily_quality.groupby("symbol").agg(
+        trading_days=("date", "nunique"),
+        expected_bars=("expected_bars", "sum"),
+        observed_bars=("observed_bars", "sum"),
+        missing_bars=("missing_bars", "sum"),
+        avg_daily_coverage=("coverage", "mean"),
+        worst_daily_coverage=("coverage", "min"),
+    )
+    summary["total_coverage"] = summary["observed_bars"] / summary["expected_bars"]
+    summary = summary.join(build_liquidity_summary())
+    for source, target in (
+        ("total_coverage", "total_coverage_pct"),
+        ("avg_daily_coverage", "avg_daily_coverage_pct"),
+        ("worst_daily_coverage", "worst_daily_coverage_pct"),
+    ):
+        summary[target] = summary[source] * 100
+    return summary.sort_values("total_coverage_pct", ascending=False)
+
+
+def print_final_report(summary: pd.DataFrame) -> None:
+    """Print the final coverage table and generated output paths."""
 
     print(
-        f"  {SYMBOLS_DIR / (symbol + '.parquet')}"
+        "\n"
+        + summary[QUALITY_DISPLAY_COLUMNS]
+        .round(
+            {
+                "total_coverage_pct": 3,
+                "worst_daily_coverage_pct": 2,
+                "median_volume": 0,
+                "median_trade_count": 0,
+            }
+        )
+        .to_string()
     )
+    print("\n====================================")
+    print("DOWNLOAD COMPLETE")
+    print("====================================")
+    print(f"\nDataset: {DATASET_DIR.resolve()}")
+    print("\nParquet files by ticker:")
+    for symbol in SYMBOLS:
+        print(f"  {RAW_SYMBOL_DIR / (symbol + '.parquet')}")
+    print("\nReports:")
+    print(f"  {REPORTS_DIR / 'data_quality_summary.csv'}")
+    print(f"  {REPORTS_DIR / 'daily_data_quality.csv'}")
+    print(f"  {METADATA_DIR / 'market_calendar.csv'}")
 
-print(
-    "\nReports:"
-)
 
-print(
-    f"  {REPORTS_DIR / 'data_quality_summary.csv'}"
-)
+def main() -> None:
+    """Run the complete download, consolidation, and reporting pipeline."""
 
-print(
-    f"  {REPORTS_DIR / 'daily_data_quality.csv'}"
-)
+    ensure_project_directories()
+    data_client, trading_client = create_clients()
+    calendar = build_market_calendar(trading_client)
+    calendar.to_csv(CALENDAR_FILE, index=False)
+    print_calendar_summary(calendar)
+    download_chunks(data_client, calendar)
+    consolidate_all_symbols()
 
-print(
-    f"  {METADATA_DIR / 'market_calendar.csv'}"
-)
+    print("\n=== QUALITY REPORT ===")
+    daily_quality = build_daily_quality(calendar)
+    quality_summary = build_quality_summary(daily_quality)
+    daily_quality.to_csv(REPORTS_DIR / "daily_data_quality.csv", index=False)
+    quality_summary.to_csv(REPORTS_DIR / "data_quality_summary.csv")
+    print_final_report(quality_summary)
+
+
+if __name__ == "__main__":
+    main()

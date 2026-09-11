@@ -559,7 +559,18 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 13_l1_local_factor_identification.py  identify and bootstrap sparse local factors
 ```
 
-The reusable numerical helpers live in `src/pca_utils.py`; benchmark projection and residualization are shared through `src/benchmark_utils.py`. The numbered scripts call these modules instead of maintaining separate PCA implementations.
+Reusable numerical routines live in `src/pca_utils.py` and
+`src/benchmark_utils.py`; the L1 geometry, diagnostic, and alignment routines
+live in `src/l1_rotation_utils.py`. Data loading, panel validation, intraday
+normalization, table output, and chart styling are centralized in
+`src/data_utils.py` and `src/plotting_utils.py`. Every numbered stage exposes a
+`main()` entry point and can be imported without running the pipeline.
+
+Run the focused numerical regression suite from the project root with:
+
+```text
+python -m unittest discover -s tests -v
+```
 
 The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
 

@@ -1,24 +1,39 @@
 """Reusable benchmark projection and residualization utilities."""
 
+from __future__ import annotations
+
+from typing import Sequence, TypedDict
+
 import numpy as np
 import pandas as pd
 
 from config import BENCHMARKS
+from data_utils import require_columns
+
+
+class ResidualizationResult(TypedDict):
+    """Named outputs from a multivariate benchmark projection."""
+
+    coefficients: pd.DataFrame
+    fitted_returns: pd.DataFrame
+    residual_returns: pd.DataFrame
+    diagnostics: pd.DataFrame
 
 
 def residualize_against_benchmarks(
-    panel,
-    stocks,
-    benchmarks=BENCHMARKS,
-):
+    panel: pd.DataFrame,
+    stocks: Sequence[str],
+    benchmarks: Sequence[str] = BENCHMARKS,
+) -> ResidualizationResult:
     """Project stock returns on benchmark returns and return residual data."""
 
     stock_names = list(stocks)
     benchmark_names = list(benchmarks)
-    required = stock_names + benchmark_names
-    missing = [column for column in required if column not in panel.columns]
-    if missing:
-        raise ValueError(f"Missing columns: {missing}")
+    required = require_columns(
+        panel,
+        stock_names + benchmark_names,
+        context="Benchmark panel",
+    )
     if panel.loc[:, required].isna().any().any():
         raise ValueError("Benchmark residualization requires a complete panel.")
 

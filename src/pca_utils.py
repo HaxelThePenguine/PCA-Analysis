@@ -1,12 +1,14 @@
 """Reusable PCA, Varimax, and Elastic-Net Sparse PCA utilities."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 
-@dataclass
+@dataclass(frozen=True)
 class PCAResult:
     """Container for one covariance or correlation PCA fit."""
 
@@ -24,7 +26,7 @@ class PCAResult:
     scores: pd.DataFrame
 
 
-@dataclass
+@dataclass(frozen=True)
 class VarimaxResult:
     """Container for an orthogonal rotation of selected PCA components."""
 
@@ -36,7 +38,7 @@ class VarimaxResult:
     iterations: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class SparsePCAResult:
     """Container for the Elastic-Net Sparse PCA fit."""
 
@@ -54,7 +56,7 @@ class SparsePCAResult:
     converged: bool
 
 
-def _validate_data(data):
+def _validate_data(data: pd.DataFrame) -> None:
     if not isinstance(data, pd.DataFrame):
         raise TypeError("PCA input must be a pandas DataFrame.")
     if data.empty or len(data) < 2:
@@ -67,7 +69,7 @@ def _validate_data(data):
         raise ValueError("PCA input contains non-finite values.")
 
 
-def orient_eigenvectors(vectors):
+def orient_eigenvectors(vectors: np.ndarray) -> np.ndarray:
     """Apply a reproducible sign convention to eigenvector columns."""
 
     oriented = np.asarray(vectors, dtype=float).copy()
@@ -78,7 +80,7 @@ def orient_eigenvectors(vectors):
     return oriented
 
 
-def fit_pca(data, method="covariance"):
+def fit_pca(data: pd.DataFrame, method: str = "covariance") -> PCAResult:
     """Fit covariance or correlation PCA and return a reusable result.
 
     ``weights`` are the normalized eigenvectors used to construct scores.
@@ -153,7 +155,7 @@ def fit_pca(data, method="covariance"):
     )
 
 
-def format_pca_summary(summary):
+def format_pca_summary(summary: pd.DataFrame) -> str:
     """Format a PCA summary for readable terminal output."""
 
     table = summary.copy()
@@ -163,7 +165,11 @@ def format_pca_summary(summary):
     return table.to_string()
 
 
-def _correlation_loadings(data, scores, columns):
+def _correlation_loadings(
+    data: pd.DataFrame,
+    scores: pd.DataFrame | np.ndarray,
+    columns: list[str],
+) -> pd.DataFrame:
     """Return correlations between variables and arbitrary factor scores."""
 
     x = data.to_numpy(dtype=float)
@@ -176,7 +182,12 @@ def _correlation_loadings(data, scores, columns):
     return pd.DataFrame(values, index=data.columns, columns=columns)
 
 
-def varimax(loadings, gamma=1.0, max_iterations=1000, tolerance=1e-7):
+def varimax(
+    loadings: pd.DataFrame | np.ndarray,
+    gamma: float = 1.0,
+    max_iterations: int = 1000,
+    tolerance: float = 1e-7,
+) -> tuple[np.ndarray, np.ndarray, int]:
     """Rotate a loading matrix toward a simpler, more interpretable structure."""
 
     phi = np.asarray(loadings, dtype=float)
@@ -215,7 +226,11 @@ def varimax(loadings, gamma=1.0, max_iterations=1000, tolerance=1e-7):
     return phi @ rotation, rotation, iteration
 
 
-def fit_varimax(pca_result, n_components=3, gamma=1.0):
+def fit_varimax(
+    pca_result: PCAResult,
+    n_components: int = 3,
+    gamma: float = 1.0,
+) -> VarimaxResult:
     """Rotate the first PCA loadings and return scores plus diagnostics."""
 
     if n_components < 2 or n_components > pca_result.loadings.shape[1]:
@@ -268,19 +283,19 @@ def fit_varimax(pca_result, n_components=3, gamma=1.0):
     )
 
 
-def _soft_threshold(value, penalty):
+def _soft_threshold(value: float, penalty: float) -> float:
     return np.sign(value) * max(abs(value) - penalty, 0.0)
 
 
 def _elastic_net_update(
-    gram,
-    target,
-    l1_penalty,
-    l2_penalty,
-    initial,
-    max_iterations,
-    tolerance,
-):
+    gram: np.ndarray,
+    target: np.ndarray,
+    l1_penalty: float,
+    l2_penalty: float,
+    initial: np.ndarray,
+    max_iterations: int,
+    tolerance: float,
+) -> np.ndarray:
     """Solve one small Elastic-Net coordinate-descent subproblem."""
 
     coefficients = initial.copy()
@@ -304,17 +319,17 @@ def _elastic_net_update(
 
 
 def fit_elastic_net_sparse_pca(
-    data,
-    n_components=3,
-    l1_penalty=0.10,
-    l2_penalty=0.10,
-    initial_pca=None,
-    max_iterations=1000,
-    coordinate_max_iterations=1000,
-    tolerance=1e-7,
-    coordinate_tolerance=1e-9,
-    zero_tolerance=1e-8,
-):
+    data: pd.DataFrame,
+    n_components: int = 3,
+    l1_penalty: float = 0.10,
+    l2_penalty: float = 0.10,
+    initial_pca: PCAResult | None = None,
+    max_iterations: int = 1000,
+    coordinate_max_iterations: int = 1000,
+    tolerance: float = 1e-7,
+    coordinate_tolerance: float = 1e-9,
+    zero_tolerance: float = 1e-8,
+) -> SparsePCAResult:
     """Fit Sparse PCA with an Elastic-Net penalty using alternating updates.
 
     The implementation follows the regression formulation of Zou, Hastie,

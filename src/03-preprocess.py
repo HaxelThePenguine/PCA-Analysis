@@ -1,3 +1,7 @@
+"""Build synchronized close-price and intraday log-return matrices."""
+
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 
@@ -13,162 +17,84 @@ from config import (
 )
 
 
-ensure_project_directories()
+def load_close_series(symbol: str) -> pd.Series:
+    """Load one symbol's unique, ordered New York close-price series."""
 
+    path = RAW_SYMBOL_DIR / f"{symbol}.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing raw data file: {path}")
 
-# ============================================================
-# LOAD CLOSE PRICES
-# ============================================================
-
-prices = {}
-
-for symbol in SYMBOLS:
-
-    input_file = RAW_SYMBOL_DIR / f"{symbol}.parquet"
-    if not input_file.exists():
-        raise FileNotFoundError(f"Missing raw data file: {input_file}")
-
-    df = pd.read_parquet(
-        input_file
-    )
-
-    df["timestamp"] = pd.to_datetime(
-        df["timestamp"],
-        utc=True,
-    )
-
-    df["ny_time"] = (
-        df["timestamp"]
-        .dt
-        .tz_convert(NY_TZ)
-    )
-
-    df = (
-        df
-        .drop_duplicates("ny_time")
+    frame = pd.read_parquet(path)
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    frame["ny_time"] = frame["timestamp"].dt.tz_convert(NY_TZ)
+    return (
+        frame.drop_duplicates("ny_time")
         .set_index("ny_time")
-        .sort_index()
+        .sort_index()["close"]
+        .rename(symbol)
     )
 
-    prices[symbol] = df["close"]
+
+def build_price_matrix() -> pd.DataFrame:
+    """Align all symbols to SPY's observed timestamp index."""
+
+    prices = pd.concat(
+        {symbol: load_close_series(symbol) for symbol in SYMBOLS},
+        axis=1,
+        sort=False,
+    ).sort_index()
+    return prices.reindex(prices["SPY"].dropna().index)
 
 
-# ============================================================
-# BUILD COMMON MATRIX
-# ============================================================
+def remove_systemic_gap(prices: pd.DataFrame) -> pd.DataFrame:
+    """Drop the one known market-wide gap configured for the dataset."""
 
-prices = pd.concat(
-    prices,
-    axis=1,
-    sort=False,
-).sort_index()
-
-master_index = prices["SPY"].dropna().index
-prices = prices.reindex(master_index)
-
-print("\n=== RAW MATRIX ===")
-print("Rows:", len(prices))
-print("Missing values:")
-print(prices.isna().sum())
+    gap_date, gap_start, gap_end = SYSTEMIC_GAP
+    in_gap = (
+        (prices.index.date == gap_date)
+        & (prices.index.time >= gap_start)
+        & (prices.index.time <= gap_end)
+    )
+    return prices.loc[~in_gap].copy()
 
 
-# ============================================================
-# REMOVE SYSTEMIC GAP
-# ============================================================
+def compute_intraday_returns(prices: pd.DataFrame) -> pd.DataFrame:
+    """Compute log returns without turning overnight moves into minute returns."""
 
-gap_date, gap_start, gap_end = SYSTEMIC_GAP
-systemic_gap = (
-    (prices.index.date == gap_date)
-    & (prices.index.time >= gap_start)
-    & (prices.index.time <= gap_end)
-)
-
-prices = prices.loc[~systemic_gap].copy()
+    session = pd.Series(prices.index.date, index=prices.index)
+    returns = np.log(prices).diff()
+    returns.loc[session != session.shift(1)] = np.nan
+    return returns
 
 
-# ============================================================
-# FORWARD FILL MISSING PRICES
-# ============================================================
+def main() -> None:
+    """Create and persist the synchronized preprocessing outputs."""
 
-missing_mask = prices.isna()
+    ensure_project_directories()
+    prices = build_price_matrix()
+    print("\n=== RAW MATRIX ===")
+    print("Rows:", len(prices))
+    print("Missing values:")
+    print(prices.isna().sum())
 
-prices_clean = prices.ffill()
+    prices = remove_systemic_gap(prices)
+    missing_mask = prices.isna()
+    prices_clean = prices.ffill()
+    returns = compute_intraday_returns(prices_clean)
 
+    print("\n=== CLEAN MATRIX ===")
+    print("Missing prices:", int(prices_clean.isna().sum().sum()))
+    print("Missing returns:", int(returns.isna().sum().sum()))
+    print("Imputed observations:", int(missing_mask.sum().sum()))
 
-# ============================================================
-# RETURNS
-# ============================================================
+    prices_clean.to_parquet(CLOSE_MATRIX_FILE, compression="zstd")
+    returns.to_parquet(RETURN_MATRIX_FILE, compression="zstd")
+    missing_mask.to_parquet(MISSING_MASK_FILE, compression="zstd")
 
-# Identify the New York session
-session = pd.Series(
-    prices_clean.index.date,
-    index=prices_clean.index,
-)
-
-log_prices = np.log(prices_clean)
-
-returns = log_prices.diff()
-
-
-# Do not turn overnight returns
-# into fake "1-minute returns".
-new_session = session != session.shift(1)
-
-returns.loc[new_session] = np.nan
+    print("\nSaved:")
+    for path in (CLOSE_MATRIX_FILE, RETURN_MATRIX_FILE, MISSING_MASK_FILE):
+        print(path)
 
 
-# ============================================================
-# FINAL CHECK
-# ============================================================
-
-print("\n=== CLEAN MATRIX ===")
-
-print(
-    "Missing prices:",
-    int(prices_clean.isna().sum().sum())
-)
-
-print(
-    "Missing returns:",
-    int(returns.isna().sum().sum())
-)
-
-print(
-    "Imputed observations:",
-    int(missing_mask.sum().sum())
-)
-
-
-# ============================================================
-# SAVE
-# ============================================================
-
-prices_clean.to_parquet(
-    CLOSE_MATRIX_FILE,
-    compression="zstd",
-)
-
-returns.to_parquet(
-    RETURN_MATRIX_FILE,
-    compression="zstd",
-)
-
-missing_mask.to_parquet(
-    MISSING_MASK_FILE,
-    compression="zstd",
-)
-
-
-print("\nSaved:")
-
-print(
-    CLOSE_MATRIX_FILE
-)
-
-print(
-    RETURN_MATRIX_FILE
-)
-
-print(
-    MISSING_MASK_FILE
-)
+if __name__ == "__main__":
+    main()

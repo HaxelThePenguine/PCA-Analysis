@@ -1,5 +1,7 @@
 """SPY/XLF residualization and PCA of the remaining CORE structure."""
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 
@@ -11,29 +13,26 @@ from config import (
     RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
+from data_utils import load_panel, save_csv_tables
 from pca_utils import fit_pca, format_pca_summary
 
 
 OUT_DIR = REPORTS_DIR / "pca_residuals"
 
 
-def main():
+def main() -> None:
     ensure_project_directories()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    all_returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)
     stocks = list(CORE_UNIVERSE)
     required = stocks + list(BENCHMARKS)
-    missing = [symbol for symbol in required if symbol not in all_returns.columns]
-    if missing:
-        raise ValueError(f"Missing columns: {missing}")
-
-    panel = all_returns.loc[:, required]
+    panel = load_panel(
+        RETURN_MATRIX_CLEAN_FILE,
+        required,
+        context="Benchmark panel",
+        require_complete=False,
+    )
     complete_panel = panel.dropna(how="any")
-    if complete_panel.index.has_duplicates:
-        raise ValueError("The benchmark panel contains duplicate index values.")
-    if not complete_panel.index.is_monotonic_increasing:
-        raise ValueError("The benchmark panel index is not sorted.")
 
     benchmark_result = residualize_against_benchmarks(
         complete_panel,
@@ -52,7 +51,6 @@ def main():
         ).cov()
     ).abs().to_numpy().max()
     values = residual_pca.eigenvalues
-    vectors = residual_pca.eigenvectors
     explained = residual_pca.explained
     summary = residual_pca.summary
     loadings = residual_pca.weights.iloc[:, :3]
@@ -74,14 +72,22 @@ def main():
         "09_residual_pca_loadings_pc1_pc3.csv": loadings,
         "09_residual_technical_loadings_pc1_pc3.csv": residual_pca.loadings.iloc[:, :3],
     }
-    for filename, table in tables.items():
-        table.to_csv(OUT_DIR / filename)
+    save_csv_tables(tables, OUT_DIR)
 
     print("=== SPY/XLF RESIDUALIZATION ===")
     print(f"Initial panel: {panel.shape}")
     print(f"Complete panel: {complete_panel.shape}")
     print(f"Observations retained: {100 * len(complete_panel) / len(panel):.2f}%")
-    print(f"Maximum residual-SPY/XLF correlation: {diagnostics[['corr_resid_SPY', 'corr_resid_XLF']].abs().to_numpy().max():.3e}")
+    maximum_residual_correlation = (
+        diagnostics[["corr_resid_SPY", "corr_resid_XLF"]]
+        .abs()
+        .to_numpy()
+        .max()
+    )
+    print(
+        "Maximum residual-SPY/XLF correlation: "
+        f"{maximum_residual_correlation:.3e}"
+    )
     print(f"Covariance check: {covariance_diff:.3e}")
     print(f"Score/eigenvalue check: {score_error:.3e}")
     print(f"Residual PC1: {explained[0] * 100:.4f}%")
