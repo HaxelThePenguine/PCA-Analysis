@@ -16,7 +16,8 @@ The project is organized around a few practical research questions:
 2. Does the factor structure become more concentrated during periods of market stress, such as the regional-bank crisis in March 2023?
 3. Are the results materially different when we use covariance PCA, which preserves volatility differences, versus correlation PCA, which puts the securities on a comparable scale?
 4. After removing broad market and financial-sector exposure through SPY and XLF, is there still a meaningful internal structure among the financial stocks?
-5. Do the residual components contain any repeatable short-horizon behavior, or do they look like noise once data quality and multiple testing are taken seriously?
+5. Can sparsity identify economically interpretable local factors inside the residual PCA space, and are their loading supports stable when whole trading sessions are resampled?
+6. Do the residual components contain any repeatable short-horizon behavior, or do they look like noise once data quality and multiple testing are taken seriously?
 
 The project is descriptive first and predictive later. No residual pattern will be treated as an alpha signal until it has been tested out of sample and after trading frictions have been included.
 
@@ -100,7 +101,8 @@ alpaca_us_banks_1m/
 │   ├── missing_matrix.parquet
 │   ├── common_missing_gaps.csv
 │   ├── rolling_pca/
-│   └── internal_factor_isolation/
+│   ├── internal_factor_isolation/
+│   └── local_factor_identification/
 ├── intermediate/
 │   ├── close_matrix.parquet
 │   ├── return_matrix.parquet
@@ -143,6 +145,8 @@ Complete CORE and FULL panels
         Variance decomposition
         ↓
         Internal factor isolation
+        ↓
+        L1 local-factor identification
         ↓
         Rolling PCA
 ```
@@ -299,6 +303,99 @@ Pure Lasso             sensitivity comparison, not the main result
 
 The current penalty path records reconstruction and non-zero-weight counts for several `lambda_1` values, both with and without the `lambda_2` grouping term. A penalty will be considered useful only if the selected stocks are reasonably stable and the information loss is transparent; a visually sparse result alone is not sufficient evidence of a real factor.
 
+## L1 rotation and local-factor identification
+
+Script `13_l1_local_factor_identification.py` addresses a different problem from Sparse PCA. Sparse PCA changes the estimated directions through penalization; L1 rotation starts from an estimated PCA loading space and selects a sparse coordinate system *inside that same space*. It implements the multistart procedure and diagnostic of [Freyaldenhoven (2026), *Identification through sparsity in factor models: The L1-rotation criterion*](https://doi.org/10.3982/QE2369), following the accompanying [`l1rotation` reference implementation](https://kobleary.github.io/l1rotation/).
+
+For `n` stocks and `K` retained components, let
+
+$$
+\Lambda_0 = \sqrt{n}\,[v_1,\ldots,v_K],
+\qquad
+\frac{1}{n}\Lambda_0^\top\Lambda_0=I_K,
+$$
+
+where the `v_k` are the correlation-PCA eigenvectors. For a unit direction `q`, the criterion is
+
+$$
+Q(q)=\lVert\Lambda_0q\rVert_1
+=\sum_{i=1}^{n}|(\Lambda_0q)_i|,
+\qquad \lVert q\rVert_2=1.
+$$
+
+The objective is non-convex on the unit sphere and can have several economically relevant local minima. The implementation therefore uses 1,000 random starting directions for the primary three-factor specification, optimizes in hyperspherical coordinates, consolidates sign-equivalent nearby solutions, and selects `K` linearly independent directions. If `R=[q_1,\ldots,q_K]` is the resulting nonsingular—generally oblique—rotation, then
+
+$$
+\widehat{\Lambda}^{*}=\Lambda_0R.
+$$
+
+This is selection by rotation, not shrinkage: small entries are not forced to zero. Factor scores are recovered by least squares,
+
+$$
+\widehat F
+=Z\widehat{\Lambda}^{*}
+\left(\widehat{\Lambda}^{*\top}\widehat{\Lambda}^{*}\right)^{-1},
+$$
+
+and, because `R` is nonsingular,
+
+$$
+\widehat F\widehat{\Lambda}^{*\top}
+=ZV_KV_K^\top.
+$$
+
+The rotated representation therefore preserves the selected PCA subspace exactly. On the current sample, the numerical discrepancy is below `3e-14`; the first three residual components still reconstruct `56.1085%` of standardized residual variance.
+
+### Local-factor diagnostic
+
+The reference diagnostic defines a loading as small when
+
+$$
+|\widehat\lambda_{ik}^{*}|<h_n,
+\qquad h_n=\frac{1}{\log n},
+$$
+
+and counts small entries in every factor,
+
+$$
+\mathcal L_k=\sum_{i=1}^{n}
+\mathbf 1\{|\widehat\lambda_{ik}^{*}|<h_n\}.
+$$
+
+With `p_h=2\Phi(h_n)-1`, the implementation uses the package's 5% critical rule
+
+$$
+\gamma_n=\left\lfloor n\left[
+0.03+p_h+z_{0.975}
+\sqrt{\frac{p_h(1-p_h)}{n}}
+\right]\right\rfloor,
+\qquad
+\max_k\mathcal L_k>\gamma_n.
+$$
+
+Here `n=12`, so `h_n=0.4024` and `gamma_n=7`. Conditional on the three-component working space, the residual rotation has small-loading counts `[9, 8, 4]`: LF1 and LF2 meet the local-factor threshold, while LF3 is a broader direction. The corresponding residual loading map is:
+
+- **LF1:** `MS`, `C`, and `WFC` are active under the reference threshold;
+- **LF2:** `JPM`, `BAC`, `WFC`, and `MS` are active;
+- **LF3:** `JPM` plus the regional-bank block `USB`, `TFC`, `KEY`, `RF`, `FITB`, `CFG`, and `HBAN` are active.
+
+These labels describe loading support, not causal shocks. They are also conditional on `K=3`. The eigenvalue-ratio diagnostic selects one dominant residual factor, and the L1 local-factor test is negative at `K=2` but positive for `K=3,4,5`. The three-factor specification is retained as an interpretive working space because it exposes internal cross-sectional structure; it is not presented as an undisputed estimate of the true factor count.
+
+### Whole-session bootstrap
+
+Minute observations within a day are not treated as independent bootstrap units. The script resamples the 924 trading sessions with replacement 100 times, rebuilds the correlation matrix from session-level sufficient statistics, re-estimates PCA and the L1 rotation, and aligns each bootstrap estimate to the full-sample factors by maximizing absolute loading cosine similarity. For reference loading `k` and bootstrap loading `j`, the matching score is
+
+$$
+s_{kj}^{(b)}=
+\frac{|\widehat\lambda_k^\top\widehat\lambda_j^{(b)}|}
+{\lVert\widehat\lambda_k\rVert_2
+ \lVert\widehat\lambda_j^{(b)}\rVert_2}.
+$$
+
+Residual LF1 and LF3 have fifth-percentile cosine similarities of `0.996` and `1.000`. LF2 has a median of `0.998` but a fifth percentile of `0.690`, which reveals a real tail-stability warning: `JPM`, `BAC`, and `WFC` remain active in every replication, while the fourth active loading alternates mainly between `MS` (`52%`) and `C` (`48%`). This uncertainty is retained in the output instead of assigning an overconfident economic label.
+
+The stage writes inspectable loading, rotation, factor-count, `K`-sensitivity, factor-score, bootstrap-direction, and bootstrap-support tables, together with three diagnostic figures. The generated research artifacts live under `reports/local_factor_identification/` and remain outside version control.
+
 ## Research roadmap
 
 ### 1. Baseline PCA
@@ -362,15 +459,19 @@ This design is grounded in the following literature:
 
 ### 5. Internal factor composition
 
-The next analysis will compare standard correlation PCA with Varimax and Elastic-Net Sparse PCA. The purpose is not to force an economic story onto PC1, PC2, or PC3. It is to ask whether the statistical structure can be described using a smaller, more stable set of titles and whether that description survives benchmark residualization.
+The analysis compares standard correlation PCA with Varimax and Elastic-Net Sparse PCA. The purpose is not to force an economic story onto PC1, PC2, or PC3. It asks whether the statistical structure can be described using a smaller, more stable set of stocks and whether that description survives benchmark residualization.
 
-The first pass uses three components and a transparent penalty path. Pure L1 and Elastic Net are both reported so that the grouping effect can be seen rather than assumed. A later version can add rolling sparse-factor stability and block bootstrap intervals once the static structure is understood.
+The first pass uses three components and a transparent penalty path. Pure L1 and Elastic Net are both reported so that the grouping effect can be seen rather than assumed.
 
-### 6. Covariance estimation and random-matrix diagnostics
+### 6. Sparse identification of local factors
+
+The completed L1-rotation stage searches for sparse directions within the PCA loading space and tests whether any factor is local. Whole-session bootstrap probabilities distinguish stable loading support from one attractive full-sample rotation. The natural extension is a rolling or regime-conditional version that asks whether the same local directions persist through the March 2023 banking stress window.
+
+### 7. Covariance estimation and random-matrix diagnostics
 
 Sample covariance will be compared with shrinkage estimators such as Ledoit-Wolf, and potentially with exponentially weighted covariance. Random Matrix Theory will be used as a diagnostic benchmark for separating strong empirical components from noise. The Marchenko-Pastur distribution will not be treated as literal truth because the returns are not iid Gaussian observations.
 
-### 7. Residual dynamics and out-of-sample testing
+### 8. Residual dynamics and out-of-sample testing
 
 Only after the factor structure is understood will we study autocorrelation, mean reversion, stationarity, lead-lag relationships, and short-horizon forecasting. Any apparent signal must be evaluated walk-forward, out of sample, and with realistic transaction costs.
 
@@ -413,13 +514,15 @@ Completed:
 - Descriptive rolling covariance/correlation PCA with 20- and 60-session windows
 - Reusable PCA and benchmark-residualization modules
 - Internal factor-isolation script with Varimax and Elastic-Net Sparse PCA
+- L1 local-factor identification with oblique rotation and the reference small-loading test
+- Whole-session bootstrap support probabilities with optimal factor alignment
+- Factor-count and `K=2,...,5` sensitivity diagnostics for the local-factor conclusion
 
 Next:
 
-- Inspect the Varimax loading maps and the L1/L2 sparsity path
-- Compare sparse-factor support across raw and benchmark-residualized returns
+- Compare the L1 local factors with the Varimax and Elastic-Net loading maps
 - Review the rolling PCA diagnostics and identify stress-window candidates
-- Add block-bootstrap confidence bands before making formal rolling-inference claims
+- Add rolling or regime-conditional local-factor estimates around March 2023
 
 Later:
 
@@ -453,6 +556,7 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 10_variance_decomposition.py  reconcile raw variance with benchmark and residual PCA parts
 11_rolling_pca.py             run descriptive 20/60-session rolling PCA diagnostics
 12_internal_factor_isolation.py  compare PCA, Varimax, and Elastic-Net Sparse PCA
+13_l1_local_factor_identification.py  identify and bootstrap sparse local factors
 ```
 
 The reusable numerical helpers live in `src/pca_utils.py`; benchmark projection and residualization are shared through `src/benchmark_utils.py`. The numbered scripts call these modules instead of maintaining separate PCA implementations.
@@ -470,4 +574,5 @@ The downloader filename contains a historical typo (`crwal`). It is kept for com
 - Support economic labels with actual loadings and constituent composition.
 - Treat Varimax and Sparse PCA as interpretive tools, not causal identification.
 - Do not interpret sparse zero weights as proof that a stock has no economic exposure.
+- Treat L1-rotation factors as conditional on the retained PCA dimension and report session-bootstrap instability.
 - Treat the CORE universe as the primary specification and the FULL universe as a robustness check.
