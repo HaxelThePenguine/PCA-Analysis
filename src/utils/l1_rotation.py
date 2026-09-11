@@ -9,6 +9,7 @@ space and therefore does not shrink coefficients.
 
 from __future__ import annotations
 
+from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass
 from math import ceil, floor, log, sqrt
 
@@ -108,6 +109,34 @@ def _canonical_direction(direction: np.ndarray) -> np.ndarray:
     if len(material) and vector[material[0]] < 0:
         vector *= -1
     return vector
+
+
+def _l1_objective(angles: np.ndarray, loadings: np.ndarray) -> float:
+    return float(np.abs(loadings @ spherical_to_cartesian(angles)).sum())
+
+
+def _optimize_l1_start(
+    payload: tuple[np.ndarray, np.ndarray, int],
+) -> tuple[float, np.ndarray, bool]:
+    """Optimize one independent L1 direction in a worker process."""
+
+    loadings, initial_direction, iterations = payload
+    initial_angles = cartesian_to_spherical(initial_direction)
+    result = minimize(
+        _l1_objective,
+        initial_angles,
+        args=(loadings,),
+        method="Nelder-Mead",
+        options={
+            "maxiter": iterations,
+            "xatol": 1e-7,
+            "fatol": 1e-7,
+            "disp": False,
+        },
+    )
+    direction = _canonical_direction(spherical_to_cartesian(result.x))
+    objective = float(np.abs(loadings @ direction).sum())
+    return objective, direction, bool(result.success)
 
 
 def _grid_size(n_factors: int) -> int:
@@ -273,6 +302,8 @@ def l1_rotate_basis(
     cluster_tolerance: float = 0.05,
     minimum_frequency: float = 0.005,
     eigenvalues: np.ndarray | None = None,
+    n_jobs: int = 1,
+    executor: Executor | None = None,
 ) -> L1BasisRotation:
     """Find a sparse, nonsingular rotation of an orthonormal loading basis."""
 
@@ -283,6 +314,8 @@ def l1_rotate_basis(
         raise ValueError("The initial loading basis has invalid dimensions or values.")
 
     n_variables, n_factors = loadings.shape
+    if int(n_jobs) < 1:
+        raise ValueError("n_jobs must be at least one.")
     scaled_gram = loadings.T @ loadings / n_variables
     if not np.allclose(scaled_gram, np.eye(n_factors), atol=1e-6):
         raise ValueError("Initial loadings must satisfy Lambda.T @ Lambda / n = I.")
@@ -295,28 +328,20 @@ def l1_rotate_basis(
     initial_directions = generator.normal(size=(starts, n_factors))
     initial_directions /= np.linalg.norm(initial_directions, axis=1, keepdims=True)
 
-    solutions = []
-    successes = 0
-    for initial_direction in initial_directions:
-        initial_angles = cartesian_to_spherical(initial_direction)
-        result = minimize(
-            lambda angles: float(
-                np.abs(loadings @ spherical_to_cartesian(angles)).sum()
-            ),
-            initial_angles,
-            method="Nelder-Mead",
-            options={
-                "maxiter": iterations,
-                "xatol": 1e-7,
-                "fatol": 1e-7,
-                "disp": False,
-            },
-        )
-        direction = _canonical_direction(spherical_to_cartesian(result.x))
-        objective = float(np.abs(loadings @ direction).sum())
-        if np.isfinite(objective):
-            solutions.append((objective, direction, bool(result.success)))
-            successes += int(result.success)
+    payloads = [(loadings, direction, iterations) for direction in initial_directions]
+    owned_executor = None
+    if executor is not None:
+        optimized = list(executor.map(_optimize_l1_start, payloads))
+    elif int(n_jobs) > 1:
+        owned_executor = ProcessPoolExecutor(max_workers=int(n_jobs))
+        try:
+            optimized = list(owned_executor.map(_optimize_l1_start, payloads))
+        finally:
+            owned_executor.shutdown(wait=True)
+    else:
+        optimized = [_optimize_l1_start(payload) for payload in payloads]
+    solutions = [item for item in optimized if np.isfinite(item[0])]
+    successes = sum(int(success) for _, _, success in solutions)
     if not solutions:
         raise RuntimeError("Every L1-rotation optimization failed.")
 
@@ -376,6 +401,8 @@ def fit_l1_rotation(
     n_components: int = 3,
     n_starts: int | None = None,
     random_state: int = 916,
+    n_jobs: int = 1,
+    executor: Executor | None = None,
 ) -> L1RotationResult:
     """Rotate a PCA loading space and compute observationally equivalent scores."""
 
@@ -388,6 +415,8 @@ def fit_l1_rotation(
         n_starts=n_starts,
         random_state=random_state,
         eigenvalues=pca_result.eigenvalues[:n_components],
+        n_jobs=n_jobs,
+        executor=executor,
     )
 
     labels = [f"LF{i}" for i in range(1, n_components + 1)]

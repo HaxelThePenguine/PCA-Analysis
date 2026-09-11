@@ -496,6 +496,52 @@ Run the complete real-data stage from the project root with:
 
 The analysis is intentionally conservative about interpretation. Overlapping windows are dependent; threshold crossings are not p-values; the March 2023 and recent-period groups contain many mixed windows; factor labels remain conditional on `K=3`; and SPY/XLF are benchmark controls rather than exogenous instruments. The stage does not test predictability, causality, trading profitability, or out-of-sample stability. The next useful checks are block/session bootstrap uncertainty for rolling paths, comparison with the 13-bis Kalman extension, and a frozen walk-forward evaluation.
 
+## Stage 15: Factor-adjusted residual volatility network
+
+Script [`15_factor_adjusted_residual_network.py`](src/15_factor_adjusted_residual_network.py) asks whether directed volatility predictability remains after removing the SPY/XLF benchmark component and the three-dimensional banking subspace identified by the rolling L1 analysis. The production specification freezes `K=3`, uses a 120-session trailing factor window with five-session updates, and applies a 60-session window plus a 252-session rolling HAR estimation window as robustness checks. The factor transformation is estimated from preceding sessions only and is then applied to the subsequent score block.
+
+For each training window, the stock returns are first projected on SPY and XLF. The residuals are centered and standardized using training-window means and scales, correlation PCA is fitted, and the existing L1 rotation is applied to the first three PCA directions. If `Lambda` denotes the rotated loading matrix, the factor-adjusted return is constructed through
+
+$$
+u_t=D\left[I-\Lambda(\Lambda'\Lambda)^{-1}\Lambda'\right]z_t.
+$$
+
+The rotation is an interpretive change of coordinates, not an additional residualization step. Since the retained L1 directions span the same space as the first three PCA directions,
+
+$$
+\Lambda(\Lambda'\Lambda)^{-1}\Lambda'=V_3V_3',
+$$
+
+up to floating-point precision. In the production output the maximum projector discrepancy and the reported residual orthogonality errors are at numerical zero, while the largest rotation condition number is approximately `2.70`. The rolling first-three PCA space explains approximately `57.0%` of standardized benchmark-residual variance on average, after SPY/XLF remove approximately `45.8%` of stock variance in the 120-session specification and `44.8%` in the 60-session specification.
+
+Residualized one-minute log returns are aggregated into valid, non-overlapping five-minute intervals within each trading session. Daily realized variance is the sum of squared five-minute residual returns, with a documented positive numerical floor. Raw and benchmark-residualized realized-variance panels are generated as descriptive controls; forecast losses are evaluated only on the factor-adjusted target.
+
+The forecasting model is a one-session-ahead HAR equation for each target stock. Its own daily, weekly, and monthly terms remain unpenalized, while the corresponding terms of the other stocks are estimated through chronological partialling-out lasso cross-validation. The one-standard-error penalty is the primary selection, with the minimum-loss penalty retained as a sensitivity result. Forecasts are transformed back to variance units with a training-only smearing correction, and QLIKE is the primary loss.
+
+The completed production comparison is:
+
+| Specification | Own-HAR QLIKE | Network-HAR QLIKE | Relative QLIKE improvement |
+| --- | ---: | ---: | ---: |
+| 120-session expanding | 0.198327 | 0.191449 | 3.47% |
+| 120-session factor, 252-session HAR rolling | 0.198516 | 0.189443 | 4.57% |
+| 60-session expanding | 0.193153 | 0.185120 | 4.16% |
+
+The network wins on pooled QLIKE in all three specifications. For the primary 120-session expanding design, the network-minus-own loss differential is `-0.006878`, with HAC standard error `0.001845` and nominal two-sided p-value `0.000193`. After Benjamini–Hochberg adjustment across the twelve stock equations, network improvement is strongest for BAC, CFG, HBAN, RF, TFC, and USB, whereas Citi (`C`) is significantly worse under the network specification. The effect is therefore heterogeneous: the pooled result is not evidence that every bank benefits from the same spillover structure.
+
+The strongest primary stable edges include `C→BAC`, `C→JPM`, `BAC→JPM`, `CFG→KEY`, `KEY→RF`, `C→WFC`, and `USB→TFC`. The loading evolution is also economically legible: LF1 remains concentrated on MS and C, LF2 is concentrated on WFC, JPM, BAC, and C with more time variation, and LF3 remains the broad regional-bank direction led by CFG, FITB, HBAN, KEY, RF, TFC, and USB. After factor adjustment, descriptive within-group selection falls relative to raw volatility for the regional group, especially in the 60-session comparison, but a non-trivial residual network remains. This is consistent with the view that some apparent links were common-factor exposure while others survive in idiosyncratic volatility dynamics.
+
+The March–May 2023 stress interval is correctly reported as unavailable for the outer forecast because the factor-estimation and HAR burn-in place the first valid forecasts later. Consequently, this stage cannot establish whether the residual regional-bank network becomes stronger during that episode. The rolling LF3 loadings remain geometrically stable, but that descriptive fact must not be substituted for a stress-period out-of-sample test.
+
+All stage-15 artifacts are kept separately under `alpaca_us_banks_1m/reports/factor_adjusted_residual_network/`. The main inspectable tables are `15_daily_realized_variance.csv`, `15_factor_model_diagnostics.csv`, `15_factor_loadings.csv`, `15_walk_forward_forecasts.csv`, `15_forecast_summary.csv`, `15_stock_forecast_summary.csv`, `15_hac_tests.csv`, `15_har_coefficients.csv`, `15_edge_history.csv`, `15_edge_stability.csv`, `15_network_density.csv`, `15_network_centrality.csv`, `15_group_connectivity.csv`, `15_descriptive_edge_stability.csv`, `15_descriptive_group_connectivity.csv`, `15_bootstrap_edge_selection.csv`, and `15_factor_window_comparison.csv`. The figures are `15_cumulative_qlike_difference.png`, `15_stock_qlike_improvement.png`, `15_stable_directed_network_heatmap.png`, `15_edge_selection_persistence.png`, `15_group_connectivity.png`, `15_variance_removed.png`, and `15_factor_loading_evolution.png`; `15_summary.txt` contains the compact machine-generated narrative.
+
+Run the stage from the project root with, for example,
+
+```text
+.\\.venv\\Scripts\\python.exe src\\15_factor_adjusted_residual_network.py --n-jobs 12
+```
+
+The result is a rigorous pseudo-out-of-sample volatility-forecasting and dependence-structure result, not a claim of structural causality, contagion, alpha, or deployable trading profitability. The 2023–2026 sample was already examined during factor discovery, the lasso is selected repeatedly within that historical sample, and the bootstrap uses a deliberately small exploratory replication count with block-length sensitivity. Edge-selection probability is a stability descriptor rather than a p-value. A genuinely untouched future holdout remains necessary before stronger claims can be made.
+
 ## Research roadmap
 
 ### 1. Baseline PCA
@@ -621,12 +667,13 @@ Completed:
 - Factor-count and `K=2,...,5` sensitivity diagnostics for the local-factor conclusion
 - Dynamic 60/120-session rolling L1 local-factor stability, regime summaries, alignment diagnostics, and 500-start sensitivity checks
 - Shared session-window helpers, synthetic support-shift tests, and import-safe stage-14 regression coverage
+- Leakage-controlled factor-adjusted realized-volatility network HAR, HAC comparisons, block bootstrap stability, descriptive controls, and production diagnostics
 
 Next:
 
-- Compare the L1 local factors with the Varimax and Elastic-Net loading maps
-- Compare the dynamic L1 results with the 13-bis Kalman dynamic-factor extension
-- Add block/session uncertainty bands and formal multiple-testing controls for rolling instability candidates
+- Freeze the Stage 15 primary specification and evaluate it on a genuinely untouched future holdout
+- Extend the March–May 2023 stress comparison with a forecast design whose burn-in permits valid event-period predictions
+- Increase block-bootstrap replications when the production specification is finalized
 
 Later:
 
@@ -663,6 +710,7 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 13_l1_local_factor_identification.py  identify and bootstrap sparse local factors
 13_bis_kalman_dynamic_factors.py  compare session Kalman factors + L1 with static PCA + L1
 14_dynamic_local_factor_regimes.py  run 60/120-session rolling L1 local-factor regime diagnostics
+15_factor_adjusted_residual_network.py  forecast factor-adjusted realized volatility with a sparse network HAR
 ```
 
 The 13-bis extension starts from the intraday benchmark-residualized panel,
@@ -672,6 +720,11 @@ rotation inside each PCA subspace. Results are kept separately in
 `alpaca_us_banks_1m/reports/kalman_dynamic_local_factors/`, including K=2,4,5
 sensitivity checks, holdout residual variance, factor-alignment diagnostics,
 structural-group candidates, and the regional-bank stress comparison.
+
+The Stage 15 network extension lives in `utils/factor_adjusted_residuals.py`,
+`utils/realized_volatility.py`, and `utils/network_har.py`, with figures and
+the compact narrative in `reporting/network.py`. Its generated outputs are
+kept separately in `alpaca_us_banks_1m/reports/factor_adjusted_residual_network/`.
 
 The source tree separates research orchestration, reusable calculations, and
 presentation. The numbered scripts in `src/` describe each research objective:
@@ -722,9 +775,11 @@ figures were pixel-identical after applying the UTC date-parsing correction to
 the original rolling renderer. Bootstrap replications and multistart searches
 were reduced equally in both implementations for this comparison. This was
 an integration regression, not a rerun of the full production research sample.
-The 29-test suite also checks variance reconciliation, session resampling,
+The 41-test suite also checks variance reconciliation, session resampling,
 configurable rolling windows, holdout isolation in the Kalman training fit,
-import safety, and computation without file output.
+import safety, computation without file output, factor-projector invariance,
+factor-adjustment holdout isolation, and serial-versus-parallel numerical
+equivalence for the Stage 15 estimators.
 
 The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
 
