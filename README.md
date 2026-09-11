@@ -8,6 +8,8 @@ We start from one-minute SIP market data for a group of large U.S. financial sto
 
 The longer-term question is whether anything left after removing the broad common factors has a stable structure. If residual movements show persistence, mean reversion, or lead-lag relationships, they may deserve further research. That signal would still need to survive walk-forward testing, realistic transaction costs, and an honest out-of-sample evaluation before it could be considered useful.
 
+For a dated snapshot of the numerical results, factor localization, and current interpretation, see [`RESULTS_TO_DATE.md`](RESULTS_TO_DATE.md).
+
 ## Questions we want to answer
 
 The project is organized around a few practical research questions:
