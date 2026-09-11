@@ -26,6 +26,38 @@ class PCAResult:
     scores: pd.DataFrame
 
 
+def pca_diagnostics(result: PCAResult) -> tuple[float, float]:
+    """Check the estimated matrix and score variances against pandas."""
+    matrix_error = float(
+        (result.matrix - result.analysis_data.cov()).abs().to_numpy().max()
+    )
+    score_error = float(
+        np.max(np.abs(result.eigenvalues - result.scores.var(ddof=1).to_numpy()))
+    )
+    return matrix_error, score_error
+
+
+def reconstruction_by_stock(result: PCAResult, n_components: int = 3) -> pd.DataFrame:
+    """Variance retained by a truncated PCA in the fitted analysis scale."""
+    if not 1 <= n_components <= len(result.eigenvalues):
+        raise ValueError("n_components must lie within the fitted PCA dimension.")
+    reconstruction = (
+        result.scores.iloc[:, :n_components].to_numpy()
+        @ result.eigenvectors[:, :n_components].T
+    )
+    residuals = result.analysis_data - reconstruction
+    summary = pd.DataFrame(
+        {
+            "original_variance": result.analysis_data.var(ddof=1),
+            "residual_variance": residuals.var(ddof=1),
+        }
+    )
+    summary["explained_pct"] = 100 * (
+        1 - summary["residual_variance"] / summary["original_variance"]
+    )
+    return summary
+
+
 @dataclass(frozen=True)
 class VarimaxResult:
     """Container for an orthogonal rotation of selected PCA components."""
@@ -204,9 +236,7 @@ def varimax(
         rotated = phi @ rotation
         squared = rotated**2
         diagonal = np.diag(squared.sum(axis=0))
-        target = phi.T @ (
-            rotated**3 - (gamma / n_variables) * rotated @ diagonal
-        )
+        target = phi.T @ (rotated**3 - (gamma / n_variables) * rotated @ diagonal)
         left, singular_values, right_transpose = np.linalg.svd(
             target,
             full_matrices=False,
@@ -215,10 +245,8 @@ def varimax(
         objective = singular_values.sum()
         rotation = new_rotation
 
-        if (
-            iteration > 1
-            and abs(objective - previous_objective)
-            <= tolerance * max(1.0, abs(previous_objective))
+        if iteration > 1 and abs(objective - previous_objective) <= tolerance * max(
+            1.0, abs(previous_objective)
         ):
             break
         previous_objective = objective
@@ -415,9 +443,7 @@ def fit_elastic_net_sparse_pca(
     reconstructed = scores.to_numpy() @ reconstruction_coefficients
     total_sum_of_squares = np.square(x).sum()
     reconstruction_error = np.square(x - reconstructed).sum()
-    reconstruction_pct = 100 * (
-        1 - reconstruction_error / total_sum_of_squares
-    )
+    reconstruction_pct = 100 * (1 - reconstruction_error / total_sum_of_squares)
 
     return SparsePCAResult(
         l1_penalty=l1_penalty,

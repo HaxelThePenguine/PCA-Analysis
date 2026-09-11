@@ -1,71 +1,67 @@
-"""Rolling stability and regime diagnostics for the L1 local-factor stage.
-
-The module keeps the rolling stage separate from the numbered entry point so
-that its pure helpers can be tested without running the real-data analysis.
-Each window re-estimates SPY/XLF residuals, correlation PCA, and L1 rotation
-using only observations in that trailing window. Factor labels are aligned in
-two distinct ways: a past-only anchor for stability and an ex-post full-sample
-anchor for descriptive plots.
-"""
+"""Reusable routines for dynamic factor."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
-from pathlib import Path
 from typing import Any, Iterable
 
-import matplotlib
-
-matplotlib.use("Agg")
-
-import matplotlib.dates as mdates
-import matplotlib.pyplot as plt
-from matplotlib.axes import Axes
-from matplotlib.colors import TwoSlopeNorm
 import numpy as np
 import pandas as pd
 
-from benchmark_utils import residualize_against_benchmarks
-from config import (
-    BENCHMARKS,
-    CORE_UNIVERSE,
-    REPORTS_DIR,
-    RETURN_MATRIX_CLEAN_FILE,
-    ensure_project_directories,
-)
-from data_utils import load_panel, validate_panel
-from l1_rotation_utils import (
-    L1RotationResult,
-    align_loading_columns,
-    fit_l1_rotation,
-)
-from pca_utils import fit_pca
-from plotting_utils import save_figure, style_axis
-from rolling_utils import rolling_starts, session_index, session_window_positions
+from config import BENCHMARKS, CORE_UNIVERSE
+from utils.benchmark import residualize_against_benchmarks
+from utils.data import validate_panel
+from utils.l1_rotation import align_loading_columns, fit_l1_rotation
+from utils.pca import fit_pca
+from utils.rolling import rolling_starts, session_index, session_window_positions
 
-
-OUT_DIR = REPORTS_DIR / "dynamic_local_factor_regimes"
 STOCKS = list(CORE_UNIVERSE)
+
+
 FACTORS = [f"LF{i}" for i in range(1, 4)]
+
+
 WINDOWS = (60, 120)
+
+
 STEP_SESSIONS = 5
+
+
 N_COMPONENTS = 3
+
+
 PRIMARY_STARTS = 200
+
+
 SENSITIVITY_STARTS = 500
+
+
 FULL_SAMPLE_STARTS = 1000
+
+
 RANDOM_STATE = 14014
+
+
 FULL_SAMPLE_RANDOM_STATE = 917
+
+
 COSINE_INSTABILITY_THRESHOLD = 0.80
+
+
 JACCARD_INSTABILITY_THRESHOLD = 0.50
+
+
 CONDITION_NUMBER_THRESHOLD = 10.0
+
+
 BANKING_CRISIS_START = pd.Timestamp("2023-03-01")
+
+
 BANKING_CRISIS_END = pd.Timestamp("2023-05-31")
+
+
 RECENT_PERIOD_START = pd.Timestamp("2026-01-01")
-CRISIS_SHADE_START = pd.Timestamp("2023-03-01")
-CRISIS_SHADE_END = pd.Timestamp("2023-06-01")
-COLORS = {"LF1": "#2F6690", "LF2": "#D99A2B", "LF3": "#C26A2E"}
-GRID_COLOR = "#D9DEE5"
 
 
 @dataclass(frozen=True)
@@ -241,7 +237,9 @@ def build_window_definitions(
             positions = session_window_positions(codes, start, window_size)
             window_sessions = sessions[start : end + 1]
             if len(window_sessions) != window_size:
-                raise AssertionError("A rolling window did not contain the requested sessions.")
+                raise AssertionError(
+                    "A rolling window did not contain the requested sessions."
+                )
             regime, sequence, crosses = classify_window_regime(window_sessions)
             window_start = pd.Timestamp(window_sessions[0])
             window_end = pd.Timestamp(window_sessions[-1])
@@ -641,9 +639,9 @@ def run_rolling_fits(
                 full_sample_reference.to_numpy(dtype=float),
                 threshold,
             )
-            anchor_local_flags = (
-                (~reference_active).sum(axis=0).astype(int) > fit.gamma_n
-            )
+            anchor_local_flags = (~reference_active).sum(axis=0).astype(
+                int
+            ) > fit.gamma_n
 
             common = {
                 **_base_window_metadata(definition),
@@ -651,7 +649,9 @@ def run_rolling_fits(
                 "alignment_method": alignment_method,
             }
             for factor_number, factor in enumerate(FACTORS):
-                local_changed = bool(local_flags[factor_number] != anchor_local_flags[factor_number])
+                local_changed = bool(
+                    local_flags[factor_number] != anchor_local_flags[factor_number]
+                )
                 reasons = _instability_reasons(
                     float(previous_cosines[factor_number]),
                     float(anchor_cosines[factor_number]),
@@ -699,7 +699,9 @@ def run_rolling_fits(
                             "anchor_structural_loading": reference_values[
                                 stock_number, factor_number
                             ],
-                            "is_active": bool(current_active[stock_number, factor_number]),
+                            "is_active": bool(
+                                current_active[stock_number, factor_number]
+                            ),
                             "anchor_is_active": bool(
                                 reference_active[stock_number, factor_number]
                             ),
@@ -725,7 +727,9 @@ def run_rolling_fits(
                             "structural_loading": current_values[
                                 stock_number, factor_number
                             ],
-                            "is_active": bool(current_active[stock_number, factor_number]),
+                            "is_active": bool(
+                                current_active[stock_number, factor_number]
+                            ),
                             "anchor_is_active": bool(
                                 reference_active[stock_number, factor_number]
                             ),
@@ -752,20 +756,29 @@ def run_rolling_fits(
                 {
                     **common,
                     "mean_cosine_similarity_anchor": float(np.nanmean(anchor_cosines)),
-                    "minimum_cosine_similarity_anchor": float(np.nanmin(anchor_cosines)),
+                    "minimum_cosine_similarity_anchor": float(
+                        np.nanmin(anchor_cosines)
+                    ),
                     "mean_support_jaccard_anchor": float(np.nanmean(anchor_jaccards)),
                     "minimum_support_jaccard_anchor": float(np.nanmin(anchor_jaccards)),
                     "n_local_factors": int(local_flags.sum()),
-                    "n_instability_flags": int(sum(bool(reasons) for reasons in [
-                        _instability_reasons(
-                            float(previous_cosines[index]),
-                            float(anchor_cosines[index]),
-                            float(anchor_jaccards[index]),
-                            bool(local_flags[index] != anchor_local_flags[index]),
-                            fit.rotation_condition_number,
+                    "n_instability_flags": int(
+                        sum(
+                            bool(reasons)
+                            for reasons in [
+                                _instability_reasons(
+                                    float(previous_cosines[index]),
+                                    float(anchor_cosines[index]),
+                                    float(anchor_jaccards[index]),
+                                    bool(
+                                        local_flags[index] != anchor_local_flags[index]
+                                    ),
+                                    fit.rotation_condition_number,
+                                )
+                                for index in range(N_COMPONENTS)
+                            ]
                         )
-                        for index in range(N_COMPONENTS)
-                    ])),
+                    ),
                     "sensitivity_run": False,
                     "sensitivity_reason": "",
                     "sensitivity_conclusion_stable": np.nan,
@@ -774,9 +787,7 @@ def run_rolling_fits(
             )
             previous_aligned[mode_key] = alignment.structural_loadings.copy()
 
-        anchors[definition.window_sessions].update(
-            past_alignment.structural_loadings
-        )
+        anchors[definition.window_sessions].update(past_alignment.structural_loadings)
 
     return (
         fits,
@@ -848,11 +859,13 @@ def run_start_count_sensitivity(
         primary_aligned = contexts[window_id]["primary_past_alignment"]
         threshold = primary.small_loading_threshold
         primary_values = primary_aligned.structural_loadings.to_numpy(dtype=float)
-        sensitivity_values = aligned_sensitivity.structural_loadings.to_numpy(dtype=float)
+        sensitivity_values = aligned_sensitivity.structural_loadings.to_numpy(
+            dtype=float
+        )
         primary_small = (np.abs(primary_values) < threshold).sum(axis=0).astype(int)
         sensitivity_small = (
-            np.abs(sensitivity_values) < threshold
-        ).sum(axis=0).astype(int)
+            (np.abs(sensitivity_values) < threshold).sum(axis=0).astype(int)
+        )
         primary_local = primary_small > primary.gamma_n
         sensitivity_local = sensitivity_small > sensitivity.gamma_n
         supports = np.asarray(
@@ -866,7 +879,9 @@ def run_start_count_sensitivity(
             ]
         )
         stable = (
-            np.all(aligned_sensitivity.cosine_similarity >= COSINE_INSTABILITY_THRESHOLD)
+            np.all(
+                aligned_sensitivity.cosine_similarity >= COSINE_INSTABILITY_THRESHOLD
+            )
             and np.all(supports >= JACCARD_INSTABILITY_THRESHOLD)
             and np.array_equal(primary_local, sensitivity_local)
         )
@@ -926,7 +941,9 @@ def _merge_sensitivity_annotations(
         .assign(sensitivity_run=True)
     )
     summary["sensitivity_reason"] = "quarterly_or_primary_instability"
-    result = frame.merge(summary, on="window_id", how="left", suffixes=("", "_sensitivity"))
+    result = frame.merge(
+        summary, on="window_id", how="left", suffixes=("", "_sensitivity")
+    )
     result["sensitivity_run"] = result["sensitivity_run"].fillna(False).astype(bool)
     result["sensitivity_reason"] = result["sensitivity_reason"].fillna("")
     result["sensitivity_instability_flag"] = (
@@ -940,7 +957,13 @@ def build_window_diagnostics(
 ) -> pd.DataFrame:
     """Aggregate factor-level diagnostics while retaining alignment method."""
 
-    group_columns = ["window_id", "window_sessions", "window_start", "window_end", "alignment_method"]
+    group_columns = [
+        "window_id",
+        "window_sessions",
+        "window_start",
+        "window_end",
+        "alignment_method",
+    ]
     aggregations = stability.groupby(group_columns, as_index=False).agg(
         window_start_index=("window_start_index", "first"),
         window_end_index=("window_end_index", "first"),
@@ -972,33 +995,30 @@ def build_window_diagnostics(
 def build_regime_summary(stability: pd.DataFrame) -> pd.DataFrame:
     """Summarize factor stability by window size, alignment mode, and regime."""
 
-    return (
-        stability.groupby(
-            ["window_sessions", "alignment_method", "regime", "factor"],
-            as_index=False,
-        )
-        .agg(
-            n_windows=("window_id", "nunique"),
-            n_mixed_regime_windows=("crosses_regime_boundary", "sum"),
-            mean_cosine_similarity_previous=("cosine_similarity_previous", "mean"),
-            mean_cosine_similarity_anchor=("cosine_similarity_anchor", "mean"),
-            minimum_cosine_similarity_anchor=("cosine_similarity_anchor", "min"),
-            mean_cosine_similarity_full_sample=("cosine_similarity_full_sample", "mean"),
-            mean_support_jaccard_anchor=("support_jaccard_anchor", "mean"),
-            minimum_support_jaccard_anchor=("support_jaccard_anchor", "min"),
-            mean_n_small_loadings=("n_small_loadings", "mean"),
-            local_factor_rate=("is_local_factor", "mean"),
-            mean_rotation_condition_number=("rotation_condition_number", "mean"),
-            mean_pc1_explained_pct=("pc1_explained_pct", "mean"),
-            mean_first3_explained_pct=("cumulative_explained_pct_first3", "mean"),
-            mean_benchmark_variance_removed_pct=(
-                "benchmark_variance_removed_pct",
-                "mean",
-            ),
-            n_regime_candidates=("regime_candidate", "sum"),
-            n_sensitivity_runs=("sensitivity_run", "sum"),
-            n_sensitivity_instabilities=("sensitivity_instability_flag", "sum"),
-        )
+    return stability.groupby(
+        ["window_sessions", "alignment_method", "regime", "factor"],
+        as_index=False,
+    ).agg(
+        n_windows=("window_id", "nunique"),
+        n_mixed_regime_windows=("crosses_regime_boundary", "sum"),
+        mean_cosine_similarity_previous=("cosine_similarity_previous", "mean"),
+        mean_cosine_similarity_anchor=("cosine_similarity_anchor", "mean"),
+        minimum_cosine_similarity_anchor=("cosine_similarity_anchor", "min"),
+        mean_cosine_similarity_full_sample=("cosine_similarity_full_sample", "mean"),
+        mean_support_jaccard_anchor=("support_jaccard_anchor", "mean"),
+        minimum_support_jaccard_anchor=("support_jaccard_anchor", "min"),
+        mean_n_small_loadings=("n_small_loadings", "mean"),
+        local_factor_rate=("is_local_factor", "mean"),
+        mean_rotation_condition_number=("rotation_condition_number", "mean"),
+        mean_pc1_explained_pct=("pc1_explained_pct", "mean"),
+        mean_first3_explained_pct=("cumulative_explained_pct_first3", "mean"),
+        mean_benchmark_variance_removed_pct=(
+            "benchmark_variance_removed_pct",
+            "mean",
+        ),
+        n_regime_candidates=("regime_candidate", "sum"),
+        n_sensitivity_runs=("sensitivity_run", "sum"),
+        n_sensitivity_instabilities=("sensitivity_instability_flag", "sum"),
     )
 
 
@@ -1025,706 +1045,3 @@ def build_unstable_windows(stability: pd.DataFrame) -> pd.DataFrame:
         ),
     )
     return result
-
-
-def _shade_crisis(axis: Axes, dates: pd.Series | pd.DatetimeIndex) -> None:
-    """Highlight March-May 2023 without assigning a causal interpretation."""
-
-    parsed = pd.to_datetime(dates)
-    if len(parsed) == 0:
-        return
-    minimum = parsed.min()
-    maximum = parsed.max()
-    if maximum < CRISIS_SHADE_START or minimum > CRISIS_SHADE_END:
-        return
-    axis.axvspan(
-        CRISIS_SHADE_START,
-        CRISIS_SHADE_END,
-        color="#E07A5F",
-        alpha=0.12,
-        linewidth=0,
-        label="Mar–May 2023",
-    )
-
-
-def _shade_index_crisis(axis: Axes, dates: pd.DatetimeIndex) -> None:
-    """Highlight the crisis interval on an image plot with integer x positions."""
-
-    if len(dates) == 0:
-        return
-    mask = (dates >= CRISIS_SHADE_START) & (dates <= CRISIS_SHADE_END)
-    if mask.any():
-        positions = np.flatnonzero(mask)
-        axis.axvspan(
-            max(-0.5, positions[0] - 0.5),
-            positions[-1] + 0.5,
-            color="#E07A5F",
-            alpha=0.12,
-            linewidth=0,
-        )
-
-
-def _format_image_dates(axis: Axes, dates: pd.DatetimeIndex) -> None:
-    """Use a small, readable set of dates on rolling heatmaps."""
-
-    if len(dates) == 0:
-        return
-    count = min(7, len(dates))
-    positions = np.linspace(0, len(dates) - 1, count, dtype=int)
-    axis.set_xticks(positions)
-    axis.set_xticklabels(
-        [dates[position].strftime("%Y-%m-%d") for position in positions],
-        rotation=30,
-        ha="right",
-    )
-
-
-def plot_loading_heatmaps(loadings: pd.DataFrame) -> None:
-    """Plot full-sample-aligned structural loadings through time."""
-
-    data = loadings[
-        loadings["alignment_method"] == "ex_post_full_sample_alignment"
-    ]
-    maximum = float(np.nanmax(np.abs(data["structural_loading"])))
-    norm = TwoSlopeNorm(vmin=-maximum, vcenter=0.0, vmax=maximum)
-    figure, axes = plt.subplots(
-        len(WINDOWS),
-        len(FACTORS),
-        figsize=(18, 10),
-        squeeze=False,
-        sharey=True,
-    )
-    image = None
-    for row, window_size in enumerate(WINDOWS):
-        for column, factor in enumerate(FACTORS):
-            axis = axes[row, column]
-            subset = data[
-                (data["window_sessions"] == window_size)
-                & (data["factor"] == factor)
-            ]
-            pivot = subset.pivot(
-                index="stock",
-                columns="window_end",
-                values="structural_loading",
-            ).reindex(STOCKS)
-            dates = pd.DatetimeIndex(pd.to_datetime(pivot.columns))
-            image = axis.imshow(
-                pivot.to_numpy(dtype=float),
-                cmap="RdBu_r",
-                norm=norm,
-                aspect="auto",
-                interpolation="nearest",
-            )
-            _shade_index_crisis(axis, dates)
-            _format_image_dates(axis, dates)
-            axis.set_title(f"{window_size}-session: {factor}")
-            if column == 0:
-                axis.set_yticks(range(len(STOCKS)))
-                axis.set_yticklabels(STOCKS)
-            else:
-                axis.set_yticks(range(len(STOCKS)))
-                axis.set_yticklabels([])
-            axis.tick_params(axis="both", length=0)
-            for spine in axis.spines.values():
-                spine.set_visible(False)
-    colorbar_axis = figure.add_axes([0.925, 0.16, 0.015, 0.68])
-    figure.colorbar(image, cax=colorbar_axis, label="Structural loading")
-    figure.suptitle(
-        "Rolling L1-rotation structural loadings",
-        x=0.06,
-        ha="left",
-        y=0.98,
-        fontsize=14,
-    )
-    figure.text(
-        0.06,
-        0.945,
-        "Ex-post full-sample alignment is descriptive only; the shaded interval is March–May 2023.",
-        color="#666666",
-        fontsize=9,
-    )
-    figure.subplots_adjust(
-        left=0.05,
-        right=0.90,
-        bottom=0.10,
-        top=0.86,
-        wspace=0.14,
-        hspace=0.28,
-    )
-    save_figure(figure, OUT_DIR / "14_rolling_l1_loading_heatmaps.png", tight_bbox=True)
-
-
-def plot_support_heatmaps(support: pd.DataFrame) -> None:
-    """Plot full-sample-aligned active support through time."""
-
-    data = support[
-        support["alignment_method"] == "ex_post_full_sample_alignment"
-    ]
-    figure, axes = plt.subplots(
-        len(WINDOWS),
-        len(FACTORS),
-        figsize=(18, 10),
-        squeeze=False,
-        sharey=True,
-    )
-    image = None
-    for row, window_size in enumerate(WINDOWS):
-        for column, factor in enumerate(FACTORS):
-            axis = axes[row, column]
-            subset = data[
-                (data["window_sessions"] == window_size)
-                & (data["factor"] == factor)
-            ]
-            pivot = subset.pivot(
-                index="stock",
-                columns="window_end",
-                values="is_active",
-            ).reindex(STOCKS)
-            dates = pd.DatetimeIndex(pd.to_datetime(pivot.columns))
-            image = axis.imshow(
-                pivot.astype(float).to_numpy(),
-                cmap="Blues",
-                vmin=0.0,
-                vmax=1.0,
-                aspect="auto",
-                interpolation="nearest",
-            )
-            _shade_index_crisis(axis, dates)
-            _format_image_dates(axis, dates)
-            axis.set_title(f"{window_size}-session: {factor}")
-            axis.set_yticks(range(len(STOCKS)))
-            axis.set_yticklabels(STOCKS if column == 0 else [])
-            axis.tick_params(axis="both", length=0)
-            for spine in axis.spines.values():
-                spine.set_visible(False)
-    colorbar_axis = figure.add_axes([0.925, 0.16, 0.015, 0.68])
-    figure.colorbar(image, cax=colorbar_axis, label="Active support (1 = active)")
-    figure.suptitle(
-        "Rolling L1-rotation support membership",
-        x=0.06,
-        ha="left",
-        y=0.98,
-        fontsize=14,
-    )
-    figure.text(
-        0.06,
-        0.945,
-        "Support uses |structural loading| ≥ h_n; labels are aligned ex post for readability.",
-        color="#666666",
-        fontsize=9,
-    )
-    figure.subplots_adjust(
-        left=0.05,
-        right=0.90,
-        bottom=0.10,
-        top=0.86,
-        wspace=0.14,
-        hspace=0.28,
-    )
-    save_figure(
-        figure,
-        OUT_DIR / "14_rolling_support_membership_heatmaps.png",
-        tight_bbox=True,
-    )
-
-
-def plot_stability(stability: pd.DataFrame) -> None:
-    """Plot past-only cosine and support-Jaccard diagnostics."""
-
-    data = stability[stability["alignment_method"] == "past_only"]
-    figure, axes = plt.subplots(
-        len(WINDOWS),
-        2,
-        figsize=(15, 8),
-        squeeze=False,
-        sharex="col",
-        sharey="col",
-    )
-    metrics = [
-        ("cosine_similarity_anchor", "Cosine to past-only anchor", 0.80),
-        ("support_jaccard_anchor", "Support Jaccard to past-only anchor", 0.50),
-    ]
-    for row, window_size in enumerate(WINDOWS):
-        subset = data[data["window_sessions"] == window_size]
-        for column, (metric, ylabel, threshold) in enumerate(metrics):
-            axis = axes[row, column]
-            for factor in FACTORS:
-                factor_data = subset[subset["factor"] == factor].sort_values(
-                    "window_end"
-                )
-                axis.plot(
-                    pd.to_datetime(factor_data["window_end"]),
-                    factor_data[metric],
-                    color=COLORS[factor],
-                    linewidth=1.4,
-                    label=factor,
-                )
-            axis.axhline(threshold, color="#777777", linestyle="--", linewidth=1.0)
-            _shade_crisis(axis, pd.to_datetime(subset["window_end"]))
-            axis.set_ylim(-0.02, 1.05)
-            axis.set_title(f"{window_size}-session window")
-            axis.set_ylabel(ylabel)
-            style_axis(axis, format_dates=True)
-            if row == len(WINDOWS) - 1:
-                axis.set_xlabel("Window end")
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    figure.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.01), ncol=3, frameon=False)
-    figure.suptitle(
-        "Past-only factor stability diagnostics",
-        x=0.06,
-        ha="left",
-        y=1.04,
-        fontsize=14,
-    )
-    figure.text(
-        0.06,
-        1.005,
-        "Dashed lines are descriptive instability thresholds, not structural-break tests.",
-        color="#666666",
-        fontsize=9,
-    )
-    figure.tight_layout(rect=[0, 0, 1, 0.94])
-    save_figure(figure, OUT_DIR / "14_rolling_factor_stability.png", tight_bbox=True)
-
-
-def plot_small_loading_counts(stability: pd.DataFrame) -> None:
-    """Plot small-loading counts against the local-factor critical count."""
-
-    data = stability[stability["alignment_method"] == "past_only"]
-    figure, axes = plt.subplots(len(WINDOWS), 1, figsize=(12, 7), sharex=True)
-    axes = np.atleast_1d(axes)
-    for axis, window_size in zip(axes, WINDOWS):
-        subset = data[data["window_sessions"] == window_size]
-        for factor in FACTORS:
-            factor_data = subset[subset["factor"] == factor].sort_values("window_end")
-            axis.plot(
-                pd.to_datetime(factor_data["window_end"]),
-                factor_data["n_small_loadings"],
-                color=COLORS[factor],
-                linewidth=1.4,
-                label=factor,
-            )
-        gamma = float(subset["gamma_n"].iloc[0])
-        axis.axhline(gamma, color="#777777", linestyle="--", linewidth=1.0, label="gamma_n")
-        _shade_crisis(axis, pd.to_datetime(subset["window_end"]))
-        axis.set_ylim(0, len(STOCKS) + 0.2)
-        axis.set_ylabel("Small loadings")
-        axis.set_title(f"{window_size}-session window")
-        style_axis(axis, format_dates=True)
-    axes[-1].set_xlabel("Window end")
-    handles, labels = axes[0].get_legend_handles_labels()
-    figure.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.01), ncol=4, frameon=False)
-    figure.suptitle(
-        "Local-factor diagnostic through time",
-        x=0.08,
-        ha="left",
-        y=1.05,
-        fontsize=14,
-    )
-    figure.text(
-        0.08,
-        1.015,
-        "A factor is local under the reference rule only when its small-loading count exceeds gamma_n.",
-        color="#666666",
-        fontsize=9,
-    )
-    figure.tight_layout(rect=[0, 0, 1, 0.93])
-    save_figure(figure, OUT_DIR / "14_small_loading_counts.png", tight_bbox=True)
-
-
-def plot_variance_diagnostics(diagnostics: pd.DataFrame) -> None:
-    """Plot explained variance and rolling SPY/XLF variance removal."""
-
-    data = diagnostics[diagnostics["alignment_method"] == "past_only"]
-    metrics = [
-        ("pc1_explained_pct", "PC1 explained variance (%)"),
-        ("cumulative_explained_pct_first3", "First-three explained variance (%)"),
-        ("benchmark_variance_removed_pct", "Mean SPY/XLF variance removed (%)"),
-    ]
-    figure, axes = plt.subplots(len(WINDOWS), len(metrics), figsize=(17, 8), sharex="col")
-    axes = np.atleast_2d(axes)
-    for row, window_size in enumerate(WINDOWS):
-        subset = data[data["window_sessions"] == window_size].sort_values("window_end")
-        for column, (metric, ylabel) in enumerate(metrics):
-            axis = axes[row, column]
-            axis.plot(
-                pd.to_datetime(subset["window_end"]),
-                subset[metric],
-                color="#2F6690" if metric != "benchmark_variance_removed_pct" else "#C26A2E",
-                linewidth=1.5,
-            )
-            _shade_crisis(axis, pd.to_datetime(subset["window_end"]))
-            axis.set_title(f"{window_size}-session window")
-            axis.set_ylabel(ylabel)
-            style_axis(axis, format_dates=True)
-            if row == len(WINDOWS) - 1:
-                axis.set_xlabel("Window end")
-    figure.suptitle(
-        "Rolling variance and benchmark diagnostics",
-        x=0.06,
-        ha="left",
-        y=1.02,
-        fontsize=14,
-    )
-    figure.text(
-        0.06,
-        0.985,
-        "All quantities are re-estimated within the trailing window; shaded interval is March–May 2023.",
-        color="#666666",
-        fontsize=9,
-    )
-    figure.tight_layout(rect=[0, 0, 1, 0.94])
-    save_figure(figure, OUT_DIR / "14_variance_benchmark_diagnostics.png", tight_bbox=True)
-
-
-def _grouped_bar(
-    axis: Axes,
-    frame: pd.DataFrame,
-    value: str,
-    ylabel: str,
-    title: str,
-) -> None:
-    """Draw a compact factor-by-regime grouped bar chart."""
-
-    regimes = list(frame["regime"].drop_duplicates())
-    positions = np.arange(len(regimes))
-    width = 0.24
-    for index, factor in enumerate(FACTORS):
-        values = []
-        for regime in regimes:
-            subset = frame[(frame["regime"] == regime) & (frame["factor"] == factor)]
-            values.append(float(subset[value].iloc[0]) if len(subset) else np.nan)
-        axis.bar(
-            positions + (index - 1) * width,
-            values,
-            width=width,
-            color=COLORS[factor],
-            label=factor,
-        )
-    axis.set_xticks(positions, [regime.replace("_", "\n") for regime in regimes])
-    axis.set_ylabel(ylabel)
-    axis.set_title(title)
-    style_axis(axis)
-
-
-def plot_regime_comparison(regime_summary: pd.DataFrame) -> None:
-    """Plot the explicit pre-crisis, crisis, post-crisis, and recent comparison."""
-
-    data = regime_summary[regime_summary["alignment_method"] == "past_only"]
-    selected = data[data["window_sessions"] == 60]
-    figure, axes = plt.subplots(1, 2, figsize=(15, 5.5))
-    _grouped_bar(
-        axes[0],
-        selected,
-        "mean_cosine_similarity_anchor",
-        "Mean cosine similarity",
-        "60-session regime comparison",
-    )
-    _grouped_bar(
-        axes[1],
-        selected,
-        "mean_support_jaccard_anchor",
-        "Mean support Jaccard",
-        "60-session regime comparison",
-    )
-    handles, labels = axes[0].get_legend_handles_labels()
-    figure.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.02), ncol=3, frameon=False)
-    figure.suptitle(
-        "Factor stability by market regime",
-        x=0.06,
-        ha="left",
-        y=1.08,
-        fontsize=14,
-    )
-    figure.text(
-        0.06,
-        1.03,
-        "Regime is assigned by the majority of sessions in a window; mixed windows are retained and flagged.",
-        color="#666666",
-        fontsize=9,
-    )
-    figure.tight_layout(rect=[0, 0, 1, 0.90])
-    save_figure(figure, OUT_DIR / "14_regime_comparison.png", tight_bbox=True)
-
-
-def plot_window_comparison(stability: pd.DataFrame) -> None:
-    """Compare 60- and 120-session stability summaries."""
-
-    data = stability[stability["alignment_method"] == "past_only"]
-    summary = data.groupby(["window_sessions", "factor"], as_index=False).agg(
-        mean_cosine=("cosine_similarity_anchor", "mean"),
-        mean_jaccard=("support_jaccard_anchor", "mean"),
-        local_rate=("is_local_factor", "mean"),
-    )
-    figure, axes = plt.subplots(1, 3, figsize=(16, 5.2), sharex=True)
-    metrics = [
-        ("mean_cosine", "Mean past-only cosine", (0.0, 1.02)),
-        ("mean_jaccard", "Mean past-only Jaccard", (0.0, 1.02)),
-        ("local_rate", "Local-factor rate", (0.0, 1.02)),
-    ]
-    positions = np.arange(len(FACTORS))
-    width = 0.34
-    for axis, (metric, ylabel, limits) in zip(axes, metrics):
-        for index, window_size in enumerate(WINDOWS):
-            values = [
-                float(
-                    summary[
-                        (summary["window_sessions"] == window_size)
-                        & (summary["factor"] == factor)
-                    ][metric].iloc[0]
-                )
-                for factor in FACTORS
-            ]
-            axis.bar(
-                positions + (index - 0.5) * width,
-                values,
-                width=width,
-                label=f"{window_size} sessions",
-                color="#2F6690" if window_size == 60 else "#D99A2B",
-            )
-        axis.set_xticks(positions, FACTORS)
-        axis.set_ylim(*limits)
-        axis.set_ylabel(ylabel)
-        style_axis(axis)
-    handles, labels = axes[0].get_legend_handles_labels()
-    figure.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.02), ncol=2, frameon=False)
-    figure.suptitle(
-        "60-session versus 120-session factor diagnostics",
-        x=0.06,
-        ha="left",
-        y=1.08,
-        fontsize=14,
-    )
-    figure.text(
-        0.06,
-        1.03,
-        "The 60-session window is primary; 120 sessions is the persistence robustness check.",
-        color="#666666",
-        fontsize=9,
-    )
-    figure.tight_layout(rect=[0, 0, 1, 0.90])
-    save_figure(figure, OUT_DIR / "14_window_size_comparison.png", tight_bbox=True)
-
-
-def write_outputs(
-    loadings: pd.DataFrame,
-    score_loadings: pd.DataFrame,
-    stability: pd.DataFrame,
-    support: pd.DataFrame,
-    diagnostics: pd.DataFrame,
-    regime_summary: pd.DataFrame,
-    unstable_windows: pd.DataFrame,
-    sensitivity: pd.DataFrame,
-    score_correlations: pd.DataFrame,
-) -> None:
-    """Write all machine-readable stage-14 artifacts to the ignored report folder."""
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    tables = {
-        "14_rolling_l1_loadings.csv": loadings,
-        "14_rolling_score_loadings.csv": score_loadings,
-        "14_rolling_factor_stability.csv": stability,
-        "14_rolling_support_membership.csv": support,
-        "14_rolling_window_diagnostics.csv": diagnostics,
-        "14_regime_summary.csv": regime_summary,
-        "14_unstable_windows.csv": unstable_windows,
-        "14_start_count_sensitivity.csv": sensitivity,
-        "14_rolling_score_correlations.csv": score_correlations,
-    }
-    for filename, table in tables.items():
-        table.to_csv(OUT_DIR / filename, index=False)
-
-
-def make_plots(
-    loadings: pd.DataFrame,
-    support: pd.DataFrame,
-    stability: pd.DataFrame,
-    diagnostics: pd.DataFrame,
-    regime_summary: pd.DataFrame,
-) -> None:
-    """Create all requested diagnostic figures."""
-
-    plot_loading_heatmaps(loadings)
-    plot_support_heatmaps(support)
-    plot_stability(stability)
-    plot_small_loading_counts(stability)
-    plot_variance_diagnostics(diagnostics)
-    plot_regime_comparison(regime_summary)
-    plot_window_comparison(stability)
-
-
-def run_analysis(
-    panel: pd.DataFrame | None = None,
-    *,
-    window_sizes: Iterable[int] = WINDOWS,
-    step_sessions: int = STEP_SESSIONS,
-    primary_starts: int = PRIMARY_STARTS,
-    sensitivity_starts: int = SENSITIVITY_STARTS,
-    full_sample_starts: int = FULL_SAMPLE_STARTS,
-    base_seed: int = RANDOM_STATE,
-    full_sample_seed: int = FULL_SAMPLE_RANDOM_STATE,
-    make_figures: bool = True,
-    write_files: bool = True,
-) -> dict[str, Any]:
-    """Run the dynamic local-factor regime analysis and return all result tables."""
-
-    if panel is None:
-        required = STOCKS + list(BENCHMARKS)
-        panel = load_panel(
-            RETURN_MATRIX_CLEAN_FILE,
-            required,
-            context="Dynamic local-factor panel",
-            drop_incomplete=True,
-        )
-    else:
-        panel = panel.copy()
-        validate_panel(panel, context="Dynamic local-factor panel", require_complete=True)
-        missing = [column for column in STOCKS + list(BENCHMARKS) if column not in panel]
-        if missing:
-            raise ValueError(f"Dynamic local-factor panel is missing columns: {missing}")
-        panel = panel.loc[:, STOCKS + list(BENCHMARKS)]
-
-    window_sizes = tuple(int(size) for size in window_sizes)
-    if set(window_sizes) != set(WINDOWS):
-        raise ValueError(f"The production specification must use windows {WINDOWS}.")
-    definitions = build_window_definitions(panel, window_sizes, step_sessions)
-    definitions_by_id = {definition.window_id: definition for definition in definitions}
-    if not definitions:
-        raise ValueError("The panel does not contain enough sessions for stage 14.")
-
-    full_reference = fit_full_sample_reference(
-        panel,
-        n_starts=full_sample_starts,
-        random_seed=full_sample_seed,
-    )
-    fits, loadings, score_loadings, support, extra = run_rolling_fits(
-        panel,
-        definitions,
-        primary_starts=primary_starts,
-        full_sample_reference=full_reference,
-        base_seed=base_seed,
-    )
-    stability = _annotate_persistence(extra["stability"])
-    primary_candidates = set(
-        stability.loc[
-            (stability["alignment_method"] == "past_only")
-            & (
-                stability["is_quarterly_window"]
-                | stability["instability_flag"]
-            ),
-            "window_id",
-        ]
-    )
-    sensitivity = run_start_count_sensitivity(
-        panel,
-        definitions_by_id,
-        fits,
-        extra["contexts"],
-        primary_candidates,
-        sensitivity_starts=sensitivity_starts,
-        base_seed=base_seed,
-    )
-    stability = _merge_sensitivity_annotations(stability, sensitivity)
-    diagnostics = build_window_diagnostics(stability)
-    diagnostics = diagnostics.sort_values(
-        ["window_sessions", "window_end", "alignment_method"]
-    ).reset_index(drop=True)
-    regime_summary = build_regime_summary(stability)
-    unstable_windows = build_unstable_windows(stability)
-    for frame in (
-        loadings,
-        score_loadings,
-        support,
-        stability,
-        regime_summary,
-        unstable_windows,
-    ):
-        if not frame.empty:
-            sort_columns = [
-                column
-                for column in (
-                    "window_sessions",
-                    "window_end",
-                    "alignment_method",
-                    "regime",
-                    "factor",
-                )
-                if column in frame.columns
-            ]
-            frame.sort_values(sort_columns, inplace=True)
-            frame.reset_index(drop=True, inplace=True)
-    extra["diagnostics"] = diagnostics
-    extra["stability"] = stability
-    extra["regime_summary"] = regime_summary
-    extra["unstable_windows"] = unstable_windows
-    extra["sensitivity"] = sensitivity
-    extra["loadings"] = loadings
-    extra["score_loadings"] = score_loadings
-    extra["support"] = support
-    extra["fits"] = fits
-    extra["full_sample_reference"] = full_reference
-
-    if write_files:
-        ensure_project_directories()
-        write_outputs(
-            loadings,
-            score_loadings,
-            stability,
-            support,
-            diagnostics,
-            regime_summary,
-            unstable_windows,
-            sensitivity,
-            extra["score_correlations"],
-        )
-    if make_figures:
-        ensure_project_directories()
-        OUT_DIR.mkdir(parents=True, exist_ok=True)
-        make_plots(loadings, support, stability, diagnostics, regime_summary)
-    return extra
-
-
-def _print_summary(results: dict[str, Any]) -> None:
-    """Print a concise real-data summary for reproducibility logs."""
-
-    stability = results["stability"]
-    diagnostics = results["diagnostics"]
-    sensitivity = results["sensitivity"]
-    primary = stability[stability["alignment_method"] == "past_only"]
-    print("=== DYNAMIC L1 LOCAL FACTOR REGIMES ===")
-    print(f"Windows: {WINDOWS}; session step: {STEP_SESSIONS}")
-    print(f"Primary starts: {PRIMARY_STARTS}; sensitivity starts: {SENSITIVITY_STARTS}")
-    print(f"Primary rows: {len(primary)} factor-window rows")
-    print(f"Sensitivity windows: {sensitivity['window_id'].nunique() if not sensitivity.empty else 0}")
-    summary = (
-        primary.groupby(["window_sessions", "factor"], as_index=False)
-        .agg(
-            mean_cosine=("cosine_similarity_anchor", "mean"),
-            p05_cosine=("cosine_similarity_anchor", lambda values: values.quantile(0.05)),
-            mean_jaccard=("support_jaccard_anchor", "mean"),
-            local_rate=("is_local_factor", "mean"),
-            n_regime_candidates=("regime_candidate", "sum"),
-        )
-    )
-    print(summary.round(4).to_string(index=False))
-    print("\nRegime summary (60-session, past-only):")
-    print(
-        results["regime_summary"][
-            (results["regime_summary"]["window_sessions"] == 60)
-            & (results["regime_summary"]["alignment_method"] == "past_only")
-        ].round(4).to_string(index=False)
-    )
-    print("\nWindow diagnostics:")
-    print(diagnostics.head().round(4).to_string(index=False))
-    print(f"\nOutputs saved to: {OUT_DIR}")
-
-
-def main() -> None:
-    """Run stage 14 on the configured real-data panel."""
-
-    results = run_analysis()
-    _print_summary(results)
-
-
-if __name__ == "__main__":
-    main()

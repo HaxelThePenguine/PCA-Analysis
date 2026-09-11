@@ -12,26 +12,8 @@ from config import (
     RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
-from data_utils import require_columns
-
-
-def build_complete_universe(
-    returns: pd.DataFrame,
-    symbols: tuple[str, ...],
-) -> pd.DataFrame:
-    """Select an ordered universe and retain only complete timestamps."""
-
-    columns = require_columns(returns, symbols, context="Clean return matrix")
-    return returns.loc[:, columns].dropna(how="any")
-
-
-def print_universe_summary(name: str, panel: pd.DataFrame) -> None:
-    """Print shape and completeness for one saved universe."""
-
-    print(f"\n{name}")
-    print(f"Shape: {panel.shape}")
-    print(f"Rows:  {len(panel):,}")
-    print(f"NaN:   {int(panel.isna().sum().sum())}")
+from reporting.preprocessing import print_universe_summary
+from utils.preprocessing import build_complete_universe
 
 
 def main() -> None:

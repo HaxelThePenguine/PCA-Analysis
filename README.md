@@ -673,18 +673,58 @@ rotation inside each PCA subspace. Results are kept separately in
 sensitivity checks, holdout residual variance, factor-alignment diagnostics,
 structural-group candidates, and the regional-bank stress comparison.
 
-Reusable numerical routines live in `src/pca_utils.py` and
-`src/benchmark_utils.py`; the L1 geometry, diagnostic, and alignment routines
-live in `src/l1_rotation_utils.py`. Data loading, panel validation, intraday
-normalization, table output, and chart styling are centralized in
-`src/data_utils.py` and `src/plotting_utils.py`. Every numbered stage exposes a
-`main()` entry point and can be imported without running the pipeline.
+The source tree separates research orchestration, reusable calculations, and
+presentation. The numbered scripts in `src/` describe each research objective:
+they select the input panel, call the required estimators, assemble the output
+tables, and request the corresponding reports. Every stage exposes a `main()`
+entry point and can be imported without running the pipeline. Existing script
+names, report directories, table schemas, and figure filenames are retained.
+
+All shared routines live in the `src/utils/` package. `pca.py` owns ordinary
+PCA, Varimax, Elastic-Net Sparse PCA, and reconstruction diagnostics;
+`benchmark.py` owns benchmark projection and raw/residual panel construction.
+`rolling.py` defines session windows, while `rolling_pca.py` applies PCA across
+explicit stock, window, step, and estimator choices. `l1_rotation.py` contains
+the rotation geometry and alignment, `local_factor.py` contains session-moment
+bootstrap and identification diagnostics, and `kalman.py` contains filtering,
+smoothing, and rolling comparison calculations. The numerical stage-14
+implementation lives in `utils/dynamic_local_factor_regimes.py`; its execution
+flow lives directly in `14_dynamic_local_factor_regimes.py`.
+
+Data acquisition, missingness inspection, preprocessing, panel validation, and
+intraday normalization are also kept in `utils/`. Charts and console summaries
+live in `src/reporting/`, grouped by research objective. Plot functions consume
+computed results and receive their output directory explicitly. Shared figure
+styling and saving remain in `utils/plotting.py`; numerical estimators do not
+depend on Matplotlib or report modules. Imports therefore use names such as
+`from utils.pca import fit_pca`, with the project configuration retained in
+`src/config.py`.
+
+The refactor preserves the statistical specifications and their interpretation
+limits. In particular, stage 11 still uses a fixed full-sample intraday profile
+for descriptive comparisons, and the Kalman extension still residualizes the
+intraday panel before session aggregation. Moving these operations into shared
+modules does not make either specification a leakage-free predictive test.
+Rolling chart dates are parsed explicitly in UTC so that windows spanning
+daylight-saving transitions remain renderable.
 
 Run the focused numerical regression suite from the project root with:
 
 ```text
 python -m unittest discover -s tests -v
 ```
+
+The September 2026 refactor was checked against the previous implementation on
+an identical synthetic panel spanning a daylight-saving transition. Across
+stages 07 through 14, all 66 CSV/Parquet tables agreed within a relative
+tolerance of `1e-10` and an absolute tolerance of `1e-12`; all 22 rendered
+figures were pixel-identical after applying the UTC date-parsing correction to
+the original rolling renderer. Bootstrap replications and multistart searches
+were reduced equally in both implementations for this comparison. This was
+an integration regression, not a rerun of the full production research sample.
+The 29-test suite also checks variance reconciliation, session resampling,
+configurable rolling windows, holdout isolation in the Kalman training fit,
+import safety, and computation without file output.
 
 The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
 

@@ -17,7 +17,7 @@ import pandas as pd
 from scipy.optimize import linear_sum_assignment, minimize
 from scipy.stats import norm
 
-from pca_utils import PCAResult
+from utils.pca import PCAResult
 
 
 @dataclass(frozen=True)
@@ -195,10 +195,16 @@ def _select_independent_directions(
 
     for item in ordered:
         direction = np.asarray(item["direction"], dtype=float)
-        candidate = np.column_stack([*chosen, direction]) if chosen else direction[:, None]
+        candidate = (
+            np.column_stack([*chosen, direction]) if chosen else direction[:, None]
+        )
         minimum_eigenvalue = float(np.linalg.eigvalsh(candidate.T @ candidate).min())
         previous_minimum = (
-            float(np.linalg.eigvalsh(np.column_stack(chosen).T @ np.column_stack(chosen)).min())
+            float(
+                np.linalg.eigvalsh(
+                    np.column_stack(chosen).T @ np.column_stack(chosen)
+                ).min()
+            )
             if chosen
             else 1.0
         )
@@ -225,9 +231,7 @@ def _select_independent_directions(
         for index in range(n_factors):
             direction = identity[:, index]
             candidate = (
-                np.column_stack([*chosen, direction])
-                if chosen
-                else direction[:, None]
+                np.column_stack([*chosen, direction]) if chosen else direction[:, None]
             )
             minimum_eigenvalue = float(
                 np.linalg.eigvalsh(candidate.T @ candidate).min()
@@ -281,9 +285,7 @@ def l1_rotate_basis(
     n_variables, n_factors = loadings.shape
     scaled_gram = loadings.T @ loadings / n_variables
     if not np.allclose(scaled_gram, np.eye(n_factors), atol=1e-6):
-        raise ValueError(
-            "Initial loadings must satisfy Lambda.T @ Lambda / n = I."
-        )
+        raise ValueError("Initial loadings must satisfy Lambda.T @ Lambda / n = I.")
 
     starts = _grid_size(n_factors) if n_starts is None else int(n_starts)
     if starts < n_factors:
@@ -322,7 +324,9 @@ def l1_rotate_basis(
     for objective, direction, success in sorted(solutions, key=lambda item: item[0]):
         matched = None
         for cluster in clusters:
-            distance = np.linalg.norm(direction - cluster["direction"]) / sqrt(n_factors)
+            distance = np.linalg.norm(direction - cluster["direction"]) / sqrt(
+                n_factors
+            )
             if distance < cluster_tolerance:
                 matched = cluster
                 break
@@ -341,9 +345,7 @@ def l1_rotate_basis(
 
     frequency_cutoff = max(1, ceil(minimum_frequency * len(solutions)))
     representatives = [
-        cluster
-        for cluster in clusters
-        if int(cluster["frequency"]) >= frequency_cutoff
+        cluster for cluster in clusters if int(cluster["frequency"]) >= frequency_cutoff
     ]
     if not representatives:
         representatives = [clusters[0]]
@@ -409,7 +411,9 @@ def fit_l1_rotation(
     x = pca_result.analysis_data.to_numpy(dtype=float)
     loadings = basis_result.rotated_loadings
     score_values = x @ loadings @ np.linalg.inv(loadings.T @ loadings)
-    scores = pd.DataFrame(score_values, index=pca_result.analysis_data.index, columns=labels)
+    scores = pd.DataFrame(
+        score_values, index=pca_result.analysis_data.index, columns=labels
+    )
     covariance = x.T @ score_values / (len(x) - 1)
     score_std = score_values.std(axis=0, ddof=1)
     score_loadings = pd.DataFrame(
@@ -460,7 +464,9 @@ def align_loading_columns(
     reference_values = np.asarray(reference, dtype=float)
     estimate_values = np.asarray(estimate, dtype=float)
     if reference_values.shape != estimate_values.shape:
-        raise ValueError("Reference and estimate loading matrices must have equal shape.")
+        raise ValueError(
+            "Reference and estimate loading matrices must have equal shape."
+        )
     reference_norm = reference_values / np.linalg.norm(
         reference_values, axis=0, keepdims=True
     )

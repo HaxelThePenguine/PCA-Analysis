@@ -18,6 +18,26 @@ class IntradayNormalization:
     volatility_by_symbol: pd.DataFrame
     observations_by_minute: pd.Series
 
+    def summary(self) -> pd.DataFrame:
+        """Cross-sectional minute-of-day volatility and observation counts."""
+        profile = pd.DataFrame(
+            {
+                "mean_volatility": self.volatility_by_symbol.mean(axis=1),
+                "min_volatility": self.volatility_by_symbol.min(axis=1),
+                "max_volatility": self.volatility_by_symbol.max(axis=1),
+                "observations": self.observations_by_minute,
+            }
+        )
+        profile.index.name = "minute_from_open"
+        return profile
+
+    def unit_volatility_error(self) -> float:
+        """Maximum deviation from unit volatility at each minute of day."""
+        profile = self.normalized_returns.groupby(
+            minute_from_open(self.normalized_returns.index)
+        ).std(ddof=1)
+        return float(np.max(np.abs(profile.to_numpy() - 1)))
+
 
 def require_columns(
     frame: pd.DataFrame,
@@ -111,3 +131,15 @@ def save_csv_tables(tables: Mapping[str, pd.DataFrame], directory: Path) -> None
 
     for filename, table in tables.items():
         table.to_csv(directory / filename)
+
+
+def load_benchmark_panel() -> pd.DataFrame:
+    """Load complete, validated CORE and SPY/XLF observations."""
+    from config import BENCHMARKS, CORE_UNIVERSE, RETURN_MATRIX_CLEAN_FILE
+
+    return load_panel(
+        RETURN_MATRIX_CLEAN_FILE,
+        [*CORE_UNIVERSE, *BENCHMARKS],
+        context="Complete benchmark panel",
+        drop_incomplete=True,
+    )

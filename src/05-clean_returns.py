@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from config import (
-    BAD_SESSION_DATES,
     CONTAMINATED_MASK_FILE,
     MISSING_MASK_FILE,
     RETURN_MATRIX_CLEAN_FILE,
@@ -14,49 +12,8 @@ from config import (
     RETURN_MATRIX_FILE,
     ensure_project_directories,
 )
-
-
-def build_contaminated_mask(
-    missing: pd.DataFrame,
-    returns: pd.DataFrame,
-) -> pd.DataFrame:
-    """Mark returns at and immediately after every forward-filled candle."""
-
-    aligned = (
-        missing.reindex(index=returns.index, columns=returns.columns)
-        .fillna(False)
-        .astype(bool)
-    )
-    return aligned | aligned.shift(1, fill_value=False)
-
-
-def clean_returns(
-    returns: pd.DataFrame,
-    missing: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Apply the configured session and candle-contamination filters."""
-
-    cleaned_input = returns.copy()
-    bad_session = pd.Index(cleaned_input.index.date).isin(BAD_SESSION_DATES)
-    cleaned_input.loc[bad_session, :] = np.nan
-
-    contaminated = build_contaminated_mask(missing, cleaned_input)
-    cleaned = cleaned_input.mask(contaminated)
-    complete = cleaned.dropna(how="any")
-    return cleaned, complete, contaminated
-
-
-def print_cleaning_report(original: pd.DataFrame, complete: pd.DataFrame) -> None:
-    """Print row retention and completeness diagnostics."""
-
-    removed = len(original) - len(complete)
-    print("\n=== CLEANING REPORT ===\n")
-    print(f"Original rows:       {len(original):,}")
-    print(f"Clean complete rows: {len(complete):,}")
-    print(f"Removed rows:        {removed:,}")
-    print(f"Retained:            {100 * len(complete) / len(original):.2f}%")
-    print("\nMissing values after cleaning:")
-    print(complete.isna().sum())
+from reporting.preprocessing import print_cleaning_report
+from utils.preprocessing import clean_returns
 
 
 def main() -> None:

@@ -9,7 +9,6 @@ from __future__ import annotations
 from datetime import date, time
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATASET_DIR = PROJECT_ROOT / "alpaca_us_banks_1m"
 
@@ -22,9 +21,24 @@ REPORTS_DIR = DATASET_DIR / "reports"
 METADATA_DIR = DATASET_DIR / "metadata"
 
 BANKS = (
-    "BAC", "COF", "JPM", "HBAN", "WFC", "USB",
-    "RF", "SCHW", "C", "AXP", "TFC", "FITB",
-    "KEY", "GS", "MS", "FHN", "CFG", "SYF",
+    "BAC",
+    "COF",
+    "JPM",
+    "HBAN",
+    "WFC",
+    "USB",
+    "RF",
+    "SCHW",
+    "C",
+    "AXP",
+    "TFC",
+    "FITB",
+    "KEY",
+    "GS",
+    "MS",
+    "FHN",
+    "CFG",
+    "SYF",
 )
 
 # Keep this order aligned with the beta columns used by residualization.
@@ -32,8 +46,18 @@ BENCHMARKS = ("SPY", "XLF")
 SYMBOLS = BANKS + BENCHMARKS
 
 CORE_UNIVERSE = (
-    "JPM", "BAC", "WFC", "C", "USB", "TFC",
-    "KEY", "RF", "FITB", "CFG", "HBAN", "MS",
+    "JPM",
+    "BAC",
+    "WFC",
+    "C",
+    "USB",
+    "TFC",
+    "KEY",
+    "RF",
+    "FITB",
+    "CFG",
+    "HBAN",
+    "MS",
 )
 FULL_UNIVERSE = BANKS
 

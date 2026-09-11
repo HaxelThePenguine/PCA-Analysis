@@ -9,11 +9,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from dynamic_local_factor_regimes import (  # noqa: E402
+from utils.dynamic_local_factor_regimes import (  # noqa: E402
     AlignmentResult,
     WindowDefinition,
     WindowFit,
@@ -24,8 +23,8 @@ from dynamic_local_factor_regimes import (  # noqa: E402
     classify_window_regime,
     deterministic_seed,
 )
-from l1_rotation_utils import fit_l1_rotation  # noqa: E402
-from pca_utils import fit_pca  # noqa: E402
+from utils.l1_rotation import fit_l1_rotation  # noqa: E402
+from utils.pca import fit_pca  # noqa: E402
 
 
 def _intraday_panel(n_sessions: int = 130) -> pd.DataFrame:
@@ -33,7 +32,11 @@ def _intraday_panel(n_sessions: int = 130) -> pd.DataFrame:
 
     sessions = pd.bdate_range("2022-01-03", periods=n_sessions)
     index = pd.DatetimeIndex(
-        [timestamp + pd.Timedelta(minutes=offset) for timestamp in sessions for offset in (1, 2)]
+        [
+            timestamp + pd.Timedelta(minutes=offset)
+            for timestamp in sessions
+            for offset in (1, 2)
+        ]
     )
     values = np.arange(len(index), dtype=float)[:, None]
     return pd.DataFrame(values, index=index, columns=["A"])
@@ -44,19 +47,27 @@ class DynamicWindowTest(unittest.TestCase):
 
     def test_windows_use_exact_sessions_and_never_look_forward(self) -> None:
         panel = _intraday_panel()
-        definitions = build_window_definitions(panel, window_sizes=(60, 120), step_sessions=5)
+        definitions = build_window_definitions(
+            panel, window_sizes=(60, 120), step_sessions=5
+        )
 
-        self.assertEqual({definition.window_sessions for definition in definitions}, {60, 120})
+        self.assertEqual(
+            {definition.window_sessions for definition in definitions}, {60, 120}
+        )
         for definition in definitions:
             selected = panel.iloc[definition.positions]
             selected_sessions = pd.DatetimeIndex(selected.index.normalize()).unique()
             self.assertEqual(len(selected_sessions), definition.window_sessions)
             self.assertEqual(selected_sessions[0], definition.window_start)
             self.assertEqual(selected_sessions[-1], definition.window_end)
-            self.assertLessEqual(selected.index.normalize().max(), definition.window_end)
+            self.assertLessEqual(
+                selected.index.normalize().max(), definition.window_end
+            )
 
     def test_regime_classifier_retains_mixed_window_flag(self) -> None:
-        sessions = pd.to_datetime(["2023-02-28", "2023-03-15", "2023-05-15", "2023-06-01"])
+        sessions = pd.to_datetime(
+            ["2023-02-28", "2023-03-15", "2023-05-15", "2023-06-01"]
+        )
         regime, sequence, mixed = classify_window_regime(sessions)
         self.assertTrue(mixed)
         self.assertIn("pre_banking_crisis", sequence)
@@ -73,7 +84,9 @@ class DynamicAlignmentTest(unittest.TestCase):
         reference_values[:4, 0] = 1.0
         reference_values[4:8, 1] = 1.0
         reference_values[8:, 2] = 1.0
-        reference = pd.DataFrame(reference_values, index=stocks, columns=["LF1", "LF2", "LF3"])
+        reference = pd.DataFrame(
+            reference_values, index=stocks, columns=["LF1", "LF2", "LF3"]
+        )
         order = [2, 0, 1]
         signs = np.array([-1.0, 1.0, -1.0])
         estimate_values = reference_values[:, order] * signs[None, :]
@@ -95,9 +108,15 @@ class DynamicAlignmentTest(unittest.TestCase):
         )
         fit = WindowFit(
             definition=definition,
-            structural_loadings=pd.DataFrame(estimate_values, index=stocks, columns=["LF1", "LF2", "LF3"]),
-            score_loadings=pd.DataFrame(score_values, index=stocks, columns=["LF1", "LF2", "LF3"]),
-            score_correlation=pd.DataFrame(np.eye(3), index=["LF1", "LF2", "LF3"], columns=["LF1", "LF2", "LF3"]),
+            structural_loadings=pd.DataFrame(
+                estimate_values, index=stocks, columns=["LF1", "LF2", "LF3"]
+            ),
+            score_loadings=pd.DataFrame(
+                score_values, index=stocks, columns=["LF1", "LF2", "LF3"]
+            ),
+            score_correlation=pd.DataFrame(
+                np.eye(3), index=["LF1", "LF2", "LF3"], columns=["LF1", "LF2", "LF3"]
+            ),
             eigenvalues=np.array([3.0, 2.0, 1.0, 0.5]),
             explained=np.array([0.45, 0.30, 0.15, 0.10]),
             small_loading_threshold=0.1,
@@ -120,7 +139,9 @@ class DynamicAlignmentTest(unittest.TestCase):
 
         aligned = _align_fit(fit, reference)
 
-        np.testing.assert_allclose(aligned.structural_loadings.to_numpy(), reference_values)
+        np.testing.assert_allclose(
+            aligned.structural_loadings.to_numpy(), reference_values
+        )
         np.testing.assert_allclose(aligned.score_loadings.to_numpy(), base_score_values)
         self.assertIsInstance(aligned, AlignmentResult)
 
@@ -151,7 +172,9 @@ class DynamicNumericalTest(unittest.TestCase):
             places=10,
         )
 
-    def test_synthetic_support_shift_is_detected_without_stable_false_change(self) -> None:
+    def test_synthetic_support_shift_is_detected_without_stable_false_change(
+        self,
+    ) -> None:
         stable = np.zeros((12, 3))
         stable[:4, 0] = 1.0
         stable[4:8, 1] = 1.0

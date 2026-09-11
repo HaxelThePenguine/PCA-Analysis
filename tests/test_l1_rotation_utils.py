@@ -9,11 +9,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from l1_rotation_utils import (  # noqa: E402
+from utils.l1_rotation import (  # noqa: E402
     align_loading_columns,
     cartesian_to_spherical,
     fit_l1_rotation,
@@ -21,7 +20,7 @@ from l1_rotation_utils import (  # noqa: E402
     local_factor_test,
     spherical_to_cartesian,
 )
-from pca_utils import fit_pca  # noqa: E402
+from utils.pca import fit_pca  # noqa: E402
 
 
 class L1RotationUtilitiesTest(unittest.TestCase):

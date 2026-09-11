@@ -9,7 +9,6 @@ import matplotlib.dates as mdates
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
-
 DEFAULT_GRID_COLOR = "#D9DEE5"
 
 

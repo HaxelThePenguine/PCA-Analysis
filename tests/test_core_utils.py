@@ -11,13 +11,12 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 
-
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from benchmark_utils import residualize_against_benchmarks  # noqa: E402
-from data_utils import normalize_intraday_volatility  # noqa: E402
-from pca_utils import fit_pca, fit_varimax  # noqa: E402
+from utils.benchmark import residualize_against_benchmarks  # noqa: E402
+from utils.data import normalize_intraday_volatility  # noqa: E402
+from utils.pca import fit_pca, fit_varimax  # noqa: E402
 
 
 class ScriptStructureTest(unittest.TestCase):

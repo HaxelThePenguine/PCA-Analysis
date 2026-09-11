@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from config import BENCHMARKS
-from data_utils import require_columns
+from utils.data import require_columns
 
 
 class ResidualizationResult(TypedDict):
@@ -83,3 +83,14 @@ def residualize_against_benchmarks(
         "residual_returns": residual_returns,
         "diagnostics": diagnostics,
     }
+
+
+def build_factor_panels(
+    panel: pd.DataFrame, stocks: Sequence[str]
+) -> tuple[dict[str, pd.DataFrame], ResidualizationResult]:
+    """Return raw/residual panels and the benchmark fit used to construct them."""
+    result = residualize_against_benchmarks(panel, stocks=stocks)
+    return {
+        "raw": panel.loc[:, list(stocks)],
+        "benchmark_residual": result["residual_returns"],
+    }, result
