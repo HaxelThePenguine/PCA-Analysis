@@ -104,7 +104,8 @@ alpaca_us_banks_1m/
 │   ├── common_missing_gaps.csv
 │   ├── rolling_pca/
 │   ├── internal_factor_isolation/
-│   └── local_factor_identification/
+│   ├── local_factor_identification/
+│   └── dynamic_local_factor_regimes/
 ├── intermediate/
 │   ├── close_matrix.parquet
 │   ├── return_matrix.parquet
@@ -151,6 +152,8 @@ Complete CORE and FULL panels
         L1 local-factor identification
         ↓
         Rolling PCA
+        ↓
+        Dynamic local-factor regimes
 ```
 
 The scripts deliberately keep the stages separate. Each step reads the previous stage's output and writes a named artifact that can be inspected or reused later.
@@ -398,6 +401,101 @@ Residual LF1 and LF3 have fifth-percentile cosine similarities of `0.996` and `1
 
 The stage writes inspectable loading, rotation, factor-count, `K`-sensitivity, factor-score, bootstrap-direction, and bootstrap-support tables, together with three diagnostic figures. The generated research artifacts live under `reports/local_factor_identification/` and remain outside version control.
 
+## Dynamic rolling local-factor regimes
+
+Script [`14_dynamic_local_factor_regimes.py`](src/14_dynamic_local_factor_regimes.py) extends the full-sample L1 rotation to a past-only rolling diagnostic. It is deliberately a stability and regime-description stage, not a predictive model or a structural-break test.
+
+### Window design and no-look-ahead rule
+
+The production specification uses exactly two trailing windows:
+
+| Window | Step | Purpose |
+| ---: | ---: | --- |
+| 60 trading sessions | 5 sessions | Primary quarterly-scale stability view |
+| 120 trading sessions | 5 sessions | Longer-window persistence check |
+
+The index is converted to unique trading sessions before windows are built. Every window contains exactly `w` sessions, including the final trailing window even when it is not on the regular five-session grid. For each window, the code re-estimates the SPY/XLF residualization, correlation PCA, and `K=3` L1 rotation using only observations whose session belongs to that window. No benchmark coefficient, standardization parameter, PCA estimate, or rotation direction is carried forward from the full sample.
+
+For a window ending at session `t`, the residual panel is:
+
+$$
+e_{i,s}^{(w)}=r_{i,s}-\widehat\beta_{i,SPY}^{(w)}r_{SPY,s}
+-\widehat\beta_{i,XLF}^{(w)}r_{XLF,s},
+\qquad s\in W_t^{(w)}.
+$$
+
+Correlation PCA is then fitted to the standardized residual observations in `W_t^(w)`. If `V_K^(w)` is the first-three eigenvector matrix and `R_t^(w)` is the selected nonsingular L1 rotation,
+
+$$
+\Lambda_t^{*(w)}=\sqrt{n}V_K^{(w)}R_t^{(w)},
+\qquad
+\widehat F_t^{(w)}=Z_t^{(w)}\Lambda_t^{*(w)}
+\left(\Lambda_t^{*(w)\top}\Lambda_t^{*(w)}\right)^{-1}.
+$$
+
+The rotation preserves the selected PCA subspace exactly up to numerical precision. The primary run uses 200 random starts per window. Windows that are late-quarter checkpoints or show a primary instability flag are re-fitted with 500 starts. The seed is deterministic: it is derived from the base seed, window size, window start/end dates, and the requested number of starts. This makes the primary and sensitivity results reproducible without reusing a single random stream across windows.
+
+### Two alignment views
+
+Factor labels are not compared by their raw column number because L1 directions can permute and change sign. The implementation maximizes absolute loading cosine similarity and applies the same permutation/sign transformation to structural loadings, stock–factor score loadings, and the oblique score-correlation matrix.
+
+Two views are retained separately:
+
+- **Past-only alignment:** the reference is the average of previously aligned rolling directions for the same window length. The current window is added to that anchor only after its metrics have been computed. This is the causal stability view.
+- **Ex-post full-sample alignment:** every window is aligned to the full-sample L1 solution. It is used only for descriptive heatmaps and factor localization; it must not be used for forecasting or a real-time decision.
+
+For aligned loading columns `k`, the main stability measures are:
+
+$$
+C_{k,t}=\frac{|\lambda_{k,t}^{\top}\lambda_{k,t-1}|}
+{\|\lambda_{k,t}\|_2\|\lambda_{k,t-1}\|_2},
+\qquad
+J_{k,t}=\frac{|A_{k,t}\cap A_{k,ref}|}
+{|A_{k,t}\cup A_{k,ref}|},
+$$
+
+where `A` is the active support under `|loading| >= h_n`. The output also records the anchor cosine, previous-window cosine, full-sample cosine, support cardinality, small-loading count, `gamma_n`, local-factor flag, L1 norm, solution frequency, candidate source, optimizer success rate, rotation condition number, factor-score correlations, explained variance, and the percentage of stock variance removed by SPY/XLF.
+
+An instability flag is descriptive when a cosine falls below `0.80`, a support Jaccard falls below `0.50`, the local-factor decision changes, or the rotation condition number exceeds `10`. A regime candidate is recorded only after the same factor is flagged in two consecutive five-session checkpoints. Mixed windows are retained rather than silently assigned to one period.
+
+### Regime definition and current real-data results
+
+The explicit labels are `pre_banking_crisis`, `banking_crisis_mar_may_2023`, `post_banking_crisis`, and `recent_2026`. A window receives the majority label of its sessions and retains its full regime sequence plus a mixed-window flag. On the current 924-session sample, the run produced 174 60-session windows and 162 120-session windows. There are 305 sensitivity windows with a 500-start refit; 228 are stable under the stated comparison and 77 show a primary-versus-sensitivity disagreement. These are descriptive numerical diagnostics, not evidence of a formal break.
+
+The past-only factor-level summary is:
+
+| Window | Factor | Mean cosine | 5th-percentile cosine | Mean support Jaccard | Local-factor rate |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 60 | LF1 | 0.960 | 0.870 | 0.656 | 99.4% |
+| 60 | LF2 | 0.881 | 0.707 | 0.767 | 92.5% |
+| 60 | LF3 | 0.995 | 0.986 | 0.932 | 0.0% |
+| 120 | LF1 | 0.973 | 0.897 | 0.738 | 100.0% |
+| 120 | LF2 | 0.871 | 0.664 | 0.775 | 98.1% |
+| 120 | LF3 | 0.997 | 0.988 | 0.932 | 0.0% |
+
+LF3 is the most stable direction and remains broad rather than formally local. LF1 is generally stable but has occasional support changes. LF2 is the main instability candidate: it has the lowest rolling cosine, the largest number of persistent flags (149 for the 60-session specification and 142 for the 120-session specification), and the most visible time variation in its support. The longer window does not eliminate this behavior, so it should be treated as a real sensitivity warning rather than a single noisy checkpoint.
+
+The ex-post full-sample-aligned loading map gives a useful localization summary. Across 60-session windows, LF1 is concentrated most strongly on MS and C, LF2 on WFC, JPM, BAC, C, and MS, and LF3 on the regional-bank cluster led by CFG, FITB, HBAN, KEY, and RF. The exact active support changes with the window and threshold; the labels are therefore conditional descriptions, not fixed portfolio memberships. The mean first-three explained share is approximately 57.0% in both window specifications, while rolling PC1 explains approximately 37.0% (60 sessions) and 37.2% (120 sessions). The rolling SPY/XLF residualization removes approximately 44.8% and 45.8% of stock variance on average, respectively, with residual benchmark correlations at numerical zero.
+
+The L1 rotation is generally oblique: the mean off-diagonal score correlations across 60-session past-only windows are approximately 0.41 for LF1–LF2, 0.25 for LF1–LF3, and 0.42 for LF2–LF3, with larger local maxima. These directions should not be interpreted as mutually orthogonal shocks merely because they are labelled LF1–LF3.
+
+### Outputs, execution, and limits
+
+The ignored directory `alpaca_us_banks_1m/reports/dynamic_local_factor_regimes/` contains:
+
+- `14_rolling_l1_loadings.csv`, `14_rolling_score_loadings.csv`, and `14_rolling_score_correlations.csv`;
+- `14_rolling_factor_stability.csv`, `14_rolling_support_membership.csv`, and `14_rolling_window_diagnostics.csv`;
+- `14_regime_summary.csv`, `14_unstable_windows.csv`, and `14_start_count_sensitivity.csv`;
+- seven PNG diagnostics: loading and support heatmaps, cosine/Jaccard stability, small-loading counts, explained-variance/benchmark diagnostics, regime comparison, and 60-versus-120 window comparison.
+
+Run the complete real-data stage from the project root with:
+
+```text
+.\\.venv\\Scripts\\python.exe src\\14_dynamic_local_factor_regimes.py
+```
+
+The analysis is intentionally conservative about interpretation. Overlapping windows are dependent; threshold crossings are not p-values; the March 2023 and recent-period groups contain many mixed windows; factor labels remain conditional on `K=3`; and SPY/XLF are benchmark controls rather than exogenous instruments. The stage does not test predictability, causality, trading profitability, or out-of-sample stability. The next useful checks are block/session bootstrap uncertainty for rolling paths, comparison with the 13-bis Kalman extension, and a frozen walk-forward evaluation.
+
 ## Research roadmap
 
 ### 1. Baseline PCA
@@ -469,6 +567,8 @@ The first pass uses three components and a transparent penalty path. Pure L1 and
 
 The completed L1-rotation stage searches for sparse directions within the PCA loading space and tests whether any factor is local. Whole-session bootstrap probabilities distinguish stable loading support from one attractive full-sample rotation. The natural extension is a rolling or regime-conditional version that asks whether the same local directions persist through the March 2023 banking stress window.
 
+The dynamic rolling extension is now implemented. It provides past-only and ex-post alignment views, explicit mixed-regime flags, persistence-qualified instability candidates, and 200-versus-500-start sensitivity checks. The next question is whether these local directions agree with the session-level Kalman factors and with the Varimax/Elastic-Net loading maps.
+
 ### 7. Covariance estimation and random-matrix diagnostics
 
 Sample covariance will be compared with shrinkage estimators such as Ledoit-Wolf, and potentially with exponentially weighted covariance. Random Matrix Theory will be used as a diagnostic benchmark for separating strong empirical components from noise. The Marchenko-Pastur distribution will not be treated as literal truth because the returns are not iid Gaussian observations.
@@ -519,12 +619,14 @@ Completed:
 - L1 local-factor identification with oblique rotation and the reference small-loading test
 - Whole-session bootstrap support probabilities with optimal factor alignment
 - Factor-count and `K=2,...,5` sensitivity diagnostics for the local-factor conclusion
+- Dynamic 60/120-session rolling L1 local-factor stability, regime summaries, alignment diagnostics, and 500-start sensitivity checks
+- Shared session-window helpers, synthetic support-shift tests, and import-safe stage-14 regression coverage
 
 Next:
 
 - Compare the L1 local factors with the Varimax and Elastic-Net loading maps
-- Review the rolling PCA diagnostics and identify stress-window candidates
-- Add rolling or regime-conditional local-factor estimates around March 2023
+- Compare the dynamic L1 results with the 13-bis Kalman dynamic-factor extension
+- Add block/session uncertainty bands and formal multiple-testing controls for rolling instability candidates
 
 Later:
 

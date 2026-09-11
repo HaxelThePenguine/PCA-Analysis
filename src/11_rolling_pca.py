@@ -23,6 +23,7 @@ from config import (
 from data_utils import load_panel, normalize_intraday_volatility
 from pca_utils import fit_pca
 from plotting_utils import save_figure
+from rolling_utils import rolling_starts, session_index
 
 
 OUT_DIR = REPORTS_DIR / "rolling_pca"
@@ -76,26 +77,6 @@ def residualize_window(
             residuals.corrwith(window_panel[benchmark]).abs(),
         )
     return residuals, diagnostics
-
-
-def session_index(index: pd.DatetimeIndex) -> tuple[pd.Index, np.ndarray]:
-    """Return unique trading sessions and an integer session code per row."""
-
-    dates = np.asarray(index.date)
-    sessions, codes = np.unique(dates, return_inverse=True)
-    return pd.Index(sessions, name="session_date"), codes
-
-
-def rolling_starts(n_sessions: int, window_size: int) -> list[int]:
-    """Return regular starts and always include the final trailing window."""
-
-    last_start = n_sessions - window_size
-    if last_start < 0:
-        return []
-    starts = list(range(0, last_start + 1, STEP_SESSIONS))
-    if starts[-1] != last_start:
-        starts.append(last_start)
-    return starts
 
 
 def collect_rolling_results(

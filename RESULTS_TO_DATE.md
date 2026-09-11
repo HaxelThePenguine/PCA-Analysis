@@ -6,7 +6,7 @@
 
 ## Executive summary
 
-The project now runs from quality-controlled one-minute SIP data through baseline PCA, intraday-normalization checks, SPY/XLF residualization, variance reconciliation, rolling PCA, internal factor isolation, and session-level L1 local-factor identification.
+The project now runs from quality-controlled one-minute SIP data through baseline PCA, intraday-normalization checks, SPY/XLF residualization, variance reconciliation, rolling PCA, internal factor isolation, session-level L1 local-factor identification, and dynamic rolling local-factor diagnostics.
 
 The main conclusions so far are:
 
@@ -14,7 +14,8 @@ The main conclusions so far are:
 2. The result is not explained by the market clock alone. After applying the intraday volatility profile, PC1 explains **64.47%** and the first three components explain **75.81%**, almost unchanged from the raw correlation-PCA baseline.
 3. SPY/XLF exposure is economically important but does not exhaust the cross-section. The combined benchmark fit accounts for **43.59%** of raw CORE variance; the residual panel still has a structured first three-component space.
 4. The residual loading space can be localized into three useful working directions. Two directions pass the formal local-factor diagnostic, while the third is a highly stable but broader regional-bank direction.
-5. The most defensible interpretation is therefore **a three-factor working representation with two sharply local directions and one broad, stable cluster direction**, not three independently identified causal factors.
+5. Rolling L1 diagnostics preserve the same broad localization but reveal that LF2 is materially less stable than LF1 and LF3. This warning survives both 60-session and 120-session windows.
+6. The most defensible interpretation is therefore **a three-factor working representation with two sharply local directions and one broad, stable cluster direction**, not three independently identified causal factors.
 
 The analysis remains descriptive. The factor names below summarize loading supports; they do not claim causal economic shocks, tradable signals, or a uniquely determined true factor count.
 
@@ -167,6 +168,35 @@ The eigenvalue-ratio diagnostic selects one dominant factor in both the raw and 
 
 This distinction is important: the data support a clear one-factor market/financial common direction, plus additional residual structure. The three-factor residual representation is useful for organizing that structure, but its economic labels remain conditional on the retained dimension and the chosen rotation criterion.
 
+## Dynamic rolling local-factor diagnostics
+
+The new stage-14 analysis re-estimates benchmark residualization, correlation PCA, and the `K=3` L1 rotation inside every trailing window. It uses exact trading-session windows of 60 and 120 sessions, advances five sessions at a time, and always includes the final trailing window. The 60-session specification is primary; the 120-session specification checks persistence at a slower horizon.
+
+The analysis uses two distinct factor-label views. The past-only view aligns each window to an average of previously aligned directions, updating that anchor only after the current metrics are stored. This is the no-look-ahead stability view. The ex-post view aligns every window to the full-sample solution and is used only for descriptive heatmaps and factor localization. The rolling instability rule is deliberately descriptive: it flags cosine similarity below 0.80, support Jaccard below 0.50, a change in the local-factor decision, or a rotation condition number above 10. A regime candidate requires two consecutive five-session flags for the same factor.
+
+The current 924-session sample produced **174 60-session windows** and **162 120-session windows**. The primary fit uses 200 random starts per window. **305 windows** received a 500-start sensitivity refit; 228 were stable under the comparison and 77 showed a primary-versus-sensitivity disagreement. Mixed windows are retained and explicitly marked because the pre-crisis, March–May 2023, post-crisis, and recent-2026 labels are majority-session descriptions rather than clean event partitions.
+
+| Window | Factor | Mean cosine to past-only anchor | 5th-percentile cosine | Mean support Jaccard | Local-factor rate | Persistent candidates |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 60 | LF1 | 0.960 | 0.870 | 0.656 | 99.4% | 17 |
+| 60 | LF2 | 0.881 | 0.707 | 0.767 | 92.5% | 149 |
+| 60 | LF3 | 0.995 | 0.986 | 0.932 | 0.0% | 0 |
+| 120 | LF1 | 0.973 | 0.897 | 0.738 | 100.0% | 10 |
+| 120 | LF2 | 0.871 | 0.664 | 0.775 | 98.1% | 142 |
+| 120 | LF3 | 0.997 | 0.988 | 0.932 | 0.0% | 0 |
+
+The factor interpretation is consistent but not static. In the ex-post full-sample-aligned 60-session loading map, LF1 is concentrated most strongly on MS and C; LF2 on WFC, JPM, BAC, C, and MS; and LF3 on the regional-bank cluster led by CFG, FITB, HBAN, KEY, and RF. The mean first-three explained share is approximately **57.0%** for both window lengths. Mean PC1 explained variance is approximately **37.0%** for 60 sessions and **37.2%** for 120 sessions. Rolling SPY/XLF residualization removes approximately **44.8%** and **45.8%** of stock variance on average, respectively.
+
+LF3 is the stable broad cluster direction: its rolling cosine and support Jaccard remain high, but it never passes the formal local-factor rate in the rolling output. LF1 is also stable overall. LF2 is the main dynamic warning: its lower cosine, persistent-candidate count, and 77-window sensitivity-disagreement set indicate that its active support should not be treated as a fixed portfolio membership. The factor scores are oblique rather than independent; the mean off-diagonal score correlations across 60-session windows are approximately 0.41 for LF1–LF2, 0.25 for LF1–LF3, and 0.42 for LF2–LF3.
+
+The generated stage-14 evidence consists of nine CSV tables and seven PNG diagnostics under `alpaca_us_banks_1m/reports/dynamic_local_factor_regimes/`. The directory is ignored by Git because the tables and figures are reproducible from the local research dataset. The real-data run is reproducible with:
+
+```text
+.\\.venv\\Scripts\\python.exe src\\14_dynamic_local_factor_regimes.py
+```
+
+These results do not establish structural breaks, causality, predictability, or trading profitability. Windows overlap, the number of rolling observations is not an effective number of independent tests, the regime groups contain mixed windows, and factor labels remain conditional on `K=3` and on the L1 criterion. Session/block uncertainty bands and a frozen walk-forward evaluation remain necessary.
+
 ## Current interpretation
 
 The strongest current story is:
@@ -182,7 +212,8 @@ This is strong evidence that the residual panel contains organized cross-section
 
 The next research steps are:
 
-- estimate local factors in rolling and stress-regime windows, especially around the March 2023 regional-bank crisis;
+- compare the dynamic L1 factors with the session-level Kalman extension and with the Varimax/Elastic-Net loading maps;
+- add block/session uncertainty bands and formal multiple-testing controls for rolling instability candidates;
 - compare L1 supports against Varimax and Elastic-Net supports using explicit overlap and stability metrics;
 - add covariance shrinkage and random-matrix diagnostics;
 - test residual serial dependence, lead–lag structure, and factor-adjusted networks at a lower intraday frequency;
@@ -202,7 +233,8 @@ The main pipeline stages are implemented in:
 - [`11_rolling_pca.py`](src/11_rolling_pca.py)
 - [`12_internal_factor_isolation.py`](src/12_internal_factor_isolation.py)
 - [`13_l1_local_factor_identification.py`](src/13_l1_local_factor_identification.py)
+- [`14_dynamic_local_factor_regimes.py`](src/14_dynamic_local_factor_regimes.py)
 
-Generated CSV and figure outputs are stored under `alpaca_us_banks_1m/reports/` during a local run and are intentionally excluded from Git. The numerical values in this snapshot were read from the generated baseline, residual, variance-decomposition, internal-factor, and local-factor-identification tables. Re-run the stages above to regenerate the artifacts from the local dataset.
+Generated CSV and figure outputs are stored under `alpaca_us_banks_1m/reports/` during a local run and are intentionally excluded from Git. The numerical values in this snapshot were read from the generated baseline, residual, variance-decomposition, internal-factor, local-factor-identification, and dynamic-regime tables. Re-run the stages above to regenerate the artifacts from the local dataset.
 
 For the data-treatment decisions, mathematical definitions, and research principles, see [`README.md`](README.md).
