@@ -661,7 +661,17 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 11_rolling_pca.py             run descriptive 20/60-session rolling PCA diagnostics
 12_internal_factor_isolation.py  compare PCA, Varimax, and Elastic-Net Sparse PCA
 13_l1_local_factor_identification.py  identify and bootstrap sparse local factors
+13_bis_kalman_dynamic_factors.py  compare session Kalman factors + L1 with static PCA + L1
+14_dynamic_local_factor_regimes.py  run 60/120-session rolling L1 local-factor regime diagnostics
 ```
+
+The 13-bis extension starts from the intraday benchmark-residualized panel,
+aggregates residuals by trading session, estimates AR(1) latent factors with a
+Kalman filter/smoother in 60-session windows, and applies the existing L1
+rotation inside each PCA subspace. Results are kept separately in
+`alpaca_us_banks_1m/reports/kalman_dynamic_local_factors/`, including K=2,4,5
+sensitivity checks, holdout residual variance, factor-alignment diagnostics,
+structural-group candidates, and the regional-bank stress comparison.
 
 Reusable numerical routines live in `src/pca_utils.py` and
 `src/benchmark_utils.py`; the L1 geometry, diagnostic, and alignment routines

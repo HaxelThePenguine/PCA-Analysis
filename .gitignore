@@ -16,4 +16,5 @@ alpaca_us_banks_1m/reports/variance_decomposition/
 alpaca_us_banks_1m/reports/rolling_pca/
 alpaca_us_banks_1m/reports/internal_factor_isolation/
 alpaca_us_banks_1m/reports/local_factor_identification/
+alpaca_us_banks_1m/reports/kalman_dynamic_local_factors/
 alpaca_us_banks_1m/reports/dynamic_local_factor_regimes/
