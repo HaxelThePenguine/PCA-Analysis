@@ -881,12 +881,11 @@ depend on Matplotlib or report modules. Imports therefore use names such as
 `from utils.pca import fit_pca`, with the project configuration retained in
 `src/config.py`.
 
-The September 2026 OOS cleanup removed obsolete duplicate Stage 15 estimators
-that were unreachable from the public pipeline. It also replaced private
-cross-imports between Stages 16 and 17 with the explicit `oos_common` boundary
-and moved Stage 17 presentation code into `reporting/`. Forecast equations,
-training windows, penalty selection, table schemas, and generated-file names
-remain unchanged.
+The September 2026 cleanup removed unreachable Stage 15 estimators, replaced
+private Stage 16/17 cross-imports with the explicit `oos_common` boundary, and
+centralized repeated Markdown rendering. Stage 14 output persistence and Stage
+15 progress handling were reduced to their essential paths. Forecast equations,
+windows, penalty selection, table schemas, and generated-file names are unchanged.
 
 The refactor preserves the statistical specifications and their interpretation
 limits. In particular, stage 11 still uses a fixed full-sample intraday profile

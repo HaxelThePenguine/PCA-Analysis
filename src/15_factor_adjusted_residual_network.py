@@ -8,7 +8,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
 
-import numpy as np
 import pandas as pd
 
 from config import (
@@ -196,9 +195,7 @@ def run_analysis(
     interval_diagnostics: list[pd.DataFrame] = []
     floors: list[pd.DataFrame] = []
     daily_logs: dict[tuple[int, str], pd.DataFrame] = {}
-    daily_variance: dict[tuple[int, str], pd.DataFrame] = {}
     for window in config.factor_windows:
-        phase_started = time.perf_counter()
         print(
             f"[stage15] factor adjustment {window} sessions started with {config.har.n_jobs} workers",
             flush=True,
@@ -231,8 +228,6 @@ def run_analysis(
         variance_results[int(window)] = variance_result
         for control, frame in variance_result.log_daily_ivar.items():
             daily_logs[(int(window), control)] = frame
-        for control, frame in variance_result.daily_ivar.items():
-            daily_variance[(int(window), control)] = frame
         for table, destination in (
             (factor_result.diagnostics, factor_diagnostics),
             (factor_result.factor_metrics, factor_metrics),
@@ -248,11 +243,6 @@ def run_analysis(
         floor = variance_result.floor_diagnostics.copy()
         floor.insert(0, "factor_window_sessions", int(window))
         floors.append(floor)
-        print(
-            f"[stage15] factor adjustment {window} sessions finished in "
-            f"{time.perf_counter() - phase_started:.1f}s",
-            flush=True,
-        )
 
     primary_window = int(config.factor_windows[0])
     robustness_window = int(config.factor_windows[1] if len(config.factor_windows) > 1 else config.factor_windows[0])
@@ -263,7 +253,6 @@ def run_analysis(
     )
     forecast_results: list[Any] = []
     for spec_name, window, har_window in forecast_specs:
-        phase_started = time.perf_counter()
         print(f"[stage15] forecast {spec_name} started", flush=True)
         result = walk_forward_forecasts(
             daily_logs[(window, "factor_adjusted")],
@@ -273,11 +262,6 @@ def run_analysis(
             config=config.har,
         )
         forecast_results.append(result)
-        print(
-            f"[stage15] forecast {spec_name} finished in "
-            f"{time.perf_counter() - phase_started:.1f}s",
-            flush=True,
-        )
     forecasts = pd.concat([result.forecasts for result in forecast_results], ignore_index=True)
     har_coefficients = pd.concat([result.coefficients for result in forecast_results], ignore_index=True)
     edge_history = pd.concat([result.edge_history for result in forecast_results], ignore_index=True)
@@ -303,7 +287,6 @@ def run_analysis(
     for window in config.factor_windows:
         for control in ("raw", "benchmark_residual", "factor_adjusted"):
             spec_name = f"descriptive_{control}_{window}"
-            phase_started = time.perf_counter()
             print(f"[stage15] descriptive network {spec_name} started", flush=True)
             edges, tuning = descriptive_network_edges(
                 daily_logs[(int(window), control)],
@@ -314,11 +297,6 @@ def run_analysis(
             )
             descriptive_edges.append(edges)
             descriptive_tuning.append(tuning)
-            print(
-                f"[stage15] descriptive network {spec_name} finished in "
-                f"{time.perf_counter() - phase_started:.1f}s",
-                flush=True,
-            )
     descriptive_edge_history = pd.concat(descriptive_edges, ignore_index=True)
     descriptive_tuning_history = pd.concat(descriptive_tuning, ignore_index=True)
     descriptive_stability = edge_stability(
@@ -330,7 +308,6 @@ def run_analysis(
     bootstrap = []
     if run_bootstrap:
         for window in config.factor_windows:
-            phase_started = time.perf_counter()
             print(f"[stage15] bootstrap {window} sessions started", flush=True)
             bootstrap.append(
                 bootstrap_edge_selection(
@@ -340,11 +317,6 @@ def run_analysis(
                     har_window="expanding",
                     config=config.har,
                 )
-            )
-            print(
-                f"[stage15] bootstrap {window} sessions finished in "
-                f"{time.perf_counter() - phase_started:.1f}s",
-                flush=True,
             )
     bootstrap_edges = pd.concat(bootstrap, ignore_index=True) if bootstrap else pd.DataFrame()
 

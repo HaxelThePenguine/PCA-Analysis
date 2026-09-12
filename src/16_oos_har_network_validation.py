@@ -49,7 +49,6 @@ from utils.oos_common import (
     write_json,
 )
 from utils.oos_har_network import (
-    FORECAST_MODELS,
     GROUPS,
     PRIMARY_SPEC_NAME,
     OOSConfig,

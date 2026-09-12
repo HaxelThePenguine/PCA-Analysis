@@ -8,6 +8,7 @@ from typing import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from reporting.markdown import markdown_table
 from utils.network_har import hac_mean_test
 
 
@@ -77,18 +78,6 @@ def build_hac_comparisons(
     return result
 
 
-def _markdown_table(frame: pd.DataFrame) -> str:
-    if frame.empty:
-        return ""
-    headers = [str(column) for column in frame.columns]
-    rows = [headers, ["---"] * len(headers)]
-    for record in frame.itertuples(index=False, name=None):
-        rows.append(
-            ["" if pd.isna(item) else str(item).replace("|", "\\|") for item in record]
-        )
-    return "\n".join("| " + " | ".join(row) + " |" for row in rows)
-
-
 def write_results_markdown(
     path: Path,
     *,
@@ -113,8 +102,8 @@ def write_results_markdown(
     if model_summary.empty:
         lines.append("No outcomes are currently available for a matched evaluation.")
     else:
-        lines.extend(["## Model summary", "", _markdown_table(model_summary), ""])
-        lines.extend(["## Predeclared comparisons", "", _markdown_table(comparisons), ""])
-        lines.extend(["## Date-clustered HAC tests", "", _markdown_table(hac), ""])
+        lines.extend(["## Model summary", "", markdown_table(model_summary), ""])
+        lines.extend(["## Predeclared comparisons", "", markdown_table(comparisons), ""])
+        lines.extend(["## Date-clustered HAC tests", "", markdown_table(hac), ""])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -8,36 +8,13 @@ from typing import Mapping
 import numpy as np
 import pandas as pd
 
+from reporting.markdown import markdown_table
 
-def _fmt(value: object, digits: int = 6) -> str:
-    if value is None or (isinstance(value, float) and not np.isfinite(value)):
-        return "unavailable"
-    if isinstance(value, (float, np.floating)):
-        return f"{float(value):.{digits}f}"
-    return str(value)
-
-
-def _markdown_table(frame: pd.DataFrame, max_rows: int = 25) -> str:
-    if frame is None or frame.empty:
-        return "No observations were available."
-    value = frame.head(max_rows).copy()
-    for column in value.columns:
-        if pd.api.types.is_float_dtype(value[column]):
-            value[column] = value[column].map(lambda item: _fmt(item, 6))
-    headers = [str(column) for column in value.columns]
-    lines = [
-        "| " + " | ".join(headers) + " |",
-        "| " + " | ".join("---" for _ in headers) + " |",
-    ]
-    for row in value.itertuples(index=False, name=None):
-        cells = []
-        for item in row:
-            if item is None or (isinstance(item, float) and not np.isfinite(item)):
-                cells.append("unavailable")
-            else:
-                cells.append(str(item).replace("|", "\\|"))
-        lines.append("| " + " | ".join(cells) + " |")
-    return "\n".join(lines)
+def _report_table(frame: pd.DataFrame) -> str:
+    return markdown_table(
+        frame, max_rows=25, float_digits=6,
+        empty="No observations were available.", missing="unavailable",
+    )
 
 
 def write_results_markdown(
@@ -70,31 +47,31 @@ def write_results_markdown(
         "",
         "## Matched forecast evidence",
         "",
-        _markdown_table(comparison),
+        _report_table(comparison),
         "",
         "The primary comparison is the date-level mean of the stock-panel QLIKE differential, Network HAR minus own HAR. Negative values favor Network HAR. Raw QLIKE levels are not ranked across different factor-window targets because each window constructs a different residual target.",
         "",
         "### Model summaries",
         "",
-        _markdown_table(model_summary),
+        _report_table(model_summary),
         "",
         "### Secondary per-stock summaries",
         "",
-        _markdown_table(stock_summary),
+        _report_table(stock_summary),
         "",
         "## Uncertainty",
         "",
         "The Bartlett-HAC values are asymptotic diagnostics for the date-indexed loss differential. The moving-block bootstrap resamples shared date indices across the full stock panel; its percentile interval describes the observed forecasting loss series and does not propagate every source of factor estimation, tuning, or historical researcher selection uncertainty.",
         "",
-        _markdown_table(hac),
+        _report_table(hac),
         "",
-        _markdown_table(bootstrap),
+        _report_table(bootstrap),
         "",
         "Per-stock results are secondary and are reported with both Benjamini–Hochberg and Holm adjustments when available. The one-standard-error penalty rule is a selection heuristic based on three chronological folds, not an inferential confidence interval.",
         "",
         "## Network diagnostics",
         "",
-        _markdown_table(edge_stability),
+        _report_table(edge_stability),
         "",
         "Edge selection frequency, conditional bootstrap selection frequency, and predictive improvement are distinct quantities. Directed edges are conditional predictive relationships and do not establish structural causation or tradable alpha. Conditional edge bootstrap output, when requested, is conditional on generated features and the observed penalty.",
         "",

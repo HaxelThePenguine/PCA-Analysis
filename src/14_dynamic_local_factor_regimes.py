@@ -36,36 +36,24 @@ from utils.dynamic_local_factor_regimes import (
 )
 
 OUT_DIR = REPORTS_DIR / "dynamic_local_factor_regimes"
+OUTPUT_FILES = {
+    "14_rolling_l1_loadings.csv": "loadings",
+    "14_rolling_score_loadings.csv": "score_loadings",
+    "14_rolling_factor_stability.csv": "stability",
+    "14_rolling_support_membership.csv": "support",
+    "14_rolling_window_diagnostics.csv": "diagnostics",
+    "14_regime_summary.csv": "regime_summary",
+    "14_unstable_windows.csv": "unstable_windows",
+    "14_start_count_sensitivity.csv": "sensitivity",
+    "14_rolling_score_correlations.csv": "score_correlations",
+}
 
 
-def write_outputs(
-    loadings: pd.DataFrame,
-    score_loadings: pd.DataFrame,
-    stability: pd.DataFrame,
-    support: pd.DataFrame,
-    diagnostics: pd.DataFrame,
-    regime_summary: pd.DataFrame,
-    unstable_windows: pd.DataFrame,
-    sensitivity: pd.DataFrame,
-    score_correlations: pd.DataFrame,
-    *,
-    out_dir: Path,
-) -> None:
+def write_outputs(results: dict[str, Any], *, out_dir: Path) -> None:
     """Write all machine-readable stage-14 artifacts to the ignored report folder."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    tables = {
-        "14_rolling_l1_loadings.csv": loadings,
-        "14_rolling_score_loadings.csv": score_loadings,
-        "14_rolling_factor_stability.csv": stability,
-        "14_rolling_support_membership.csv": support,
-        "14_rolling_window_diagnostics.csv": diagnostics,
-        "14_regime_summary.csv": regime_summary,
-        "14_unstable_windows.csv": unstable_windows,
-        "14_start_count_sensitivity.csv": sensitivity,
-        "14_rolling_score_correlations.csv": score_correlations,
-    }
-    for filename, table in tables.items():
-        table.to_csv(out_dir / filename, index=False)
+    for filename, key in OUTPUT_FILES.items():
+        results[key].to_csv(out_dir / filename, index=False)
 
 
 def run_analysis(
@@ -178,18 +166,7 @@ def run_analysis(
     extra["full_sample_reference"] = full_reference
     if write_files:
         ensure_project_directories()
-        write_outputs(
-            loadings,
-            score_loadings,
-            stability,
-            support,
-            diagnostics,
-            regime_summary,
-            unstable_windows,
-            sensitivity,
-            extra["score_correlations"],
-            out_dir=OUT_DIR,
-        )
+        write_outputs(extra, out_dir=OUT_DIR)
     if make_figures:
         ensure_project_directories()
         OUT_DIR.mkdir(parents=True, exist_ok=True)

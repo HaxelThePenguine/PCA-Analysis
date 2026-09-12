@@ -29,7 +29,6 @@ from utils.network_har import (
     PenaltyTuning,
     _predict_fit,
     fit_network_pair,
-    fit_own_har,
     fit_partialling_out,
     hac_mean_test,
     tune_network_penalty,
@@ -37,8 +36,6 @@ from utils.network_har import (
 from utils.oos_common import (
     calendar_time_maps as _calendar_time_maps,
     dataframe_hash,
-    file_prefix_fingerprint,
-    file_sha256,
     normalize_calendar,
     safe_positive_variance as _safe_positive_variance,
     session_date_index as _session_date_index,
