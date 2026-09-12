@@ -20,3 +20,4 @@ alpaca_us_banks_1m/reports/kalman_dynamic_local_factors/
 alpaca_us_banks_1m/reports/dynamic_local_factor_regimes/
 alpaca_us_banks_1m/reports/factor_adjusted_residual_network/
 alpaca_us_banks_1m/reports/oos_har_network_validation/
+alpaca_us_banks_1m/reports/oos_factor_augmented_har/

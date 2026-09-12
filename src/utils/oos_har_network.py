@@ -120,6 +120,14 @@ class FactorVintageRun:
     variance_result: RealizedVarianceResult
     daily_log_variance: pd.DataFrame
     daily_variance: pd.DataFrame
+    benchmark_daily_log_variance: pd.DataFrame
+    benchmark_daily_variance: pd.DataFrame
+    pca_factor_daily_log_variance: pd.DataFrame
+    pca_factor_daily_variance: pd.DataFrame
+    local_factor_daily_log_variance: pd.DataFrame
+    local_factor_daily_variance: pd.DataFrame
+    aggregate_factor_daily_log_variance: pd.DataFrame
+    aggregate_factor_daily_variance: pd.DataFrame
     factor_metadata: pd.DataFrame
     rv_metadata: pd.DataFrame
 
@@ -454,6 +462,16 @@ def build_factor_vintage_run(
         normalize_calendar(calendar),
         config.variance,
     )
+    pca_factor_variance_result = aggregate_realized_variance(
+        {"pca_factor": factor_result.pca_factor_scores},
+        normalize_calendar(calendar),
+        config.variance,
+    )
+    local_factor_variance_result = aggregate_realized_variance(
+        {"local_factor": factor_result.local_factor_scores},
+        normalize_calendar(calendar),
+        config.variance,
+    )
     factor_metadata = _factor_assignment_table(
         factor_result.diagnostics,
         calendar,
@@ -462,8 +480,32 @@ def build_factor_vintage_run(
     rv_metadata = _rv_metadata(variance_result, factor_metadata, calendar, name, config)
     daily_variance = variance_result.daily_ivar["factor_adjusted"].copy()
     daily_log_variance = variance_result.log_daily_ivar["factor_adjusted"].copy()
-    daily_variance.index = _session_date_index(daily_variance.index)
-    daily_log_variance.index = _session_date_index(daily_log_variance.index)
+    benchmark_daily_variance = variance_result.daily_ivar["benchmark_residual"].copy()
+    benchmark_daily_log_variance = variance_result.log_daily_ivar["benchmark_residual"].copy()
+    pca_factor_daily_variance = pca_factor_variance_result.daily_ivar["pca_factor"].copy()
+    pca_factor_daily_log_variance = pca_factor_variance_result.log_daily_ivar["pca_factor"].copy()
+    local_factor_daily_variance = local_factor_variance_result.daily_ivar["local_factor"].copy()
+    local_factor_daily_log_variance = local_factor_variance_result.log_daily_ivar["local_factor"].copy()
+    aggregate_factor_daily_variance = pca_factor_daily_variance.sum(axis=1).to_frame(
+        "COMMON"
+    )
+    aggregate_factor_daily_log_variance = np.log(
+        aggregate_factor_daily_variance.clip(lower=config.variance.variance_floor)
+    )
+    for frame in (
+        daily_variance,
+        daily_log_variance,
+        benchmark_daily_variance,
+        benchmark_daily_log_variance,
+        pca_factor_daily_variance,
+        pca_factor_daily_log_variance,
+        local_factor_daily_variance,
+        local_factor_daily_log_variance,
+        aggregate_factor_daily_variance,
+        aggregate_factor_daily_log_variance,
+    ):
+        frame.index = _session_date_index(frame.index)
+        frame.index.name = "session_date"
     return FactorVintageRun(
         spec_name=name,
         factor_window_sessions=int(factor_window_sessions),
@@ -471,6 +513,14 @@ def build_factor_vintage_run(
         variance_result=variance_result,
         daily_log_variance=daily_log_variance,
         daily_variance=daily_variance,
+        benchmark_daily_log_variance=benchmark_daily_log_variance,
+        benchmark_daily_variance=benchmark_daily_variance,
+        pca_factor_daily_log_variance=pca_factor_daily_log_variance,
+        pca_factor_daily_variance=pca_factor_daily_variance,
+        local_factor_daily_log_variance=local_factor_daily_log_variance,
+        local_factor_daily_variance=local_factor_daily_variance,
+        aggregate_factor_daily_log_variance=aggregate_factor_daily_log_variance,
+        aggregate_factor_daily_variance=aggregate_factor_daily_variance,
         factor_metadata=factor_metadata,
         rv_metadata=rv_metadata,
     )
@@ -1489,6 +1539,7 @@ def score_forecasts(
     metadata_by_spec: Mapping[str, pd.DataFrame] | None = None,
     *,
     config: OOSConfig = OOSConfig(),
+    models: Sequence[str] = FORECAST_MODELS,
 ) -> pd.DataFrame:
     """Join realized outcomes after issuance and retain every score status.
 
@@ -1496,7 +1547,7 @@ def score_forecasts(
     recorded as unscorable rather than being silently replaced by a floor.
     """
 
-    validate_identical_model_keys(forecasts)
+    validate_identical_model_keys(forecasts, models)
     value = forecasts.copy()
     value["target_date"] = _session_date_index(value["target_date"])
     value["forecast_origin"] = _session_date_index(value["forecast_origin"])
@@ -1595,7 +1646,7 @@ def score_forecasts(
         ],
         errors="ignore",
     )
-    validate_identical_model_keys(scored_key_check)
+    validate_identical_model_keys(scored_key_check, models)
     # A date/stock is comparison-eligible only if every declared model has an
     # eligible outcome.  This prevents a failing model from benefiting by
     # dropping difficult targets.
@@ -1608,7 +1659,7 @@ def score_forecasts(
     )
     value = value.merge(scored_counts, on=list(MODEL_KEY_COLUMNS), how="left")
     value["n_models_scored"] = value["n_models_scored"].fillna(0).astype(int)
-    value["comparison_eligible"] = value["n_models_scored"].eq(len(FORECAST_MODELS))
+    value["comparison_eligible"] = value["n_models_scored"].eq(len(tuple(models)))
     return value
 
 

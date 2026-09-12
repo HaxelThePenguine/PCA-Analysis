@@ -63,6 +63,8 @@ class FactorAdjustmentResult:
     raw_returns: pd.DataFrame
     benchmark_residuals: pd.DataFrame
     factor_adjusted_residuals: pd.DataFrame
+    pca_factor_scores: pd.DataFrame
+    local_factor_scores: pd.DataFrame
     diagnostics: pd.DataFrame
     benchmark_coefficients: pd.DataFrame
     factor_loadings: pd.DataFrame
@@ -218,6 +220,10 @@ def apply_factor_fit(
         projector = _projector(loadings)
         factor_basis = loadings
     scores = standardized @ factor_basis
+    local_loadings = fit.loadings.to_numpy(dtype=float)
+    local_scores = standardized @ local_loadings @ np.linalg.pinv(
+        local_loadings.T @ local_loadings
+    )
     factor_residuals_z = standardized - standardized @ projector
     factor_adjusted = pd.DataFrame(
         factor_residuals_z * fit.residual_scales.to_numpy(dtype=float),
@@ -233,6 +239,9 @@ def apply_factor_fit(
         ),
         "factor_scores": pd.DataFrame(
             scores, index=data.index, columns=fit.pca_weights.columns
+        ),
+        "local_factor_scores": pd.DataFrame(
+            local_scores, index=data.index, columns=fit.loadings.columns
         ),
         "orthogonality_error": float(np.max(np.abs(factor_residuals_z @ factor_basis))),
     }
@@ -257,6 +266,7 @@ def run_factor_adjustment(
         raise ValueError("The panel is shorter than the factor window.")
 
     raw_parts, benchmark_parts, factor_parts = [], [], []
+    pca_score_parts, local_score_parts = [], []
     diagnostic_rows, coefficient_rows, loading_rows, metric_rows = [], [], [], []
     previous_loadings: pd.DataFrame | None = None
     if int(config.n_jobs) < 1:
@@ -314,6 +324,8 @@ def run_factor_adjustment(
         raw_parts.append(applied["raw_returns"])
         benchmark_parts.append(applied["benchmark_residuals"])
         factor_parts.append(applied["factor_adjusted_residuals"])
+        pca_score_parts.append(applied["factor_scores"])
+        local_score_parts.append(applied["local_factor_scores"])
         for factor_number, factor in enumerate(fit.loadings.columns, start=1):
             values = fit.loadings[factor].to_numpy(dtype=float)
             support = set(np.flatnonzero(np.abs(values) > 0.05).tolist())
@@ -434,6 +446,8 @@ def run_factor_adjustment(
         raw_returns=pd.concat(raw_parts).sort_index(),
         benchmark_residuals=pd.concat(benchmark_parts).sort_index(),
         factor_adjusted_residuals=pd.concat(factor_parts).sort_index(),
+        pca_factor_scores=pd.concat(pca_score_parts).sort_index(),
+        local_factor_scores=pd.concat(local_score_parts).sort_index(),
         diagnostics=pd.DataFrame(diagnostic_rows),
         benchmark_coefficients=pd.DataFrame(coefficient_rows),
         factor_loadings=pd.DataFrame(loading_rows),

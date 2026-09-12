@@ -2,7 +2,7 @@
 
 > **Snapshot date:** 12 September 2026
 > **Market-data endpoint:** 9 September 2026
-> **Research status:** factor extraction and leakage-controlled pseudo-out-of-sample residual-volatility forecasting completed; a genuinely untouched future holdout remains pending
+> **Research status:** factor extraction, corrected residual-network forecasting, and the Stage 17 historical factor-predictability audit are completed; genuinely untouched future confirmation remains pending
 
 Stage 16 has completed the corrected historical replay under the separately
 versioned `oos-har-network-v2.0.0` protocol. Its numerical results supersede
@@ -11,6 +11,15 @@ below as a legacy comparison that shows how stricter return construction,
 target eligibility, penalty standardization, and immutable issuance change the
 conclusion. The prospective confirmation track remains distinct and pending;
 the historical replay cannot become an untouched holdout retrospectively.
+
+Stage 17 is implemented under the separately versioned
+`oos-factor-har-v1.0.0` protocol. It forecasts benchmark-residual, rather than
+factor-adjusted, realized variance in order to test whether the common banking
+subspace and the three sparse local-factor histories predict future volatility.
+The production historical replay is complete. It finds stable predictive value
+in aggregate common-factor volatility, but no incremental forecasting benefit
+from decomposing that aggregate into the three sparse local directions. This
+remains pseudo-OOS development evidence, not untouched confirmation.
 
 ## Executive summary
 
@@ -27,6 +36,9 @@ The main conclusions so far are:
 7. Under the corrected Stage 16 protocol, the primary 120-session expanding network reduces pooled QLIKE from **0.240384** to **0.240250**, an economically very small improvement of **0.056%**. The corresponding HAC and moving-block tests do not reject equal predictive loss at the 5% level.
 8. The 252-session rolling HAR produces a larger **1.349%** QLIKE improvement, but its HAC and bootstrap p-values remain near 0.10. The 60-session factor robustness produces a smaller **0.098%** gain that is statistically detectable under both HAC lag choices and both predeclared block lengths. Statistical detectability and economic magnitude therefore point in different directions.
 9. The primary one-standard-error network is genuinely sparse, with mean directed-edge density between **3.7%** and **8.0%**, but no directed edge reaches the predeclared 70% stability threshold in any of the three specifications. The corrected result supports weak incremental predictive content, not a stable structural network.
+10. In the Stage 17 primary 120-session expanding specification, Aggregate-Factor HAR lowers pooled QLIKE from **0.210206** for Own-HAR to **0.199614**, an improvement of **5.039%**. The gain remains **4.940%** with a rolling 252-session HAR window and **4.713%** with a 60-session factor window.
+11. The aggregate-factor improvement is directionally stable but inference is not uniformly decisive: the primary comparison has Holm-adjusted HAC p-values of **0.134** at lag 5 and **0.047** at lag 20; the 60-session sensitivity is significant at both lags, with adjusted p-values of **0.009** and **0.004**. The rolling-252 comparison does not survive multiplicity correction.
+12. Sparse localization does not improve the forecast. Relative to Own-HAR, Local-Factor HAR changes QLIKE by **+1.908%**, **−1.748%**, and **+2.540%** across the three specifications, but it loses to the rotation-invariant aggregate model by **3.297%**, **7.035%**, and **2.281%**, respectively. The evidence supports predictive variation in the common banking subspace, not separate forecast value attached to the MS/C, large-bank, and regional-bank labels.
 
 The factor-discovery stages remain descriptive. Stage 15 adds pseudo-out-of-sample predictive evidence, but the factor names and directed edges do not identify causal shocks, contagion, tradable alpha, or a uniquely determined true factor count. The historical sample had already been examined while constructing the factor model, so the forecasting exercise is not a pristine final holdout.
 
@@ -364,6 +376,61 @@ defensible interpretation is that aggressive factor removal and conservative
 penalization leave weak, time-varying cross-bank forecasting information rather
 than a stable directed spillover graph.
 
+## Stage 17 factor-predictability protocol
+
+Stage 17 targets next-session realized variance after removing only SPY and
+XLF. This is the correct target for the new question because it leaves the
+internal banking component in the response. Every rolling PCA and L1 loading
+matrix is estimated from preceding sessions and then frozen for its later
+five-session score block. The saved PCA and oblique local-factor scores are
+aggregated into daily, weekly, and monthly realized-volatility histories.
+
+The primary model adds the three local-factor HAR states to each bank's own HAR
+state. A rotation-invariant aggregate common-factor model distinguishes
+predictability of the retained subspace from predictability due to its sparse
+economic localization. A benchmark-residual Network HAR and a local-factor plus
+Network HAR then identify whether direct cross-bank histories add information
+before and after conditioning on the factors. All six candidate models use a
+common estimation mask and identical evaluation keys; QLIKE comparisons use
+date-clustered HAC inference and Holm correction across the predeclared model
+contrasts.
+
+The production replay `historical_factor_har_v1_20260912` contains 529 forecast
+dates in each 120-session specification and 589 dates in the 60-session
+specification. After applying the unchanged ninety-percent valid-bar rule, 199
+and 205 dates remain comparison-eligible, respectively. Each eligible date
+contains all twelve banks and all six models.
+
+| Stage 17 specification | Own-HAR QLIKE | Aggregate-factor QLIKE | Local-factor QLIKE | Aggregate improvement | Local improvement |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 120-session factor, expanding HAR | 0.210206 | 0.199614 | 0.206196 | 5.039% | 1.908% |
+| 120-session factor, rolling-252 HAR | 0.213218 | 0.202685 | 0.216944 | 4.940% | -1.748% |
+| 60-session factor, expanding HAR | 0.214540 | 0.204428 | 0.209091 | 4.713% | 2.540% |
+
+The aggregate result is broader than a small subset of stocks: it improves
+QLIKE for ten of twelve banks in the primary specification and for ten of
+twelve banks in the 60-session sensitivity. Citigroup is the consistent
+exception, and WFC is approximately neutral to negative. Nevertheless, daily
+win rates are only 51–54% at the pooled level, so the economic gain is produced
+partly by reducing the severity of relatively large forecast errors rather than
+by winning almost every day.
+
+The local decomposition never beats aggregate-factor HAR at the pooled level.
+Its nine factor-history regressors are also more highly collinear than the
+three-regressor aggregate state: Local-Factor HAR has median condition numbers
+between approximately 906 and 2,425, while the hybrid reaches medians between
+approximately 27,703 and 316,426. All numerical fits converged and no forecast
+required exponent clipping, but the hybrid coefficients should not be given a
+structural interpretation. The one-standard-error network adds only 0.072% in
+the primary expanding specification; the hybrid adds only 0.043% beyond local
+factors there. Neither incremental result is statistically persuasive.
+
+The end-to-end smoke run `stage17_smoke_20260912` and production audit both
+completed successfully, and the complete repository suite passes 59 tests.
+The historical values above remain pseudo-OOS because this sample influenced
+factor discovery. Prospective confirmation under a pre-outcome UTC freeze is
+still required before treating the aggregate-factor result as new evidence.
+
 ## Current interpretation
 
 The strongest current story begins with a dominant global financial-stock
@@ -386,16 +453,29 @@ post-factor spillover network. It is not evidence of causal transmission,
 independent structural shocks, tradable alpha, or performance on a genuinely
 untouched sample.
 
+Stage 17 supplies the complementary result before factor removal. Aggregate
+banking-factor volatility reduces historical pseudo-OOS QLIKE by about five
+percent with a stable sign across the three specifications. Sparse factor
+localization is valuable for describing which institutions span the common
+space, but it does not improve forecasting relative to the aggregate subspace.
+The coherent interpretation is therefore that common banking volatility is a
+useful state variable, while the separate local labels are not yet distinct
+predictive state variables. This distinction is economically meaningful and is
+more defensible than claiming three independent sources of forecast alpha.
+
 ## What remains to be tested
 
 The next research priority is not another factor-extraction variant. The
-economically relevant test is prospective confirmation under the already
-frozen 120-session `K=3` factor specification, one-standard-error Network HAR,
-strict return construction, and 252-session endpoint. Newly acquired sessions
-must play no role in factor discovery, hyperparameter design, or interpretation
-before their forecasts are issued.
+economically relevant test is prospective confirmation of the Stage 17
+aggregate-factor result under the 120-session `K=3` factor specification,
+expanding Own-HAR plus aggregate common-factor history, strict return
+construction, and a fixed 252-session confirmation endpoint. Newly acquired
+sessions must play no role in factor discovery, hyperparameter design, or
+interpretation before their forecasts are issued. The Stage 16 network forecast
+can remain in the prospective ledger as a secondary comparison, but the new
+primary contrast is Aggregate-Factor HAR versus Own-HAR.
 
-The historical loss comparison already uses 2,000 moving-block replications at
+The Stage 16 historical loss comparison already uses 2,000 moving-block replications at
 both five- and twenty-session block lengths. The remaining useful uncertainty
 extension is a conditional edge bootstrap with substantially more than the
 legacy 20 replications, although the absence of any 70%-stable primary edge
@@ -428,8 +508,15 @@ The main pipeline stages are implemented in:
 - [`14_dynamic_local_factor_regimes.py`](src/14_dynamic_local_factor_regimes.py)
 - [`15_factor_adjusted_residual_network.py`](src/15_factor_adjusted_residual_network.py)
 - [`16_oos_har_network_validation.py`](src/16_oos_har_network_validation.py)
+- [`17_oos_factor_augmented_har.py`](src/17_oos_factor_augmented_har.py)
 
 The corrected protocol and its audit are documented in [`OOS_PROTOCOL.md`](OOS_PROTOCOL.md) and [`OOS_AUDIT.md`](OOS_AUDIT.md). Each Stage 16 run writes `OOS_RESULTS.md` under `alpaca_us_banks_1m/reports/oos_har_network_validation/`; those generated artifacts remain outside version control. The Stage 16 values reported above were independently reconciled to the final score ledger from `historical_oos_v2_20260912`, while the Stage 15 values remain explicitly labelled as legacy results.
+
+The factor-predictability design is documented in
+[`FACTOR_HAR_PROTOCOL.md`](FACTOR_HAR_PROTOCOL.md). Stage 17 writes its
+forecast, score, comparison, HAC, coefficient, tuning, and diagnostic ledgers
+under `alpaca_us_banks_1m/reports/oos_factor_augmented_har/`; these generated
+artifacts also remain outside version control.
 
 Generated CSV and figure outputs are stored under `alpaca_us_banks_1m/reports/` during a local run and are intentionally excluded from Git. The numerical values in this snapshot were read from the generated baseline, residual, variance-decomposition, internal-factor, local-factor-identification, dynamic-regime, Kalman-comparison, and factor-adjusted-network tables. Re-run the stages above to regenerate the artifacts from the local dataset.
 

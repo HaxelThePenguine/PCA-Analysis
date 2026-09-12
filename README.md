@@ -600,6 +600,55 @@ The main commands are:
 .\\.venv\\Scripts\\python.exe src\\16_oos_har_network_validation.py --mode report --run-id RUN_ID
 ```
 
+## Stage 17: OOS predictive content of the local factors
+
+Stage 17 changes the response rather than repeating the post-factor residual
+network exercise. Its target is next-session realized variance after removing
+only SPY and XLF, so the internal banking component remains available to be
+forecast. At each origin, the rolling PCA and L1 rotation are estimated from
+preceding sessions, frozen, and applied to the current session. The resulting
+factor-score returns are aggregated into daily, weekly, and monthly realized
+factor-volatility histories.
+
+The primary regression augments the bank's own HAR state with the histories of
+the three sparse local factors. A rotation-invariant aggregate-factor model
+tests the predictive content of the retained subspace without relying on its
+economic labels. Benchmark-residual Network HAR and a hybrid Local-Factor plus
+Network HAR separate common-factor information from remaining cross-bank
+predictability. Own-HAR and persistence complete the matched benchmark set.
+All six models use identical estimation observations and forecast keys.
+
+The implementation is in
+[`17_oos_factor_augmented_har.py`](src/17_oos_factor_augmented_har.py) and
+[`factor_har_oos.py`](src/utils/factor_har_oos.py). The complete equations,
+information clock, predeclared comparisons, inference procedure, and distinction
+between historical pseudo-OOS evidence and prospective confirmation are in
+[`FACTOR_HAR_PROTOCOL.md`](FACTOR_HAR_PROTOCOL.md). Generated artifacts are
+written under `alpaca_us_banks_1m/reports/oos_factor_augmented_har/` and remain
+outside version control.
+
+The production replay `historical_factor_har_v1_20260912` finds that aggregate
+common-factor volatility improves pooled QLIKE over Own-HAR by 5.039% in the
+primary 120-session expanding specification, 4.940% with a rolling 252-session
+HAR window, and 4.713% with a 60-session factor window. The primary
+Holm-adjusted HAC p-values are 0.134 at lag 5 and 0.047 at lag 20; the 60-session
+sensitivity survives the adjustment at both lags, while the rolling-252 result
+does not. By contrast, the three local-factor histories never outperform the
+rotation-invariant aggregate factor at the pooled level. The evidence therefore
+supports predictive variation in the common banking subspace, but not distinct
+forecast value attached to the sparse MS/C, large-bank, and regional-bank
+directions. These are historical pseudo-OOS results, not an untouched holdout.
+
+The main commands are:
+
+```text
+.\\.venv\\Scripts\\python.exe src\\17_oos_factor_augmented_har.py --mode smoke --n-jobs 2
+.\\.venv\\Scripts\\python.exe src\\17_oos_factor_augmented_har.py --mode audit --n-jobs 12 --run-id historical_factor_har_v1
+.\\.venv\\Scripts\\python.exe src\\17_oos_factor_augmented_har.py --mode freeze
+.\\.venv\\Scripts\\python.exe src\\17_oos_factor_augmented_har.py --mode prospective --n-jobs 12
+.\\.venv\\Scripts\\python.exe src\\17_oos_factor_augmented_har.py --mode score --run-id PROSPECTIVE_RUN_ID
+```
+
 ## Research roadmap
 
 ### 1. Baseline PCA
@@ -773,6 +822,7 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 14_dynamic_local_factor_regimes.py  run 60/120-session rolling L1 local-factor regime diagnostics
 15_factor_adjusted_residual_network.py  forecast factor-adjusted realized volatility with a sparse network HAR
 16_oos_har_network_validation.py         freeze, issue, score, and audit the corrected OOS protocol
+17_oos_factor_augmented_har.py            test the OOS predictive content of common and local factors
 ```
 
 The 13-bis extension starts from the intraday benchmark-residualized panel,
@@ -793,6 +843,12 @@ construction, calendar HAR features, target-free issuance, scoring, inference,
 and bootstrap routines, and `reporting/oos_validation.py` for durable reports.
 Its generated outputs are kept separately in
 `alpaca_us_banks_1m/reports/oos_har_network_validation/`.
+
+The Stage 17 factor-predictability extension uses `utils/factor_har_oos.py` to
+align benchmark-residual bank variance with aggregate and sparse local-factor
+HAR states, issue matched target-free forecasts, and compare factor, network,
+and hybrid specifications. Its generated outputs are kept separately in
+`alpaca_us_banks_1m/reports/oos_factor_augmented_har/`.
 
 The source tree separates research orchestration, reusable calculations, and
 presentation. The numbered scripts in `src/` describe each research objective:
@@ -843,11 +899,12 @@ figures were pixel-identical after applying the UTC date-parsing correction to
 the original rolling renderer. Bootstrap replications and multistart searches
 were reduced equally in both implementations for this comparison. This was
 an integration regression, not a rerun of the full production research sample.
-The 41-test suite also checks variance reconciliation, session resampling,
+The 59-test suite also checks variance reconciliation, session resampling,
 configurable rolling windows, holdout isolation in the Kalman training fit,
 import safety, computation without file output, factor-projector invariance,
 factor-adjustment holdout isolation, and serial-versus-parallel numerical
-equivalence for the Stage 15 estimators.
+equivalence for the Stage 15 estimators, target-free Stage 16 checkpointing,
+and matched-key causal issuance for the Stage 17 factor-HAR models.
 
 The downloader filename contains a historical typo (`crwal`). It is kept for compatibility with the existing workflow and can be renamed once any external run commands have been updated.
 
