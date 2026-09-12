@@ -24,16 +24,18 @@ from utils.network_har import (
     fit_partialling_out,
     tune_network_penalty,
 )
+from utils.oos_common import (
+    calendar_time_maps,
+    normalize_calendar,
+    safe_positive_variance,
+    session_date_index,
+    training_bounds,
+    utc_now_iso,
+)
 from utils.oos_har_network import (
     OOSConfig,
     ForecastRunResult,
-    _calendar_time_maps,
-    _safe_positive_variance,
-    _session_date_index,
-    _training_bounds,
     build_calendar_har_features,
-    normalize_calendar,
-    utc_now_iso,
     validate_identical_model_keys,
 )
 
@@ -220,7 +222,7 @@ def _forecast_row(
     config: OOSConfig,
 ) -> dict[str, object]:
     predicted_log = float(_predict_fit(fit, own, cross)[0])
-    predicted_variance, clipped = _safe_positive_variance(
+    predicted_variance, clipped = safe_positive_variance(
         predicted_log,
         fit.smearing_factor,
         config.variance.variance_floor,
@@ -307,7 +309,7 @@ def _fit_factor_origin(task: _FactorOriginTask) -> _FactorOriginResult:
             config=task.config,
         ),
     ]
-    persistence_variance, persistence_clipped = _safe_positive_variance(
+    persistence_variance, persistence_clipped = safe_positive_variance(
         float(task.current_own[0, 0]), 1.0, task.config.variance.variance_floor
     )
     forecasts.append(
@@ -425,11 +427,11 @@ def issue_factor_har_forecasts(
         calendar_value,
     )
     stocks = list(benchmark_log_variance.columns)
-    opens, closes = _calendar_time_maps(calendar_value)
+    opens, closes = calendar_time_maps(calendar_value)
     factor_lookup: dict[pd.Timestamp, dict[str, object]] = {}
     if factor_metadata is not None and not factor_metadata.empty:
         metadata = factor_metadata.copy()
-        metadata["session_date"] = _session_date_index(metadata["session_date"])
+        metadata["session_date"] = session_date_index(metadata["session_date"])
         factor_lookup = {
             pd.Timestamp(row["session_date"]): row for row in metadata.to_dict("records")
         }
@@ -497,7 +499,7 @@ def issue_factor_har_forecasts(
                 )
                 if not all(np.isfinite(value).all() for value in current):
                     continue
-                train_start, train_end = _training_bounds(row_number, har_window)
+                train_start, train_end = training_bounds(row_number, har_window)
                 mask = _common_mask(
                     y_all,
                     own_all,

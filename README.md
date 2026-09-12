@@ -776,6 +776,7 @@ Completed:
 - Shared session-window helpers, synthetic support-shift tests, and import-safe stage-14 regression coverage
 - Leakage-controlled factor-adjusted realized-volatility network HAR, HAC comparisons, block bootstrap stability, descriptive controls, and production diagnostics
 - Corrected Stage 16 target-free OOS issuance/scoring utilities, protocol manifest, checkpoint/resume support, and substantive regression tests
+- Stage 17 matched OOS Factor-HAR audit on the benchmark-residual target, including aggregate, localized, network, hybrid, and persistence specifications
 
 Next:
 
@@ -787,11 +788,9 @@ Next:
 
 Later:
 
-- Rolling Sparse PCA and stress-regime comparison
 - Shrinkage covariance
 - Random-matrix diagnostics
-- Residual dynamics
-- Walk-forward testing and transaction-cost analysis
+- A separately frozen volatility-to-position mapping, followed by turnover and transaction-cost analysis
 
 ## Reproducibility
 
@@ -838,16 +837,21 @@ The Stage 15 network extension lives in `utils/factor_adjusted_residuals.py`,
 the compact narrative in `reporting/network.py`. Its generated outputs are
 kept separately in `alpaca_us_banks_1m/reports/factor_adjusted_residual_network/`.
 
-The Stage 16 OOS extension uses `utils/oos_har_network.py` for strict target
-construction, calendar HAR features, target-free issuance, scoring, inference,
-and bootstrap routines, and `reporting/oos_validation.py` for durable reports.
+The Stage 16 OOS extension uses `utils/oos_har_network.py` for factor vintages,
+calendar HAR features, target-free issuance, scoring, inference, and bootstrap
+routines. Shared strict-return construction, exchange-calendar normalization,
+hashing, UTC clocks, and deterministic persistence live in
+`utils/oos_common.py`; `reporting/oos_validation.py` owns durable reports and
+figures.
 Its generated outputs are kept separately in
 `alpaca_us_banks_1m/reports/oos_har_network_validation/`.
 
 The Stage 17 factor-predictability extension uses `utils/factor_har_oos.py` to
 align benchmark-residual bank variance with aggregate and sparse local-factor
 HAR states, issue matched target-free forecasts, and compare factor, network,
-and hybrid specifications. Its generated outputs are kept separately in
+and hybrid specifications. It reuses the same OOS clocks and data contracts
+from `utils/oos_common.py`, while `reporting/factor_har.py` owns its model
+summaries, date-clustered HAC comparisons, and run report. Its generated outputs are kept separately in
 `alpaca_us_banks_1m/reports/oos_factor_augmented_har/`.
 
 The source tree separates research orchestration, reusable calculations, and
@@ -857,7 +861,7 @@ tables, and request the corresponding reports. Every stage exposes a `main()`
 entry point and can be imported without running the pipeline. Existing script
 names, report directories, table schemas, and figure filenames are retained.
 
-All shared routines live in the `src/utils/` package. `pca.py` owns ordinary
+All shared numerical and protocol routines live in the `src/utils/` package. `pca.py` owns ordinary
 PCA, Varimax, Elastic-Net Sparse PCA, and reconstruction diagnostics;
 `benchmark.py` owns benchmark projection and raw/residual panel construction.
 `rolling.py` defines session windows, while `rolling_pca.py` applies PCA across
@@ -876,6 +880,13 @@ styling and saving remain in `utils/plotting.py`; numerical estimators do not
 depend on Matplotlib or report modules. Imports therefore use names such as
 `from utils.pca import fit_pca`, with the project configuration retained in
 `src/config.py`.
+
+The September 2026 OOS cleanup removed obsolete duplicate Stage 15 estimators
+that were unreachable from the public pipeline. It also replaced private
+cross-imports between Stages 16 and 17 with the explicit `oos_common` boundary
+and moved Stage 17 presentation code into `reporting/`. Forecast equations,
+training windows, penalty selection, table schemas, and generated-file names
+remain unchanged.
 
 The refactor preserves the statistical specifications and their interpretation
 limits. In particular, stage 11 still uses a fixed full-sample intraday profile

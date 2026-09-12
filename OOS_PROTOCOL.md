@@ -8,6 +8,14 @@ not an untouched holdout. The prospective track is frozen at the recorded UTC
 timestamp and is the only track that can produce genuinely new confirmation
 evidence.
 
+The numbered script is the orchestration boundary. Numerical factor-vintage,
+forecasting, scoring, and inference logic resides in
+`src/utils/oos_har_network.py`; strict-return construction, market-calendar
+normalization, clocks, hashes, and deterministic manifest persistence reside in
+`src/utils/oos_common.py`; and durable narrative and graphical output resides
+in `src/reporting/oos_validation.py`. This separation does not alter any
+registered statistical choice.
+
 ## Research question and universe
 
 The question is whether lagged cross-stock realized-variance information

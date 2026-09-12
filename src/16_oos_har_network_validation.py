@@ -38,6 +38,16 @@ from utils.network_har import (
     network_centrality,
     network_density,
 )
+from utils.oos_common import (
+    dataframe_hash,
+    file_prefix_fingerprint,
+    file_sha256,
+    normalize_calendar,
+    stable_hash,
+    strict_clean_return_panel,
+    utc_now_iso,
+    write_json,
+)
 from utils.oos_har_network import (
     FORECAST_MODELS,
     GROUPS,
@@ -51,20 +61,13 @@ from utils.oos_har_network import (
     bootstrap_loss_series,
     conditional_edge_bootstrap,
     deserialize_config,
-    file_sha256,
-    file_prefix_fingerprint,
     forecast_checkpoint_specification,
     issue_target_free_forecasts,
     paired_loss_differentials,
     score_forecasts,
     serialize_config,
-    stable_hash,
-    strict_clean_return_panel,
     summarize_scored_forecasts,
-    normalize_calendar,
-    utc_now_iso,
     validate_forecast_ledger,
-    write_json,
 )
 
 
@@ -99,6 +102,7 @@ def _code_provenance() -> dict[str, object]:
 
     files = (
         Path(__file__),
+        Path(__file__).parent / "utils" / "oos_common.py",
         Path(__file__).parent / "utils" / "oos_har_network.py",
         Path(__file__).parent / "utils" / "network_har.py",
         Path(__file__).parent / "utils" / "factor_adjusted_residuals.py",
@@ -555,7 +559,11 @@ def _write_run_results(
                     seed=config.factor_seed + offset,
                 )
             )
-    bootstrap = pd.concat([frame for frame in bootstraps if not frame.empty], ignore_index=True) if bootstraps else pd.DataFrame()
+    bootstrap = (
+        pd.concat([frame for frame in bootstraps if not frame.empty], ignore_index=True)
+        if bootstraps
+        else pd.DataFrame()
+    )
     edge_stability_table = edge_stability(forecast_result.edge_history, model="network_har_l1_1se")
     density = network_density(forecast_result.edge_history)
     centrality = network_centrality(edge_stability_table)
@@ -682,7 +690,7 @@ def run_historical(
     manifest["strict_return_rows"] = int(cleaned.notna().sum().sum())
     manifest["strict_complete_rows"] = int(len(complete))
     manifest["strict_contamination_cells"] = int(contaminated.to_numpy(dtype=bool).sum())
-    manifest["input_data_hash"] = dataframe_hash_for_manifest(complete)
+    manifest["input_data_hash"] = dataframe_hash(complete)
     write_json(run_dir / "manifest.json", manifest)
 
     specs = _historical_specs(config)
@@ -827,14 +835,6 @@ def run_historical(
     return run_dir, summaries
 
 
-def dataframe_hash_for_manifest(frame: pd.DataFrame) -> str:
-    """Hash a data frame without importing the full protocol helper at call sites."""
-
-    from utils.oos_har_network import dataframe_hash
-
-    return dataframe_hash(frame)
-
-
 def run_freeze(*, config: OOSConfig) -> Path:
     """Register the corrected protocol before any eligible future outcome exists."""
 
@@ -937,14 +937,22 @@ def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, m
         diagnostics.append(result.origin_diagnostics)
         _write_indexed_table(run_dir, f"realized_variance_{spec_name}.csv", vintage.daily_variance)
         _write_indexed_table(run_dir, f"realized_log_variance_{spec_name}.csv", vintage.daily_log_variance)
-        _write_table(run_dir, f"rv_metadata_{spec_name}.csv", vintage.rv_metadata.assign(spec_name=spec_name))
+        _write_table(
+            run_dir,
+            f"rv_metadata_{spec_name}.csv",
+            vintage.rv_metadata.assign(spec_name=spec_name),
+        )
     forecast_result = ForecastRunResult(
         forecasts=pd.concat(forecasts, ignore_index=True) if forecasts else pd.DataFrame(),
         coefficients=pd.concat(coefficients, ignore_index=True) if coefficients else pd.DataFrame(),
         edge_history=pd.concat(edges, ignore_index=True) if edges else pd.DataFrame(),
         tuning_history=pd.concat(tuning, ignore_index=True) if tuning else pd.DataFrame(),
         origin_diagnostics=pd.concat(diagnostics, ignore_index=True) if diagnostics else pd.DataFrame(),
-        status="awaiting_future_data" if not any(not frame.empty for frame in forecasts) else "issued_pending_outcomes",
+        status=(
+            "awaiting_future_data"
+            if not any(not frame.empty for frame in forecasts)
+            else "issued_pending_outcomes"
+        ),
     )
     if forecast_result.forecasts.empty:
         forecast_result = replace(
@@ -1111,10 +1119,26 @@ def run_score(*, run_id: str | None = None, n_jobs: int = 1) -> Path:
         return run_dir / "OOS_RESULTS.md"
     forecast_result = ForecastRunResult(
         forecasts=forecast,
-        coefficients=pd.read_csv(run_dir / "har_coefficients.csv") if (run_dir / "har_coefficients.csv").exists() else pd.DataFrame(),
-        edge_history=pd.read_csv(run_dir / "edge_history.csv") if (run_dir / "edge_history.csv").exists() else pd.DataFrame(),
-        tuning_history=pd.read_csv(run_dir / "tuning_history.csv") if (run_dir / "tuning_history.csv").exists() else pd.DataFrame(),
-        origin_diagnostics=pd.read_csv(run_dir / "forecast_diagnostics.csv") if (run_dir / "forecast_diagnostics.csv").exists() else pd.DataFrame(),
+        coefficients=(
+            pd.read_csv(run_dir / "har_coefficients.csv")
+            if (run_dir / "har_coefficients.csv").exists()
+            else pd.DataFrame()
+        ),
+        edge_history=(
+            pd.read_csv(run_dir / "edge_history.csv")
+            if (run_dir / "edge_history.csv").exists()
+            else pd.DataFrame()
+        ),
+        tuning_history=(
+            pd.read_csv(run_dir / "tuning_history.csv")
+            if (run_dir / "tuning_history.csv").exists()
+            else pd.DataFrame()
+        ),
+        origin_diagnostics=(
+            pd.read_csv(run_dir / "forecast_diagnostics.csv")
+            if (run_dir / "forecast_diagnostics.csv").exists()
+            else pd.DataFrame()
+        ),
         status="complete",
     )
     factor_tables = []
@@ -1155,11 +1179,32 @@ def main(argv: Iterable[str] | None = None) -> None:
         required=True,
         help="Stage 16 operation to run.",
     )
-    parser.add_argument("--run-id", default=None, help="Existing run id for resume/report operations.")
-    parser.add_argument("--n-jobs", type=int, default=1, help="Parallel target workers for factor/Lasso routines.")
-    parser.add_argument("--edge-bootstrap", action="store_true", help="Run the optional 200-replication conditional edge bootstrap.")
-    parser.add_argument("--no-figures", action="store_true", help="Skip report figures.")
-    parser.add_argument("--resume", action="store_true", help="Resume compatible forecast checkpoints.")
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Existing run id for resume/report operations.",
+    )
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=1,
+        help="Parallel target workers for factor/Lasso routines.",
+    )
+    parser.add_argument(
+        "--edge-bootstrap",
+        action="store_true",
+        help="Run the optional 200-replication conditional edge bootstrap.",
+    )
+    parser.add_argument(
+        "--no-figures",
+        action="store_true",
+        help="Skip report figures.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume compatible forecast checkpoints.",
+    )
     args = parser.parse_args(argv)
     if args.n_jobs < 1:
         parser.error("--n-jobs must be at least one")

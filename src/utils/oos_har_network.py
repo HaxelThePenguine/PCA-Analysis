@@ -9,14 +9,13 @@ comparison; this module is the corrected, versioned protocol.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field, fields
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -35,7 +34,20 @@ from utils.network_har import (
     hac_mean_test,
     tune_network_penalty,
 )
-from utils.preprocessing import clean_returns, compute_strict_intraday_returns
+from utils.oos_common import (
+    calendar_time_maps as _calendar_time_maps,
+    dataframe_hash,
+    file_prefix_fingerprint,
+    file_sha256,
+    normalize_calendar,
+    safe_positive_variance as _safe_positive_variance,
+    session_date_index as _session_date_index,
+    stable_hash,
+    strict_clean_return_panel,
+    training_bounds as _training_bounds,
+    utc_now_iso,
+    write_json,
+)
 from utils.realized_volatility import (
     RealizedVarianceConfig,
     RealizedVarianceResult,
@@ -142,136 +154,6 @@ class ForecastRunResult:
     tuning_history: pd.DataFrame
     origin_diagnostics: pd.DataFrame
     status: str
-
-
-def utc_now_iso() -> str:
-    """Return an explicit UTC freeze/creation timestamp."""
-
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def _json_default(value: object) -> object:
-    if isinstance(value, (np.integer,)):
-        return int(value)
-    if isinstance(value, (np.floating,)):
-        return float(value)
-    if isinstance(value, (pd.Timestamp, datetime)):
-        return value.isoformat()
-    if isinstance(value, (pd.Timedelta,)):
-        return value.total_seconds()
-    if isinstance(value, Path):
-        return str(value)
-    raise TypeError(f"Cannot serialize {type(value).__name__}.")
-
-
-def stable_hash(value: object) -> str:
-    """Hash JSON-serializable protocol/configuration content."""
-
-    encoded = json.dumps(value, sort_keys=True, default=_json_default, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def file_prefix_fingerprint(path: Path, prefix_bytes: int = 1_048_576) -> dict[str, object]:
-    """Record a reproducible prefix hash without requiring a full large-file read."""
-
-    path = Path(path)
-    if not path.exists():
-        return {"path": str(path), "exists": False}
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        digest.update(handle.read(prefix_bytes))
-    stat = path.stat()
-    return {
-        "path": str(path),
-        "exists": True,
-        "size_bytes": int(stat.st_size),
-        "prefix_bytes_hashed": int(prefix_bytes),
-        "prefix_sha256": digest.hexdigest(),
-    }
-
-
-def file_sha256(path: Path) -> str:
-    """Return the complete SHA-256 digest of a small tracked source file."""
-
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1_048_576), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def dataframe_hash(frame: pd.DataFrame | pd.Series) -> str:
-    """Hash labels, column names, dtypes, and values deterministically."""
-
-    value = frame.to_frame() if isinstance(frame, pd.Series) else frame
-    payload = {
-        "columns": [str(column) for column in value.columns],
-        "index": [str(item) for item in value.index],
-        "dtypes": [str(dtype) for dtype in value.dtypes],
-        "values_sha256": hashlib.sha256(
-            pd.util.hash_pandas_object(value, index=True).to_numpy(dtype=np.uint64).tobytes()
-        ).hexdigest(),
-    }
-    return stable_hash(payload)
-
-
-def _session_date_index(values: Iterable[object]) -> pd.DatetimeIndex:
-    # Checkpoint migrations can legitimately combine legacy ``YYYY-MM-DD``
-    # strings with ISO timestamps emitted by newer pandas versions.
-    dates = pd.DatetimeIndex(pd.to_datetime(values, format="mixed"))
-    if dates.tz is not None:
-        dates = dates.tz_convert(NY_TZ).tz_localize(None)
-    else:
-        dates = dates.tz_localize(None)
-    return dates.normalize()
-
-
-def normalize_calendar(calendar: pd.DataFrame) -> pd.DataFrame:
-    """Validate and normalize a calendar while preserving exchange timestamps."""
-
-    required = {"date", "session_open", "session_close", "open_minute", "close_minute", "expected_bars"}
-    missing = required.difference(calendar.columns)
-    if missing:
-        raise ValueError(f"Market calendar is missing columns: {sorted(missing)}")
-    result = calendar.copy()
-    result["session_date"] = _session_date_index(result["date"])
-    result = result[~result["session_date"].isin(pd.DatetimeIndex(BAD_SESSION_DATES))]
-    result = result.sort_values("session_date").drop_duplicates("session_date", keep="first")
-    def _parse_exchange_timestamps(values: pd.Series) -> pd.Series:
-        try:
-            parsed = pd.to_datetime(values)
-        except (TypeError, ValueError):
-            # Pandas 3 rejects a Series containing both EST and EDT offsets;
-            # parsing through UTC preserves the represented instant.
-            parsed = pd.to_datetime(values, utc=True)
-        if parsed.dt.tz is None:
-            return parsed.dt.tz_localize(NY_TZ)
-        return parsed.dt.tz_convert(NY_TZ)
-
-    result["session_open"] = _parse_exchange_timestamps(result["session_open"])
-    result["session_close"] = _parse_exchange_timestamps(result["session_close"])
-    result = result.reset_index(drop=True)
-    return result
-
-
-def strict_clean_return_panel(
-    close_matrix: pd.DataFrame,
-    missing_mask: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Build strict one-minute returns while retaining contamination masks.
-
-    ``close_matrix`` is already the repository's synchronized/forward-filled
-    price artifact.  The strict differencing step still sees removed
-    timestamps and marks the first post-gap return missing before the existing
-    imputation-contamination filter is applied.
-    """
-
-    returns = compute_strict_intraday_returns(close_matrix)
-    aligned_missing = missing_mask.reindex(index=close_matrix.index, columns=close_matrix.columns)
-    if aligned_missing.isna().any().any():
-        raise ValueError("The missingness mask does not align with the close matrix.")
-    cleaned, complete, contaminated = clean_returns(returns, aligned_missing)
-    return cleaned, complete, contaminated
 
 
 def build_calendar_har_features(
@@ -649,8 +531,14 @@ def build_protocol_manifest(
             "tuning_frequency": config.har.tuning_frequency,
             "chronological_cv_folds": config.har.cv_splits,
             "alpha_fractions": list(config.har.alpha_fractions),
-            "absolute_alpha_rule": "fraction times alpha_max recomputed within each CV fold and on the full training sample",
-            "selection_rule": "strongest penalty within one standard error of minimum chronological log-MSE",
+            "absolute_alpha_rule": (
+                "fraction times alpha_max recomputed within each CV fold and "
+                "on the full training sample"
+            ),
+            "selection_rule": (
+                "strongest penalty within one standard error of minimum "
+                "chronological log-MSE"
+            ),
         },
         "evaluation": {
             "primary_loss": "QLIKE(RV,RV_hat)=RV/RV_hat-log(RV/RV_hat)-1",
@@ -670,13 +558,6 @@ def build_protocol_manifest(
         "code_provenance": dict(code_provenance or {}),
         "configuration": config_value,
     }
-
-
-def write_json(path: Path, value: Mapping[str, object]) -> None:
-    """Write a deterministic UTF-8 JSON manifest."""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=True, default=_json_default) + "\n", encoding="utf-8")
 
 
 def _feature_matrix(
@@ -710,27 +591,6 @@ def _target_training_mask(
     )
 
 
-def _training_bounds(
-    row_number: int,
-    har_window: str | int,
-) -> tuple[int, int]:
-    """Return the causal HAR training slice ending immediately before origin."""
-
-    if har_window == "expanding":
-        return 0, row_number
-    train_length = int(har_window)
-    if train_length <= 0:
-        raise ValueError("har_window must be positive or 'expanding'.")
-    return max(0, row_number - train_length), row_number
-
-
-def _calendar_time_maps(calendar: pd.DataFrame) -> tuple[dict[pd.Timestamp, pd.Timestamp], dict[pd.Timestamp, pd.Timestamp]]:
-    value = normalize_calendar(calendar)
-    opens = dict(zip(value["session_date"], value["session_open"]))
-    closes = dict(zip(value["session_date"], value["session_close"]))
-    return opens, closes
-
-
 def _serialize_tuning(tuning: PenaltyTuning) -> dict[str, object]:
     return {
         "alpha_max": tuning.alpha_max,
@@ -759,16 +619,6 @@ def _deserialize_tuning(value: Mapping[str, object]) -> PenaltyTuning:
         requested_folds=int(value.get("requested_folds", 0)),
         fallback_reason=str(value.get("fallback_reason", "")),
     )
-
-
-def _safe_positive_variance(
-    predicted_log_variance: float,
-    smearing_factor: float,
-    floor: float,
-) -> tuple[float, bool]:
-    clipped = float(np.clip(predicted_log_variance, -40.0, 40.0))
-    value = max(float(np.exp(clipped) * smearing_factor), floor)
-    return value, bool(clipped != predicted_log_variance)
 
 
 def _empty_forecast_frame() -> pd.DataFrame:
@@ -1614,7 +1464,11 @@ def score_forecasts(
         statuses = np.where(
             ~np.isfinite(actual),
             "outcome_unavailable",
-            np.where(~quality, value.loc[target_indices, "target_quality_reason"], np.where(~positive, "nonpositive_target", "scored")),
+            np.where(
+                ~quality,
+                value.loc[target_indices, "target_quality_reason"],
+                np.where(~positive, "nonpositive_target", "scored"),
+            ),
         )
         value.loc[target_indices, "score_status"] = statuses
         log_values = np.full(len(actual), np.nan)
@@ -1622,7 +1476,10 @@ def score_forecasts(
         value.loc[target_indices, "actual_log_rv"] = log_values
         qlike = np.full(len(actual), np.nan)
         qlike[score_ok] = [
-            _qlike_positive(float(actual[index]), float(value.loc[target_indices[index], "predicted_variance"]))
+            _qlike_positive(
+                float(actual[index]),
+                float(value.loc[target_indices[index], "predicted_variance"]),
+            )
             for index in np.flatnonzero(score_ok)
         ]
         value.loc[target_indices, "qlike"] = qlike
@@ -1791,7 +1648,11 @@ def build_hac_inference(
                     "p_value": result["p_value"],
                     "log_mse_difference": float(date_panel["log_mse_difference"].mean()),
                     "log_mae_difference": float(date_panel["log_mae_difference"].mean()),
-                    "interpretation": "negative favors network HAR" if result["mean_difference"] < 0 else "positive favors own HAR",
+                    "interpretation": (
+                        "negative favors network HAR"
+                        if result["mean_difference"] < 0
+                        else "positive favors own HAR"
+                    ),
                 }
             )
             stock_rows: list[dict[str, object]] = []
@@ -1811,14 +1672,22 @@ def build_hac_inference(
                         "p_value": stock_result["p_value"],
                         "log_mse_difference": float(stock_group["log_mse_difference"].mean()),
                         "log_mae_difference": float(stock_group["log_mae_difference"].mean()),
-                        "interpretation": "negative favors network HAR" if stock_result["mean_difference"] < 0 else "positive favors own HAR",
+                        "interpretation": (
+                            "negative favors network HAR"
+                            if stock_result["mean_difference"] < 0
+                            else "positive favors own HAR"
+                        ),
                     }
                 )
             bh = _bh_adjust([row["p_value"] for row in stock_rows])
             holm = _holm_adjust([row["p_value"] for row in stock_rows])
             for row, bh_value, holm_value in zip(stock_rows, bh, holm):
-                row["bh_adjusted_p_value"] = float(bh_value) if np.isfinite(bh_value) else np.nan
-                row["holm_adjusted_p_value"] = float(holm_value) if np.isfinite(holm_value) else np.nan
+                row["bh_adjusted_p_value"] = (
+                    float(bh_value) if np.isfinite(bh_value) else np.nan
+                )
+                row["holm_adjusted_p_value"] = (
+                    float(holm_value) if np.isfinite(holm_value) else np.nan
+                )
                 rows.append(row)
     return pd.DataFrame(rows)
 
@@ -1907,7 +1776,10 @@ def bootstrap_loss_series(
                 "bootstrap_ci_high": float(np.quantile(bootstrap_means, 0.975)),
                 "centered_null_p_value": float(np.mean(np.abs(null_means) >= abs(observed))),
                 "shared_date_indices": True,
-                "assumption": "weak dependence across adjacent date-level loss differentials; stock panel aggregated within date",
+                "assumption": (
+                    "weak dependence across adjacent date-level loss differentials; "
+                    "stock panel aggregated within date"
+                ),
             }
         )
     return pd.DataFrame(rows)
@@ -1917,7 +1789,13 @@ def _target_arrays_for_design(
     design: CalendarHARDesign,
     target: str,
     stocks: Sequence[str],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, tuple[str, ...], list[tuple[str, str]]]:
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    tuple[str, ...],
+    list[tuple[str, str]],
+]:
     own, cross, names, pairs = _feature_matrix(design, target, stocks)
     return design.response[target].to_numpy(dtype=float), own, cross, names, pairs
 
@@ -1942,16 +1820,38 @@ def conditional_edge_bootstrap(
 
     design = build_calendar_har_features(log_daily_variance, calendar)
     stocks = list(log_daily_variance.columns)
-    repetitions = config.edge_bootstrap_repetitions if repetitions is None else int(repetitions)
-    block_lengths = tuple(config.edge_bootstrap_block_lengths if block_lengths is None else block_lengths)
-    checkpoint_step = config.edge_bootstrap_checkpoint_step if checkpoint_step is None else int(checkpoint_step)
+    repetitions = (
+        config.edge_bootstrap_repetitions
+        if repetitions is None
+        else int(repetitions)
+    )
+    block_lengths = tuple(
+        config.edge_bootstrap_block_lengths
+        if block_lengths is None
+        else block_lengths
+    )
+    checkpoint_step = (
+        config.edge_bootstrap_checkpoint_step
+        if checkpoint_step is None
+        else int(checkpoint_step)
+    )
     first = max(config.min_valid_training_observations, 1)
     checkpoints = list(range(first, len(design.origins), max(checkpoint_step, 1)))
     if checkpoints and checkpoints[-1] != len(design.origins) - 1:
         checkpoints.append(len(design.origins) - 1)
     rows: list[dict[str, object]] = []
     for checkpoint in checkpoints:
-        target_info: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, tuple[str, ...], list[tuple[str, str]], PenaltyTuning]] = {}
+        target_info: dict[
+            str,
+            tuple[
+                np.ndarray,
+                np.ndarray,
+                np.ndarray,
+                tuple[str, ...],
+                list[tuple[str, str]],
+                PenaltyTuning,
+            ],
+        ] = {}
         n_training_by_target: dict[str, int] = {}
         for target in stocks:
             y_all, own_all, cross_all, names, pairs = _target_arrays_for_design(

@@ -518,6 +518,14 @@ forecast, score, comparison, HAC, coefficient, tuning, and diagnostic ledgers
 under `alpaca_us_banks_1m/reports/oos_factor_augmented_har/`; these generated
 artifacts also remain outside version control.
 
+The two OOS stages share strict-return construction, exchange-calendar clocks,
+hashing, and manifest persistence through
+[`oos_common.py`](src/utils/oos_common.py). Stage 17 model estimation remains in
+[`factor_har_oos.py`](src/utils/factor_har_oos.py), while its presentation and
+HAC tables are isolated in
+[`factor_har.py`](src/reporting/factor_har.py). This organization changes no
+reported estimate or protocol choice.
+
 Generated CSV and figure outputs are stored under `alpaca_us_banks_1m/reports/` during a local run and are intentionally excluded from Git. The numerical values in this snapshot were read from the generated baseline, residual, variance-decomposition, internal-factor, local-factor-identification, dynamic-regime, Kalman-comparison, and factor-adjusted-network tables. Re-run the stages above to regenerate the artifacts from the local dataset.
 
 For the data-treatment decisions, mathematical definitions, and research principles, see [`README.md`](README.md).

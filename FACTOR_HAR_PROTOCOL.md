@@ -9,6 +9,14 @@ whether the factors explain contemporaneous returns. A factor may explain a
 large fraction of today’s covariance and nevertheless add no predictive
 content once a bank’s own heterogeneous volatility history is known.
 
+The executable boundary follows the same structure as the frozen Stage 16
+protocol. `src/17_oos_factor_augmented_har.py` orchestrates protocol states and
+artifacts, `src/utils/factor_har_oos.py` defines the matched causal forecasting
+design, `src/utils/oos_common.py` supplies the shared clock, calendar, strict
+preprocessing, hashing, and persistence contracts, and
+`src/reporting/factor_har.py` owns summaries, HAC comparison tables, and the
+run report. Presentation code therefore does not participate in model fitting.
+
 The response for bank (i) is benchmark-residual realized variance. At every
 minute (t), the return is first residualized on SPY and XLF using coefficients
 estimated from sessions strictly preceding the scoring block. Five-minute

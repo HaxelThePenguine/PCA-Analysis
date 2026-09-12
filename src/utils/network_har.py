@@ -407,31 +407,6 @@ def _fit_lasso_result(
     )
 
 
-def _fit_lasso(
-    x: np.ndarray,
-    y: np.ndarray,
-    alpha: float,
-    *,
-    max_iterations: int,
-    tolerance: float,
-    initial: np.ndarray | None = None,
-    gram: np.ndarray | None = None,
-    cross_product: np.ndarray | None = None,
-) -> np.ndarray:
-    """Compatibility wrapper returning only lasso coefficients."""
-
-    return _fit_lasso_result(
-        x,
-        y,
-        alpha,
-        max_iterations=max_iterations,
-        tolerance=tolerance,
-        initial=initial,
-        gram=gram,
-        cross_product=cross_product,
-    ).coefficients
-
-
 def _prepare_partialling_out(
     y_train: np.ndarray,
     own_train: np.ndarray,
@@ -1188,281 +1163,6 @@ def _directional_hit(actual_log: float, predicted_log: float, origin_log: float)
     return float(np.sign(actual_change) == np.sign(predicted_change))
 
 
-def _legacy_walk_forward_forecasts(
-    log_variance: pd.DataFrame,
-    *,
-    spec_name: str,
-    factor_window_sessions: int,
-    har_window: str | int = "expanding",
-    config: HARConfig = HARConfig(),
-) -> WalkForwardResult:
-    """Estimate one-step forecasts without using the current target observation."""
-
-    design = build_har_features(log_variance)
-    stocks = list(log_variance.columns)
-    forecast_rows: list[dict[str, object]] = []
-    coefficient_rows: list[dict[str, object]] = []
-    edge_rows: list[dict[str, object]] = []
-    tuning_rows: list[dict[str, object]] = []
-    cached_tuning: dict[str, PenaltyTuning] = {}
-    last_tuned: dict[str, int] = {}
-    target_designs = {
-        target: _feature_matrix(design, target, stocks) for target in stocks
-    }
-    response_arrays = {
-        target: design.response[target].to_numpy(dtype=float) for target in stocks
-    }
-    last_row = len(design.origins) - 1
-    first_row = max(config.min_training_observations, 1)
-    if int(config.n_jobs) < 1:
-        raise ValueError("n_jobs must be at least one.")
-    executor = (
-        ProcessPoolExecutor(max_workers=int(config.n_jobs))
-        if int(config.n_jobs) > 1
-        else None
-    )
-
-    def map_tasks(function, tasks):
-        if executor is None:
-            return [function(task) for task in tasks]
-        return list(executor.map(function, tasks))
-
-    try:
-        for row_number in range(first_row, len(design.origins)):
-            if har_window == "expanding":
-                train_start = 0
-            else:
-                train_length = int(har_window)
-                if train_length <= 0:
-                    raise ValueError("har_window must be positive or 'expanding'.")
-                train_start = max(0, row_number - train_length)
-            train_end = row_number
-            origin_date = design.origins[row_number]
-            target_date = design.targets[row_number]
-            target_windows: list[_TargetWindow] = []
-            tuning_targets: list[str] = []
-            tuning_tasks = []
-            for target in stocks:
-                own_all, cross_all, feature_names, cross_pairs = target_designs[target]
-                y_all = response_arrays[target]
-                own_train = own_all[train_start:train_end]
-                cross_train = cross_all[train_start:train_end]
-                y_train = y_all[train_start:train_end]
-                needs_tuning = (
-                    target not in cached_tuning
-                    or row_number - last_tuned[target] >= config.tuning_frequency
-                )
-                target_windows.append(
-                    _TargetWindow(
-                        target=target,
-                        y_all=y_all,
-                        own_all=own_all,
-                        cross_all=cross_all,
-                        y_train=y_train,
-                        own_train=own_train,
-                        cross_train=cross_train,
-                        feature_names=feature_names,
-                        cross_pairs=cross_pairs,
-                        needs_tuning=needs_tuning,
-                    )
-                )
-                if needs_tuning:
-                    tuning_targets.append(target)
-                    tuning_tasks.append((y_train, own_train, cross_train, feature_names, config))
-
-            for target, tuning in zip(tuning_targets, map_tasks(_tune_target_task, tuning_tasks)):
-                cached_tuning[target] = tuning
-                last_tuned[target] = row_number
-                cv = tuning.cv_scores.copy()
-                cv.insert(0, "stock", target)
-                cv.insert(0, "spec_name", spec_name)
-                cv.insert(2, "forecast_origin", origin_date)
-                cv["factor_window_sessions"] = factor_window_sessions
-                cv["har_window"] = har_window
-                cv["training_start"] = design.origins[train_start]
-                cv["training_end"] = design.origins[train_end - 1]
-                cv["selected_one_se_fraction"] = tuning.one_se_fraction
-                cv["selected_min_loss_fraction"] = tuning.min_fraction
-                tuning_rows.extend(cv.to_dict("records"))
-
-            fit_tasks = [
-                (
-                    item.y_train,
-                    item.own_train,
-                    item.cross_train,
-                    item.feature_names,
-                    cached_tuning[item.target],
-                    config,
-                )
-                for item in target_windows
-            ]
-            fit_results = map_tasks(_fit_target_task, fit_tasks)
-            for item, (fit_one_se, fit_min, fit_own) in zip(target_windows, fit_results):
-                target = item.target
-                own_current = item.own_all[row_number : row_number + 1]
-                cross_current = item.cross_all[row_number : row_number + 1]
-                actual_log = float(item.y_all[row_number])
-                origin_log = float(log_variance.loc[origin_date, target])
-                actual_variance = max(
-                    float(np.exp(np.clip(actual_log, -40.0, 40.0))),
-                    config.variance_floor,
-                )
-                model_fits = (
-                    ("own_har", fit_own),
-                    ("network_har_l1_1se", fit_one_se),
-                    ("network_har_l1_min_loss", fit_min),
-                )
-                for model_name, fit in model_fits:
-                    prediction_cross = (
-                        cross_current
-                        if len(fit.network_coefficients_original)
-                        else np.empty((1, 0))
-                    )
-                    predicted_log = float(_predict_fit(fit, own_current, prediction_cross)[0])
-                    predicted_variance = max(
-                        float(np.exp(np.clip(predicted_log, -40.0, 40.0)) * fit.smearing_factor),
-                        config.variance_floor,
-                    )
-                    forecast_rows.append(
-                        {
-                            "spec_name": spec_name,
-                            "factor_window_sessions": factor_window_sessions,
-                            "har_window": har_window,
-                            "forecast_origin": origin_date,
-                            "target_date": target_date,
-                            "stock": target,
-                            "model": model_name,
-                            "actual_log_variance": actual_log,
-                            "predicted_log_variance": predicted_log,
-                            "actual_variance": actual_variance,
-                            "predicted_variance": predicted_variance,
-                            "qlike": _qlike(actual_variance, predicted_variance, config.variance_floor),
-                            "log_mse": float((actual_log - predicted_log) ** 2),
-                            "log_mae": float(abs(actual_log - predicted_log)),
-                            "directional_hit": _directional_hit(actual_log, predicted_log, origin_log),
-                            "selected_penalty": fit.selected_penalty,
-                            "smearing_factor": fit.smearing_factor,
-                            "design_condition_number": fit.condition_number,
-                            "n_train_observations": len(item.y_train),
-                            "training_start": design.origins[train_start],
-                            "training_end": design.origins[train_end - 1],
-                        }
-                    )
-                persistence_variance = max(
-                    float(np.exp(np.clip(origin_log, -40.0, 40.0))),
-                    config.variance_floor,
-                )
-                forecast_rows.append(
-                    {
-                        "spec_name": spec_name,
-                        "factor_window_sessions": factor_window_sessions,
-                        "har_window": har_window,
-                        "forecast_origin": origin_date,
-                        "target_date": target_date,
-                        "stock": target,
-                        "model": "persistence",
-                        "actual_log_variance": actual_log,
-                        "predicted_log_variance": origin_log,
-                        "actual_variance": actual_variance,
-                        "predicted_variance": persistence_variance,
-                        "qlike": _qlike(actual_variance, persistence_variance, config.variance_floor),
-                        "log_mse": float((actual_log - origin_log) ** 2),
-                        "log_mae": float(abs(actual_log - origin_log)),
-                        "directional_hit": np.nan,
-                        "selected_penalty": np.nan,
-                        "smearing_factor": 1.0,
-                        "design_condition_number": np.nan,
-                        "n_train_observations": len(item.y_train),
-                        "training_start": design.origins[train_start],
-                        "training_end": design.origins[train_end - 1],
-                    }
-                )
-                for model_name, fit in (
-                    ("network_har_l1_1se", fit_one_se),
-                    ("network_har_l1_min_loss", fit_min),
-                ):
-                    for coefficient, standardized, (source, horizon) in zip(
-                        fit.network_coefficients_original,
-                        fit.network_coefficients_standardized,
-                        item.cross_pairs,
-                    ):
-                        edge_rows.append(
-                            {
-                                "spec_name": spec_name,
-                                "factor_window_sessions": factor_window_sessions,
-                                "har_window": har_window,
-                                "forecast_origin": origin_date,
-                                "training_start": design.origins[train_start],
-                                "training_end": design.origins[train_end - 1],
-                                "source": source,
-                                "target": target,
-                                "edge_id": f"{source}->{target}",
-                                "model": model_name,
-                                "horizon": horizon,
-                                "coefficient_original": float(coefficient),
-                                "coefficient_standardized": float(standardized),
-                                "selected": bool(abs(coefficient) > config.coefficient_tolerance),
-                                "sign": int(np.sign(coefficient)),
-                                "n_train_observations": len(item.y_train),
-                            }
-                        )
-                if item.needs_tuning or row_number == last_row:
-                    for model_name, fit in (
-                        ("own_har", fit_own),
-                        ("network_har_l1_1se", fit_one_se),
-                        ("network_har_l1_min_loss", fit_min),
-                    ):
-                        coefficient_rows.append(
-                            {
-                                "spec_name": spec_name,
-                                "factor_window_sessions": factor_window_sessions,
-                                "har_window": har_window,
-                                "forecast_origin": origin_date,
-                                "training_start": design.origins[train_start],
-                                "training_end": design.origins[train_end - 1],
-                                "stock": target,
-                                "model": model_name,
-                                "predictor_stock": target,
-                                "horizon": "Intercept",
-                                "coefficient_original": fit.intercept,
-                                "coefficient_standardized": np.nan,
-                                "selected": True,
-                                "selected_penalty": fit.selected_penalty,
-                            }
-                        )
-                        for horizon, coefficient in zip(HORIZONS, fit.own_coefficients):
-                            coefficient_rows.append(
-                                {
-                                    "spec_name": spec_name,
-                                    "factor_window_sessions": factor_window_sessions,
-                                    "har_window": har_window,
-                                    "forecast_origin": origin_date,
-                                    "training_start": design.origins[train_start],
-                                    "training_end": design.origins[train_end - 1],
-                                    "stock": target,
-                                    "model": model_name,
-                                    "predictor_stock": target,
-                                    "horizon": horizon,
-                                    "coefficient_original": float(coefficient),
-                                    "coefficient_standardized": np.nan,
-                                    "selected": True,
-                                    "selected_penalty": fit.selected_penalty,
-                                }
-                            )
-    finally:
-        if executor is not None:
-            executor.shutdown(wait=True)
-    forecasts = pd.DataFrame(forecast_rows)
-    if forecasts.empty:
-        raise ValueError("The outer forecast sample is empty.")
-    return WalkForwardResult(
-        forecasts=forecasts,
-        coefficients=pd.DataFrame(coefficient_rows),
-        edge_history=pd.DataFrame(edge_rows),
-        tuning_history=pd.DataFrame(tuning_rows),
-    )
-
-
 def walk_forward_forecasts(
     log_variance: pd.DataFrame,
     *,
@@ -1596,9 +1296,24 @@ def build_hac_tests(forecasts: pd.DataFrame, *, max_lag: int = 5) -> pd.DataFram
             return "positive favors own HAR"
         return "zero loss difference"
 
-    keys = ["spec_name", "factor_window_sessions", "har_window", "forecast_origin", "target_date", "stock"]
-    own = forecasts[forecasts["model"] == "own_har"].loc[:, keys + ["qlike"]].rename(columns={"qlike": "own_qlike"})
-    network = forecasts[forecasts["model"] == "network_har_l1_1se"].loc[:, keys + ["qlike"]].rename(columns={"qlike": "network_qlike"})
+    keys = [
+        "spec_name",
+        "factor_window_sessions",
+        "har_window",
+        "forecast_origin",
+        "target_date",
+        "stock",
+    ]
+    own = (
+        forecasts[forecasts["model"] == "own_har"]
+        .loc[:, keys + ["qlike"]]
+        .rename(columns={"qlike": "own_qlike"})
+    )
+    network = (
+        forecasts[forecasts["model"] == "network_har_l1_1se"]
+        .loc[:, keys + ["qlike"]]
+        .rename(columns={"qlike": "network_qlike"})
+    )
     joined = own.merge(network, on=keys, how="inner")
     joined["loss_difference"] = joined["network_qlike"] - joined["own_qlike"]
     rows: list[dict[str, object]] = []
@@ -1642,7 +1357,16 @@ def build_hac_tests(forecasts: pd.DataFrame, *, max_lag: int = 5) -> pd.DataFram
 def _edge_origin_table(edge_history: pd.DataFrame) -> pd.DataFrame:
     return (
         edge_history.groupby(
-            ["spec_name", "factor_window_sessions", "har_window", "model", "forecast_origin", "source", "target", "edge_id"],
+            [
+                "spec_name",
+                "factor_window_sessions",
+                "har_window",
+                "model",
+                "forecast_origin",
+                "source",
+                "target",
+                "edge_id",
+            ],
             dropna=False,
         )
         .agg(
@@ -1721,7 +1445,15 @@ def network_density(edge_history: pd.DataFrame, *, threshold: float = 0.70) -> p
     n_stocks = len(set(origin["source"]) | set(origin["target"]))
     possible = max(n_stocks * (n_stocks - 1), 1)
     density = (
-        origin.groupby(["spec_name", "factor_window_sessions", "har_window", "model", "forecast_origin"])["selected_any"]
+        origin.groupby(
+            [
+                "spec_name",
+                "factor_window_sessions",
+                "har_window",
+                "model",
+                "forecast_origin",
+            ]
+        )["selected_any"]
         .sum()
         .div(possible)
         .rename("edge_density")
@@ -1731,9 +1463,14 @@ def network_density(edge_history: pd.DataFrame, *, threshold: float = 0.70) -> p
         edge_stability(edge_history, threshold=threshold, model=model_name)
         for model_name in edge_history["model"].dropna().unique()
     ]
-    stable = pd.concat([table for table in stable_tables if not table.empty], ignore_index=True) if any(
-        not table.empty for table in stable_tables
-    ) else pd.DataFrame()
+    stable = (
+        pd.concat(
+            [table for table in stable_tables if not table.empty],
+            ignore_index=True,
+        )
+        if any(not table.empty for table in stable_tables)
+        else pd.DataFrame()
+    )
     result = (
         density.groupby(["spec_name", "factor_window_sessions", "har_window", "model"])
         .agg(
@@ -1746,12 +1483,18 @@ def network_density(edge_history: pd.DataFrame, *, threshold: float = 0.70) -> p
     )
     if not stable.empty:
         stable_count = (
-            stable.groupby(["spec_name", "factor_window_sessions", "har_window", "model"])["stable_edge"]
+            stable.groupby(
+                ["spec_name", "factor_window_sessions", "har_window", "model"]
+            )["stable_edge"]
             .sum()
             .rename("n_stable_edges")
             .reset_index()
         )
-        result = result.merge(stable_count, how="left", on=["spec_name", "factor_window_sessions", "har_window", "model"])
+        result = result.merge(
+            stable_count,
+            how="left",
+            on=["spec_name", "factor_window_sessions", "har_window", "model"],
+        )
         result["stable_edge_density"] = result["n_stable_edges"] / possible
     else:
         result["n_stable_edges"] = 0
@@ -1821,96 +1564,24 @@ def group_connectivity(
                         "target_group": target_group,
                         "within_group": source_group == target_group,
                         "possible_directed_edges": max(possible, 0),
-                        "mean_selection_probability": float(selected["selection_probability"].mean()) if not selected.empty else 0.0,
-                        "median_edge_strength": float(selected["median_absolute_strength"].median()) if not selected.empty else 0.0,
+                        "mean_selection_probability": (
+                            float(selected["selection_probability"].mean())
+                            if not selected.empty
+                            else 0.0
+                        ),
+                        "median_edge_strength": (
+                            float(selected["median_absolute_strength"].median())
+                            if not selected.empty
+                            else 0.0
+                        ),
                         "stable_edges": int(selected["stable_edge"].sum()) if not selected.empty else 0,
                     }
                 )
     result = pd.DataFrame(rows)
-    result["stable_edge_density"] = result["stable_edges"] / result["possible_directed_edges"].replace(0, np.nan)
+    result["stable_edge_density"] = result["stable_edges"] / result[
+        "possible_directed_edges"
+    ].replace(0, np.nan)
     return result
-
-
-def _legacy_descriptive_network_edges(
-    log_variance: pd.DataFrame,
-    *,
-    spec_name: str,
-    factor_window_sessions: int,
-    har_window: str | int = "expanding",
-    config: HARConfig = HARConfig(),
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Fit checkpointed descriptive network architectures for control panels."""
-
-    design = build_har_features(log_variance)
-    stocks = list(log_variance.columns)
-    checkpoint_step = max(config.bootstrap_checkpoint_step, 1)
-    rows: list[dict[str, object]] = []
-    tuning_rows: list[dict[str, object]] = []
-    first = max(config.min_training_observations, 1)
-    target_designs = {
-        target: _feature_matrix(design, target, stocks) for target in stocks
-    }
-    checkpoints = list(range(first, len(design.origins), checkpoint_step))
-    if checkpoints and checkpoints[-1] != len(design.origins) - 1:
-        checkpoints.append(len(design.origins) - 1)
-    for row_number in checkpoints:
-        train_start = 0 if har_window == "expanding" else max(0, row_number - int(har_window))
-        for target in stocks:
-            own_all, cross_all, feature_names, cross_pairs = target_designs[target]
-            y_all = design.response[target].to_numpy(dtype=float)
-            y = y_all[train_start:row_number]
-            own = own_all[train_start:row_number]
-            cross = cross_all[train_start:row_number]
-            tuning = tune_network_penalty(y, own, cross, config=config, cross_feature_names=feature_names)
-            fit = fit_partialling_out(
-                y,
-                own,
-                cross,
-                alpha=tuning.one_se_alpha,
-                cross_feature_names=feature_names,
-                config=config,
-            )
-            for fraction_row in tuning.cv_scores.to_dict("records"):
-                tuning_rows.append(
-                    {
-                        **fraction_row,
-                        "spec_name": spec_name,
-                        "factor_window_sessions": factor_window_sessions,
-                        "har_window": har_window,
-                        "checkpoint_date": design.origins[row_number - 1],
-                        "training_start": design.origins[train_start],
-                        "training_end": design.origins[row_number - 1],
-                        "stock": target,
-                        "selected_one_se_fraction": tuning.one_se_fraction,
-                        "selected_min_loss_fraction": tuning.min_fraction,
-                    }
-                )
-            for coefficient, standardized, (source, horizon) in zip(
-                fit.network_coefficients_original,
-                fit.network_coefficients_standardized,
-                cross_pairs,
-            ):
-                rows.append(
-                    {
-                        "spec_name": spec_name,
-                        "factor_window_sessions": factor_window_sessions,
-                        "har_window": har_window,
-                        "forecast_origin": design.origins[row_number - 1],
-                        "training_start": design.origins[train_start],
-                        "training_end": design.origins[row_number - 1],
-                        "source": source,
-                        "target": target,
-                        "edge_id": f"{source}->{target}",
-                        "model": "descriptive_network",
-                        "horizon": horizon,
-                        "coefficient_original": float(coefficient),
-                        "coefficient_standardized": float(standardized),
-                        "selected": bool(abs(coefficient) > config.coefficient_tolerance),
-                        "sign": int(np.sign(coefficient)),
-                        "n_train_observations": len(y),
-                    }
-                )
-    return pd.DataFrame(rows), pd.DataFrame(tuning_rows)
 
 
 def descriptive_network_edges(
@@ -2049,85 +1720,6 @@ def _bootstrap_target_task(task: _BootstrapTask) -> list[dict[str, object]]:
                     }
                 )
     return rows
-
-
-def _legacy_bootstrap_edge_selection(
-    log_variance: pd.DataFrame,
-    *,
-    spec_name: str,
-    factor_window_sessions: int,
-    har_window: str | int = "expanding",
-    config: HARConfig = HARConfig(),
-) -> pd.DataFrame:
-    """Estimate block-bootstrap selection probabilities at checkpoint dates."""
-
-    design = build_har_features(log_variance)
-    stocks = list(log_variance.columns)
-    first = max(config.min_training_observations, 1)
-    checkpoints = list(range(first, len(design.origins), max(config.bootstrap_checkpoint_step, 1)))
-    if checkpoints and checkpoints[-1] != len(design.origins) - 1:
-        checkpoints.append(len(design.origins) - 1)
-    rng = np.random.default_rng(config.random_seed)
-    rows: list[dict[str, object]] = []
-    target_designs = {
-        target: _feature_matrix(design, target, stocks) for target in stocks
-    }
-    for checkpoint in checkpoints:
-        train_start = 0 if har_window == "expanding" else max(0, checkpoint - int(har_window))
-        target_data: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, tuple[str, ...], list[tuple[str, str]], PenaltyTuning]] = {}
-        for target in stocks:
-            own_all, cross_all, feature_names, cross_pairs = target_designs[target]
-            y_all = design.response[target].to_numpy(dtype=float)
-            y = y_all[train_start:checkpoint]
-            own = own_all[train_start:checkpoint]
-            cross = cross_all[train_start:checkpoint]
-            tuning = tune_network_penalty(y, own, cross, config=config, cross_feature_names=feature_names)
-            target_data[target] = (y, own, cross, feature_names, cross_pairs, tuning)
-        for block_length in config.bootstrap_block_lengths:
-            selections: dict[tuple[str, str, str], list[bool]] = {}
-            signs: dict[tuple[str, str, str], list[int]] = {}
-            for _ in range(config.bootstrap_repetitions):
-                for target, (y, own, cross, names, pairs, tuning) in target_data.items():
-                    sample = _block_indices(len(y), block_length, rng)
-                    fit = fit_partialling_out(
-                        y[sample],
-                        own[sample],
-                        cross[sample],
-                        alpha=tuning.one_se_alpha,
-                        cross_feature_names=names,
-                        config=config,
-                    )
-                    for coefficient, (source, horizon) in zip(fit.network_coefficients_original, pairs):
-                        key = (source, target, horizon)
-                        selections.setdefault(key, []).append(bool(abs(coefficient) > config.coefficient_tolerance))
-                        signs.setdefault(key, []).append(int(np.sign(coefficient)))
-            for (source, target, horizon), selected in selections.items():
-                selected_array = np.asarray(selected, dtype=bool)
-                sign_array = np.asarray(signs[(source, target, horizon)], dtype=int)
-                nonzero = sign_array[sign_array != 0]
-                rows.append(
-                    {
-                        "spec_name": spec_name,
-                        "factor_window_sessions": factor_window_sessions,
-                        "har_window": har_window,
-                        "checkpoint_date": design.origins[checkpoint - 1],
-                        "training_start": design.origins[train_start],
-                        "training_end": design.origins[checkpoint - 1],
-                        "block_length": block_length,
-                        "source": source,
-                        "target": target,
-                        "edge_id": f"{source}->{target}",
-                        "horizon": horizon,
-                        "bootstrap_selection_probability": float(selected_array.mean()),
-                        "bootstrap_sign_consistency": float(
-                            max(np.sum(nonzero > 0), np.sum(nonzero < 0)) / len(nonzero)
-                        )
-                        if len(nonzero)
-                        else np.nan,
-                        "n_bootstrap": len(selected_array),
-                    }
-                )
-    return pd.DataFrame(rows)
 
 
 def bootstrap_edge_selection(

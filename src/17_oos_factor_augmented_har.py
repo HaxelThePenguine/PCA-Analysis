@@ -16,9 +16,8 @@ import json
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Iterable
 
-import numpy as np
 import pandas as pd
 
 from config import (
@@ -28,27 +27,34 @@ from config import (
     REPORTS_DIR,
     ensure_project_directories,
 )
+from reporting.factor_har import (
+    build_hac_comparisons,
+    summarize_models,
+    write_results_markdown,
+)
 from utils.factor_har_oos import (
     FACTOR_HAR_MODELS,
     issue_factor_har_forecasts,
     matched_qlike_comparisons,
 )
-from utils.network_har import HARConfig, hac_mean_test
+from utils.network_har import HARConfig
+from utils.oos_common import (
+    file_sha256,
+    normalize_calendar,
+    stable_hash,
+    strict_clean_return_panel,
+    utc_now_iso,
+    write_json,
+)
 from utils.oos_har_network import (
     OOSConfig,
     FactorVintageRun,
     ForecastRunResult,
     build_factor_vintage_run,
     deserialize_config,
-    file_sha256,
-    normalize_calendar,
     score_forecasts,
     serialize_config,
-    stable_hash,
-    strict_clean_return_panel,
-    utc_now_iso,
     validate_forecast_ledger,
-    write_json,
 )
 
 
@@ -116,11 +122,13 @@ def _code_provenance() -> dict[str, str]:
     source = Path(__file__).parent
     files = (
         Path(__file__),
+        source / "utils" / "oos_common.py",
         source / "utils" / "factor_har_oos.py",
         source / "utils" / "oos_har_network.py",
         source / "utils" / "factor_adjusted_residuals.py",
         source / "utils" / "network_har.py",
         source / "utils" / "realized_volatility.py",
+        source / "reporting" / "factor_har.py",
     )
     return {path.name: file_sha256(path) for path in files}
 
@@ -200,104 +208,6 @@ def _vintage_tables(vintage: FactorVintageRun) -> dict[str, pd.DataFrame]:
         "factor_metadata": vintage.factor_metadata,
         "rv_metadata": vintage.rv_metadata,
     }
-
-
-def _model_summary(scored: pd.DataFrame) -> pd.DataFrame:
-    value = scored[scored["comparison_eligible"] & scored["qlike"].notna()]
-    if value.empty:
-        return pd.DataFrame()
-    return (
-        value.groupby(["spec_name", "model"], as_index=False)
-        .agg(
-            n=("qlike", "size"),
-            mean_qlike=("qlike", "mean"),
-            median_qlike=("qlike", "median"),
-            log_mse=("log_mse", "mean"),
-            log_mae=("log_mae", "mean"),
-        )
-        .sort_values(["spec_name", "mean_qlike"])
-    )
-
-
-def _hac_comparisons(
-    scored: pd.DataFrame,
-    pairs: Sequence[tuple[str, str]],
-) -> pd.DataFrame:
-    eligible = scored[scored["comparison_eligible"] & scored["qlike"].notna()]
-    keys = ["spec_name", "stock", "forecast_origin", "target_date"]
-    wide = eligible.pivot(index=keys, columns="model", values="qlike")
-    rows: list[dict[str, object]] = []
-    for model_a, model_b in pairs:
-        if model_a not in wide or model_b not in wide:
-            continue
-        difference = (wide[model_a] - wide[model_b]).dropna().rename("difference").reset_index()
-        for spec_name, group in difference.groupby("spec_name"):
-            date_difference = group.groupby("target_date")["difference"].mean()
-            for lag in (5, 20):
-                rows.append(
-                    {
-                        "spec_name": spec_name,
-                        "model_a": model_a,
-                        "model_b": model_b,
-                        "hac_lag": lag,
-                        **hac_mean_test(date_difference, max_lag=lag),
-                    }
-                )
-    result = pd.DataFrame(rows)
-    if result.empty:
-        return result
-    result["holm_p_value_within_spec_lag"] = np.nan
-    for _, indices in result.groupby(["spec_name", "hac_lag"]).groups.items():
-        ordered = result.loc[indices, "p_value"].sort_values()
-        adjusted = np.maximum.accumulate(
-            ordered.to_numpy(dtype=float) * np.arange(len(ordered), 0, -1)
-        )
-        result.loc[ordered.index, "holm_p_value_within_spec_lag"] = np.clip(
-            adjusted, 0.0, 1.0
-        )
-    return result
-
-
-def _write_report(
-    run_dir: Path,
-    manifest: Mapping[str, object],
-    model_summary: pd.DataFrame,
-    comparisons: pd.DataFrame,
-    hac: pd.DataFrame,
-) -> None:
-    def markdown_table(frame: pd.DataFrame) -> str:
-        if frame.empty:
-            return ""
-        value = frame.copy()
-        headers = [str(column) for column in value.columns]
-        rows = [headers, ["---"] * len(headers)]
-        for record in value.itertuples(index=False, name=None):
-            rows.append(
-                [
-                    "" if pd.isna(item) else str(item).replace("|", "\\|")
-                    for item in record
-                ]
-            )
-        return "\n".join("| " + " | ".join(row) + " |" for row in rows)
-
-    lines = [
-        "# Stage 17 OOS Factor-HAR Results",
-        "",
-        f"Status: `{manifest.get('status', 'unknown')}`.",
-        "",
-        "The target is next-session realized variance after removing only SPY and XLF. "
-        "Every reported comparison uses identical forecast keys. Negative mean QLIKE "
-        "differences favor model A over model B. Historical audit results are pseudo-OOS "
-        "development evidence and are not an untouched holdout.",
-        "",
-    ]
-    if model_summary.empty:
-        lines.append("No outcomes are currently available for a matched evaluation.")
-    else:
-        lines.extend(["## Model summary", "", markdown_table(model_summary), ""])
-        lines.extend(["## Predeclared comparisons", "", markdown_table(comparisons), ""])
-        lines.extend(["## Date-clustered HAC tests", "", markdown_table(hac), ""])
-    (run_dir / "FACTOR_HAR_RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _empty_forecast_ledger() -> pd.DataFrame:
@@ -387,10 +297,18 @@ def _fit_specs(
             result_frames[key].append(frame)
             frame.to_parquet(run_dir / f"{stem}_{spec_name}.parquet", index=False)
     combined = {
-        key: pd.concat(frames, ignore_index=True) if frames and any(not frame.empty for frame in frames) else pd.DataFrame()
+        key: (
+            pd.concat(frames, ignore_index=True)
+            if frames and any(not frame.empty for frame in frames)
+            else pd.DataFrame()
+        )
         for key, frames in result_frames.items()
     }
-    forecasts = combined["forecasts"] if not combined["forecasts"].empty else _empty_forecast_ledger()
+    forecasts = (
+        combined["forecasts"]
+        if not combined["forecasts"].empty
+        else _empty_forecast_ledger()
+    )
     return (
         ForecastRunResult(
             forecasts=forecasts,
@@ -428,8 +346,8 @@ def run_audit(*, config: OOSConfig, smoke: bool, run_id: str | None, resume: boo
     )
     comparisons = matched_qlike_comparisons(scored)
     pairs = list(comparisons[["model_a", "model_b"]].drop_duplicates().itertuples(index=False, name=None))
-    model_summary = _model_summary(scored)
-    hac = _hac_comparisons(scored, pairs)
+    model_summary = summarize_models(scored)
+    hac = build_hac_comparisons(scored, pairs)
     manifest["status"] = "historical_pseudo_oos_complete"
     manifest["n_forecast_rows"] = len(result.forecasts)
     manifest["n_scored_rows"] = int((scored["score_status"] == "scored").sum())
@@ -446,7 +364,13 @@ def run_audit(*, config: OOSConfig, smoke: bool, run_id: str | None, resume: boo
         ("diagnostics.csv", result.origin_diagnostics),
     ):
         _write_frame(run_dir / name, frame)
-    _write_report(run_dir, manifest, model_summary, comparisons, hac)
+    write_results_markdown(
+        run_dir / "FACTOR_HAR_RESULTS.md",
+        manifest=manifest,
+        model_summary=model_summary,
+        comparisons=comparisons,
+        hac=hac,
+    )
     print(f"[stage17] completed: {run_dir}", flush=True)
     return run_dir
 
@@ -509,7 +433,10 @@ def run_score(*, config: OOSConfig, run_id: str) -> Path:
         raise FileNotFoundError(f"Unknown Stage 17 run: {run_id}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("code_provenance") != _code_provenance():
-        raise ValueError("Stage 17 code changed after forecast issuance; do not score this ledger with a different protocol.")
+        raise ValueError(
+            "Stage 17 code changed after forecast issuance; "
+            "do not score this ledger with a different protocol."
+        )
     ledger_path = run_dir / "forecast_ledger.csv"
     if file_sha256(ledger_path) != manifest.get("forecast_ledger_sha256"):
         raise ValueError("The immutable prospective forecast ledger hash changed.")
@@ -541,8 +468,8 @@ def run_score(*, config: OOSConfig, run_id: str) -> Path:
     )
     comparisons = matched_qlike_comparisons(scored)
     pairs = list(comparisons[["model_a", "model_b"]].drop_duplicates().itertuples(index=False, name=None))
-    summary = _model_summary(scored)
-    hac = _hac_comparisons(scored, pairs)
+    summary = summarize_models(scored)
+    hac = build_hac_comparisons(scored, pairs)
     n_scored = int((scored["score_status"] == "scored").sum())
     manifest["status"] = "confirmation_in_progress" if n_scored else "awaiting_future_data"
     manifest["n_scored_rows"] = n_scored
@@ -553,7 +480,13 @@ def run_score(*, config: OOSConfig, run_id: str) -> Path:
         ("matched_comparisons.csv", comparisons), ("hac_comparisons.csv", hac),
     ):
         _write_frame(run_dir / name, frame)
-    _write_report(run_dir, manifest, summary, comparisons, hac)
+    write_results_markdown(
+        run_dir / "FACTOR_HAR_RESULTS.md",
+        manifest=manifest,
+        model_summary=summary,
+        comparisons=comparisons,
+        hac=hac,
+    )
     return run_dir
 
 
