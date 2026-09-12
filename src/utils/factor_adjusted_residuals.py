@@ -40,6 +40,8 @@ class FactorFit:
     residual_scales: pd.Series
     pca_explained: np.ndarray
     pca_eigenvalues: np.ndarray
+    pca_weights: pd.DataFrame
+    factor_projector: pd.DataFrame
     loadings: pd.DataFrame
     rotation: pd.DataFrame
     rotation_condition_number: float
@@ -48,6 +50,8 @@ class FactorFit:
     training_factor_variance_removed_pct: float
     training_benchmark_variance_removed_pct: float
     training_max_abs_residual_benchmark_corr: float
+    l1_rotation_status: str
+    l1_optimizer_success_rate: float
 
 
 @dataclass(frozen=True)
@@ -104,27 +108,40 @@ def fit_factor_window(
     pca = fit_pca(residuals, method="correlation")
     if config.n_components < 2 or config.n_components > len(stocks):
         raise ValueError("Invalid retained factor count.")
-    rotation_result = fit_l1_rotation(
-        pca,
-        n_components=config.n_components,
-        n_starts=config.l1_starts,
-        random_state=config.random_seed,
-        n_jobs=config.n_jobs,
-        executor=executor,
-    )
-    loadings = rotation_result.rotated_loadings.copy()
-    base = np.sqrt(len(stocks)) * pca.eigenvectors[:, : config.n_components]
+    base_weights = pca.eigenvectors[:, : config.n_components]
+    base = np.sqrt(len(stocks)) * base_weights
     pca_projector = base @ base.T / len(stocks)
+    l1_rotation_status = "ok"
+    try:
+        rotation_result = fit_l1_rotation(
+            pca,
+            n_components=config.n_components,
+            n_starts=config.l1_starts,
+            random_state=config.random_seed,
+            n_jobs=config.n_jobs,
+            executor=executor,
+        )
+        loadings = rotation_result.rotated_loadings.copy()
+        rotation = rotation_result.rotation.copy()
+        l1_optimizer_success_rate = float(rotation_result.optimizer_success_rate)
+    except Exception as error:  # pragma: no cover - injected-failure path
+        # The L1 rotation is interpretive.  A non-convex optimizer failure must
+        # not alter the causal residual target defined by the PCA subspace.
+        l1_rotation_status = f"failed:{type(error).__name__}"
+        loadings = pca.loadings.iloc[:, : config.n_components].copy()
+        rotation = pd.DataFrame(
+            np.eye(config.n_components),
+            index=[f"PC{i}" for i in range(1, config.n_components + 1)],
+            columns=[f"PC{i}" for i in range(1, config.n_components + 1)],
+        )
+        l1_optimizer_success_rate = 0.0
     l1_projector = _projector(loadings.to_numpy(dtype=float))
     projector_error = float(np.max(np.abs(pca_projector - l1_projector)))
 
     standardized = pca.analysis_data.to_numpy(dtype=float)
-    loading_values = loadings.to_numpy(dtype=float)
-    scores = standardized @ loading_values @ np.linalg.inv(
-        loading_values.T @ loading_values
-    )
-    factor_residuals = standardized - scores @ loading_values.T
-    orthogonality_error = float(np.max(np.abs(factor_residuals @ loading_values)))
+    scores = standardized @ base_weights
+    factor_residuals = standardized - standardized @ pca_projector
+    orthogonality_error = float(np.max(np.abs(factor_residuals @ base_weights)))
     factor_removed = 100.0 * (
         1.0 - np.square(factor_residuals).mean() / np.square(standardized).mean()
     )
@@ -140,9 +157,19 @@ def fit_factor_window(
         residual_scales=pca.scales.copy().clip(lower=config.scale_floor),
         pca_explained=pca.explained.copy(),
         pca_eigenvalues=pca.eigenvalues.copy(),
+        pca_weights=pd.DataFrame(
+            base_weights,
+            index=stocks,
+            columns=[f"PC{i}" for i in range(1, config.n_components + 1)],
+        ),
+        factor_projector=pd.DataFrame(
+            pca_projector,
+            index=stocks,
+            columns=stocks,
+        ),
         loadings=loadings,
-        rotation=rotation_result.rotation.copy(),
-        rotation_condition_number=float(np.linalg.cond(rotation_result.rotation)),
+        rotation=rotation,
+        rotation_condition_number=float(np.linalg.cond(rotation.to_numpy(dtype=float))),
         projector_invariance_error=projector_error,
         training_orthogonality_error=orthogonality_error,
         training_factor_variance_removed_pct=float(factor_removed),
@@ -154,6 +181,8 @@ def fit_factor_window(
                 [f"corr_resid_{name}" for name in benchmarks]
             ].abs().to_numpy().max()
         ),
+        l1_rotation_status=l1_rotation_status,
+        l1_optimizer_success_rate=l1_optimizer_success_rate,
     )
 
 
@@ -181,9 +210,15 @@ def apply_factor_fit(
         .divide(fit.residual_scales, axis="columns")
         .to_numpy(dtype=float)
     )
-    loadings = fit.loadings.to_numpy(dtype=float)
-    scores = standardized @ loadings @ np.linalg.inv(loadings.T @ loadings)
-    factor_residuals_z = standardized - scores @ loadings.T
+    if hasattr(fit, "factor_projector"):
+        projector = fit.factor_projector.to_numpy(dtype=float)
+        factor_basis = fit.pca_weights.to_numpy(dtype=float)
+    else:  # pragma: no cover - compatibility with pre-v2 serialized fits
+        loadings = fit.loadings.to_numpy(dtype=float)
+        projector = _projector(loadings)
+        factor_basis = loadings
+    scores = standardized @ factor_basis
+    factor_residuals_z = standardized - standardized @ projector
     factor_adjusted = pd.DataFrame(
         factor_residuals_z * fit.residual_scales.to_numpy(dtype=float),
         index=data.index,
@@ -197,9 +232,9 @@ def apply_factor_fit(
             factor_residuals_z, index=data.index, columns=fit.stocks
         ),
         "factor_scores": pd.DataFrame(
-            scores, index=data.index, columns=fit.loadings.columns
+            scores, index=data.index, columns=fit.pca_weights.columns
         ),
-        "orthogonality_error": float(np.max(np.abs(factor_residuals_z @ loadings))),
+        "orthogonality_error": float(np.max(np.abs(factor_residuals_z @ factor_basis))),
     }
 
 
@@ -316,6 +351,8 @@ def run_factor_adjustment(
                     "factor_turnover": turnover,
                     "rotation_condition_number": fit.rotation_condition_number,
                     "projector_invariance_error": fit.projector_invariance_error,
+                    "l1_rotation_status": fit.l1_rotation_status,
+                    "l1_optimizer_success_rate": fit.l1_optimizer_success_rate,
                     "training_orthogonality_error": fit.training_orthogonality_error,
                     "score_orthogonality_error": applied["orthogonality_error"],
                     "training_start": sessions[train_start].date().isoformat(),
@@ -347,6 +384,8 @@ def run_factor_adjustment(
                 "factor_variance_removed_pct": fit.training_factor_variance_removed_pct,
                 "rotation_condition_number": fit.rotation_condition_number,
                 "projector_invariance_error": fit.projector_invariance_error,
+                "l1_rotation_status": fit.l1_rotation_status,
+                "l1_optimizer_success_rate": fit.l1_optimizer_success_rate,
                 "training_residual_orthogonality_error": fit.training_orthogonality_error,
                 "score_residual_orthogonality_error": applied["orthogonality_error"],
                 "n_score_sessions": score_end - origin + 1,

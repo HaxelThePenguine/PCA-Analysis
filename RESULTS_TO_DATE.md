@@ -4,6 +4,14 @@
 > **Market-data endpoint:** 9 September 2026
 > **Research status:** factor extraction and leakage-controlled pseudo-out-of-sample residual-volatility forecasting completed; a genuinely untouched future holdout remains pending
 
+Stage 16 has completed the corrected historical replay under the separately
+versioned `oos-har-network-v2.0.0` protocol. Its numerical results supersede
+Stage 15 for current forecasting claims, while the Stage 15 output is retained
+below as a legacy comparison that shows how stricter return construction,
+target eligibility, penalty standardization, and immutable issuance change the
+conclusion. The prospective confirmation track remains distinct and pending;
+the historical replay cannot become an untouched holdout retrospectively.
+
 ## Executive summary
 
 The project now runs from quality-controlled one-minute SIP data through baseline PCA, intraday-normalization checks, SPY/XLF residualization, variance reconciliation, rolling PCA, internal factor isolation, session-level L1 local-factor identification, dynamic rolling local-factor diagnostics, a Kalman dynamic-factor comparison, and leakage-controlled network-HAR forecasting of factor-adjusted realized volatility.
@@ -16,9 +24,9 @@ The main conclusions so far are:
 4. The residual loading space can be localized into three useful working directions. Two directions pass the formal local-factor diagnostic, while the third is a highly stable but broader regional-bank direction.
 5. Rolling L1 diagnostics preserve the same broad localization but reveal that LF2 is materially less stable than LF1 and LF3. This warning survives both 60-session and 120-session windows.
 6. The most defensible interpretation is therefore **a three-factor working representation with two sharply local directions and one broad, stable cluster direction**, not three independently identified causal factors.
-7. Removing SPY/XLF and the complete rolling `K=3` factor space does not eliminate cross-stock volatility predictability. In the primary specification, the network HAR reduces pooled QLIKE from **0.198327** to **0.191449**, an improvement of **3.47%**.
-8. The forecasting gain survives both a 252-session rolling HAR window and a 60-session factor-estimation window, but it is heterogeneous across stocks. The strongest gains occur mainly in the regional-bank group, while Citi is worse under the primary expanding network specification.
-9. The remaining directed edges are predictive conditional relationships, not structural contagion. Closely overlapping refits make edge-persistence rates optimistic, while the moving-block bootstrap provides more conservative support for a smaller core of links.
+7. Under the corrected Stage 16 protocol, the primary 120-session expanding network reduces pooled QLIKE from **0.240384** to **0.240250**, an economically very small improvement of **0.056%**. The corresponding HAC and moving-block tests do not reject equal predictive loss at the 5% level.
+8. The 252-session rolling HAR produces a larger **1.349%** QLIKE improvement, but its HAC and bootstrap p-values remain near 0.10. The 60-session factor robustness produces a smaller **0.098%** gain that is statistically detectable under both HAC lag choices and both predeclared block lengths. Statistical detectability and economic magnitude therefore point in different directions.
+9. The primary one-standard-error network is genuinely sparse, with mean directed-edge density between **3.7%** and **8.0%**, but no directed edge reaches the predeclared 70% stability threshold in any of the three specifications. The corrected result supports weak incremental predictive content, not a stable structural network.
 
 The factor-discovery stages remain descriptive. Stage 15 adds pseudo-out-of-sample predictive evidence, but the factor names and directed edges do not identify causal shocks, contagion, tradable alpha, or a uniquely determined true factor count. The historical sample had already been examined while constructing the factor model, so the forecasting exercise is not a pristine final holdout.
 
@@ -206,7 +214,14 @@ The session-level Kalman extension provides a useful robustness and model-select
 
 The dynamic estimates still recover recurring regional-bank, large-bank, and MS-related loading concentrations. This agreement supports the economic interpretation of the sparse loading space, but it does not justify replacing the simpler rolling PCA/L1 model with the Kalman specification. The correct conclusion is a negative model-complexity result: dynamic state-space estimation is feasible and economically legible, but the current implementation adds no demonstrated holdout advantage.
 
-## Factor-adjusted residual-volatility network
+## Legacy Stage 15 factor-adjusted residual-volatility network
+
+The following Stage 15 result remains part of the research record, but it is
+not the current forecasting claim. Stage 16 identified material procedural
+differences in strict minute-return construction, exchange-calendar feature
+alignment, penalty scaling, target-free issuance, and outcome scoring. The
+legacy numbers are therefore useful for comparability and audit history rather
+than as evidence that can be pooled with the corrected v2 estimates.
 
 ### Residual construction and invariance
 
@@ -285,27 +300,116 @@ The correct claim is that cross-bank volatility information improves prediction 
 
 The result is not evidence of structural causality, contagion, or tradable alpha. The 2023–2026 sample had already informed factor discovery, lasso selection is repeated within that history, and the March–May 2023 banking-stress interval is absent from the outer forecast because of factor and HAR burn-in. A frozen specification evaluated on subsequently acquired sessions is required before describing the result as genuinely untouched out-of-sample evidence.
 
+## Corrected Stage 16 frozen-protocol replay
+
+The corrected historical run `historical_oos_v2_20260912` completed under
+protocol `oos-har-network-v2.0.0`. Forecasts are issued from information
+available at the preceding exchange close, contain no realized target at
+issuance, and are joined to outcomes only during scoring. The recovered run
+was also checked for resume-boundary overlaps: economically identical legacy
+rows whose dates differed only by timestamp serialization were canonicalized,
+conflicting predictions would have been rejected, and the final ledger has no
+duplicate economic forecast keys. Every specification contains an identical
+number of rows for own HAR, one-standard-error Network HAR, minimum-loss
+Network HAR, and persistence.
+
+The 120-session designs contain 529 forecast target dates and 6,348 stock-date
+forecasts per model; the 60-session design contains 589 dates and 7,068
+stock-date forecasts per model. Scoring is intentionally narrower because the
+frozen quality rule requires at least 90% of the expected intraday bars to be
+valid. This leaves 199 eligible dates, or 2,388 stock-dates, for each
+120-session comparison and 205 dates, or 2,460 stock-dates, for the 60-session
+comparison. The exclusion is explicit rather than an outcome-dependent model
+choice, but the approximately 35–38% eligible-date coverage is a material
+external-validity limitation.
+
+| Corrected specification | Own-HAR QLIKE | Network-HAR 1SE QLIKE | Relative QLIKE improvement |
+| --- | ---: | ---: | ---: |
+| 120-session factor, expanding HAR | 0.240384 | 0.240250 | 0.056% |
+| 120-session factor, 252-session rolling HAR | 0.242541 | 0.239269 | 1.349% |
+| 60-session factor, expanding HAR | 0.240483 | 0.240246 | 0.098% |
+
+Negative Network-minus-own QLIKE differentials favor the network. For the
+120-session expanding design, the mean differential is `-0.000133`; the HAC
+p-values are 0.138 and 0.061 at lags 5 and 20, while moving-block p-values are
+0.151 and 0.067 at block lengths 5 and 20. For the rolling-HAR design, the mean
+differential is `-0.003272`, but the corresponding HAC and bootstrap p-values
+remain between approximately 0.10 and 0.11. Neither 120-session result clears
+the conventional 5% threshold.
+
+The 60-session robustness has mean differential `-0.000237`. Its HAC p-values
+are 0.0145 and 0.0051, and its moving-block p-values are 0.0170 and 0.0075. The
+sign is therefore stable across both dependence choices, yet the relative
+QLIKE reduction is only 0.098%. This is evidence of a small predictive
+increment, not a large economic gain. The secondary minimum-loss rule produces
+larger reductions of 2.672% for the rolling-HAR design and 1.105% for the
+60-session design, but those estimates are less conservative and are not the
+frozen primary claim.
+
+Cross-sectional inference is correspondingly limited. All twelve banks improve
+under the rolling-HAR point estimates, whereas eight of twelve improve in the
+primary expanding design and ten of twelve improve in the 60-session design.
+After Holm correction across stocks, only CFG in the 120-session rolling-HAR
+specification remains significant at the 5% level for HAC lag 5. This does not
+support a broad stock-level discovery claim.
+
+The corrected primary network is much sparser and less persistent than the
+legacy Stage 15 network. Mean one-standard-error edge density is 3.71% for the
+120-session expanding model, 8.02% for the rolling-HAR model, and 4.00% for the
+60-session model. None of the 132 possible directed edges reaches the 70%
+stability threshold in any primary specification. The minimum-loss 60-session
+variant produces nine stable edges, but this is a secondary, denser selection
+and the result does not reproduce under the other two specifications. The most
+defensible interpretation is that aggressive factor removal and conservative
+penalization leave weak, time-varying cross-bank forecasting information rather
+than a stable directed spillover graph.
+
 ## Current interpretation
 
-The strongest current story is:
+The strongest current story begins with a dominant global financial-stock
+direction, a substantial SPY/XLF-associated component, and a residual loading
+space that can be organized into a C/MS direction, a large-money-center
+direction, and a broad regional-bank cluster. Only the first two directions
+pass the formal local-factor threshold at `K=3`; the regional direction is
+geometrically stable but not sharply local. The Kalman extension does not
+improve holdout residual variance, so the rolling PCA/L1 representation remains
+the better complexity-controlled description.
 
-1. **Global common movement:** the raw financial-stock panel is dominated by one broad common direction.
-2. **Benchmark-associated movement:** SPY and XLF account for a large share of that raw co-movement.
-3. **Internal residual structure:** after benchmark removal, the remaining movement separates into a C/MS-oriented direction, a large-money-center direction, and a stable regional-bank cluster direction.
-4. **Identification caveat:** only the first two residual directions pass the formal local-factor threshold at `K=3`; the regional-bank direction is stable but broader.
-5. **Residual volatility network:** after removing the complete `K=3` space, a sparse directed network remains, with especially persistent links within the regional group and from Citi toward several large banks.
-6. **Forecasting content:** the network HAR improves pooled pseudo-out-of-sample QLIKE by approximately 3.5–4.6% across the three principal specifications, with the largest stock-level gains concentrated in regional banks.
-7. **Complexity discipline:** the Kalman extension does not improve holdout residual variance, whereas the simpler rolling factor model followed by a sparse HAR network produces measurable predictive gains.
-
-This is evidence that the residual panel contains both organized low-rank structure and incremental cross-sectional volatility predictability. It is not evidence of causal transmission, independent structural shocks, a profitable trading strategy, or performance on a genuinely untouched sample.
+After the complete retained factor space is removed, Stage 16 finds a small
+increment in cross-sectional volatility forecasting. That increment is
+statistically robust only for the 60-session factor sensitivity and is
+economically tiny under the frozen one-standard-error rule. No primary directed
+edge is stable in at least 70% of sequential fits. The corrected evidence thus
+supports organized low-rank structure and weak time-varying residual predictive
+content, while rejecting the stronger legacy interpretation of a persistent
+post-factor spillover network. It is not evidence of causal transmission,
+independent structural shocks, tradable alpha, or performance on a genuinely
+untouched sample.
 
 ## What remains to be tested
 
-The next research priority is not another factor-extraction variant. The economically relevant next test is to freeze the present 120-session `K=3` factor specification, the one-standard-error network-HAR rule, and the current preprocessing choices, then evaluate them on newly acquired sessions that played no role in factor discovery, hyperparameter design, or interpretation.
+The next research priority is not another factor-extraction variant. The
+economically relevant test is prospective confirmation under the already
+frozen 120-session `K=3` factor specification, one-standard-error Network HAR,
+strict return construction, and 252-session endpoint. Newly acquired sessions
+must play no role in factor discovery, hyperparameter design, or interpretation
+before their forecasts are issued.
 
-Before making a stronger forecasting claim, the edge-stability analysis should be expanded from 20 to at least 200 moving-block replications at the principal checkpoints. Confidence intervals for pooled QLIKE improvement should also be obtained by resampling complete sessions while preserving the twelve-stock cross-section. The current HAC and Benjamini–Hochberg results are useful, but they do not replace uncertainty that propagates factor estimation and network selection jointly.
+The historical loss comparison already uses 2,000 moving-block replications at
+both five- and twenty-session block lengths. The remaining useful uncertainty
+extension is a conditional edge bootstrap with substantially more than the
+legacy 20 replications, although the absence of any 70%-stable primary edge
+makes prospective predictive loss more important than recovering an attractive
+network picture. A separately labelled robustness study should also vary the
+90% valid-bar eligibility threshold and alternative realized-volatility
+estimators; those variations must not replace or modify the frozen prospective
+protocol.
 
-Further useful robustness work includes a longer five-minute sampling comparison, alternative realized-volatility estimators, explicit assessment of large-jump days, and a stability comparison of the surviving network across calm and stress regimes that occur inside the valid forecast sample. Covariance shrinkage and random-matrix diagnostics remain valuable as methodological appendices, but they are no longer the main path to the project's central empirical contribution.
+Further useful work includes explicit assessment of large-jump days and a
+comparison of predictive loss across calm and stress regimes that occur inside
+the eligible forecast sample. Covariance shrinkage and random-matrix
+diagnostics remain methodological appendices rather than the main path to the
+project's empirical contribution.
 
 Transaction costs are not yet applicable because Stage 15 forecasts volatility rather than returns and does not define a trading rule. A later portfolio experiment must specify how forecasts determine positions, exposures, turnover, execution delay, and costs before any economic-value or alpha claim is evaluated.
 
@@ -323,6 +427,9 @@ The main pipeline stages are implemented in:
 - [`13_bis_kalman_dynamic_factors.py`](src/13_bis_kalman_dynamic_factors.py)
 - [`14_dynamic_local_factor_regimes.py`](src/14_dynamic_local_factor_regimes.py)
 - [`15_factor_adjusted_residual_network.py`](src/15_factor_adjusted_residual_network.py)
+- [`16_oos_har_network_validation.py`](src/16_oos_har_network_validation.py)
+
+The corrected protocol and its audit are documented in [`OOS_PROTOCOL.md`](OOS_PROTOCOL.md) and [`OOS_AUDIT.md`](OOS_AUDIT.md). Each Stage 16 run writes `OOS_RESULTS.md` under `alpaca_us_banks_1m/reports/oos_har_network_validation/`; those generated artifacts remain outside version control. The Stage 16 values reported above were independently reconciled to the final score ledger from `historical_oos_v2_20260912`, while the Stage 15 values remain explicitly labelled as legacy results.
 
 Generated CSV and figure outputs are stored under `alpaca_us_banks_1m/reports/` during a local run and are intentionally excluded from Git. The numerical values in this snapshot were read from the generated baseline, residual, variance-decomposition, internal-factor, local-factor-identification, dynamic-regime, Kalman-comparison, and factor-adjusted-network tables. Re-run the stages above to regenerate the artifacts from the local dataset.
 

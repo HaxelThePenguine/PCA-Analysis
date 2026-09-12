@@ -50,13 +50,41 @@ def remove_systemic_gap(prices: pd.DataFrame) -> pd.DataFrame:
     return prices.loc[~in_gap].copy()
 
 
-def compute_intraday_returns(prices: pd.DataFrame) -> pd.DataFrame:
-    """Compute log returns without turning overnight moves into minute returns."""
+def compute_intraday_returns(
+    prices: pd.DataFrame,
+    *,
+    require_consecutive: bool = False,
+) -> pd.DataFrame:
+    """Compute within-session log returns.
 
-    session = pd.Series(prices.index.date, index=prices.index)
+    The default retains the historical Stage 3 behavior.  The corrected OOS
+    protocol passes ``require_consecutive=True`` so a row cannot silently
+    represent a return spanning a missing timestamp (for example, the first
+    row after the documented 2023-06-05 feed gap).
+    """
+
+    if not isinstance(prices.index, pd.DatetimeIndex):
+        raise TypeError("Intraday prices require a DatetimeIndex.")
+    if prices.index.has_duplicates or not prices.index.is_monotonic_increasing:
+        raise ValueError("Intraday prices require a unique sorted index.")
+    if (prices <= 0).any().any():
+        raise ValueError("Log returns require strictly positive prices.")
+
+    session = pd.Series(prices.index.normalize(), index=prices.index)
     returns = np.log(prices).diff()
-    returns.loc[session != session.shift(1)] = np.nan
+    same_session = session.eq(session.shift(1))
+    returns.loc[~same_session] = np.nan
+    if require_consecutive:
+        elapsed = prices.index.to_series().diff()
+        consecutive = elapsed.eq(pd.Timedelta(minutes=1))
+        returns.loc[~(same_session & consecutive)] = np.nan
     return returns
+
+
+def compute_strict_intraday_returns(prices: pd.DataFrame) -> pd.DataFrame:
+    """Return one-minute log returns only for consecutive same-session bars."""
+
+    return compute_intraday_returns(prices, require_consecutive=True)
 
 
 def build_contaminated_mask(

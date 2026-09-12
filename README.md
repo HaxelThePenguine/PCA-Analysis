@@ -542,6 +542,64 @@ Run the stage from the project root with, for example,
 
 The result is a rigorous pseudo-out-of-sample volatility-forecasting and dependence-structure result, not a claim of structural causality, contagion, alpha, or deployable trading profitability. The 2023–2026 sample was already examined during factor discovery, the lasso is selected repeatedly within that historical sample, and the bootstrap uses a deliberately small exploratory replication count with block-length sensitivity. Edge-selection probability is a stability descriptor rather than a p-value. A genuinely untouched future holdout remains necessary before stronger claims can be made.
 
+## Stage 16: Frozen-protocol OOS validation
+
+Stage 16 adds a corrected and separately versioned evaluation in
+[`16_oos_har_network_validation.py`](src/16_oos_har_network_validation.py).
+The historical track is an auditable pseudo-OOS replay of the already explored
+sample; it does not reclaim that history as an untouched holdout. The
+prospective track freezes `oos-har-network-v2.0.0` at an actual UTC timestamp,
+issues forecasts without reading their target outcomes, and scores them only
+after the outcomes become available. The current specification, equations,
+information clock, target-quality rule, fixed 252-session confirmation
+endpoint, and artifact schema are registered in [`OOS_PROTOCOL.md`](OOS_PROTOCOL.md).
+
+The corrected track requires consecutive same-session one-minute endpoints,
+reindexes daily observations to exchange-session positions, uses the PCA
+projector for rotation-invariant factor residualization, standardizes the
+partialled-out cross design before computing `alpha_max`, records explicit
+lasso/KKT and fallback diagnostics, and scores raw positive realized variance
+with QLIKE after issuance. It retains Stage 15's partialling-out reuse, Gram
+and cross-product reuse, warm starts, scheduled tuning, training-only
+smearing, factor-worker parallelism, and concurrent target-equation fits.
+Generated run directories are kept under
+`alpaca_us_banks_1m/reports/oos_har_network_validation/` and excluded from Git.
+The implementation findings and legacy-comparability audit are in
+[`OOS_AUDIT.md`](OOS_AUDIT.md). Each completed run writes its own
+`OOS_RESULTS.md` inside the corresponding ignored run directory.
+
+The corrected historical replay `historical_oos_v2_20260912` is complete. The
+one-standard-error Network HAR improves pooled QLIKE in all three
+specifications, but the corrected effect is much smaller than the legacy Stage
+15 estimate:
+
+| Corrected specification | Own-HAR QLIKE | Network-HAR QLIKE | Relative improvement |
+| --- | ---: | ---: | ---: |
+| 120-session factor, expanding HAR | 0.240384 | 0.240250 | 0.056% |
+| 120-session factor, 252-session rolling HAR | 0.242541 | 0.239269 | 1.349% |
+| 60-session factor, expanding HAR | 0.240483 | 0.240246 | 0.098% |
+
+The two 120-session comparisons do not reject equal predictive loss at 5%
+under the predeclared HAC and moving-block procedures. The 60-session result is
+statistically detectable across both HAC lags and both block lengths, although
+its 0.098% QLIKE reduction is economically small. The primary network has mean
+edge density between 3.7% and 8.0%, and no directed edge reaches the frozen 70%
+stability threshold. Approximately 35–38% of forecast dates satisfy the strict
+90% valid-bar target-quality rule, which is an explicit but important coverage
+limitation. [`RESULTS_TO_DATE.md`](RESULTS_TO_DATE.md) gives the full
+interpretation and preserves Stage 15 as a labelled legacy comparison.
+
+The main commands are:
+
+```text
+.\\.venv\\Scripts\\python.exe src\\16_oos_har_network_validation.py --mode smoke --no-figures --n-jobs 2
+.\\.venv\\Scripts\\python.exe src\\16_oos_har_network_validation.py --mode audit --no-figures --n-jobs 2 --run-id historical_oos_v2
+.\\.venv\\Scripts\\python.exe src\\16_oos_har_network_validation.py --mode freeze
+.\\.venv\\Scripts\\python.exe src\\16_oos_har_network_validation.py --mode prospective --no-figures --n-jobs 2
+.\\.venv\\Scripts\\python.exe src\\16_oos_har_network_validation.py --mode score --run-id PROSPECTIVE_RUN_ID
+.\\.venv\\Scripts\\python.exe src\\16_oos_har_network_validation.py --mode report --run-id RUN_ID
+```
+
 ## Research roadmap
 
 ### 1. Baseline PCA
@@ -668,12 +726,15 @@ Completed:
 - Dynamic 60/120-session rolling L1 local-factor stability, regime summaries, alignment diagnostics, and 500-start sensitivity checks
 - Shared session-window helpers, synthetic support-shift tests, and import-safe stage-14 regression coverage
 - Leakage-controlled factor-adjusted realized-volatility network HAR, HAC comparisons, block bootstrap stability, descriptive controls, and production diagnostics
+- Corrected Stage 16 target-free OOS issuance/scoring utilities, protocol manifest, checkpoint/resume support, and substantive regression tests
 
 Next:
 
-- Freeze the Stage 15 primary specification and evaluate it on a genuinely untouched future holdout
+- Issue the first post-freeze confirmation forecast when a new eligible session is available
+- Accumulate the predeclared 252-session prospective confirmation cohort without backfilling historical outcomes
+- Run a separately labelled target-quality sensitivity analysis around the frozen 90% valid-bar rule
 - Extend the March–May 2023 stress comparison with a forecast design whose burn-in permits valid event-period predictions
-- Increase block-bootstrap replications when the production specification is finalized
+- Increase the optional conditional edge-bootstrap replications if edge stability remains a research objective
 
 Later:
 
@@ -711,6 +772,7 @@ Install the Python dependencies listed in `requirements.txt`. The current script
 13_bis_kalman_dynamic_factors.py  compare session Kalman factors + L1 with static PCA + L1
 14_dynamic_local_factor_regimes.py  run 60/120-session rolling L1 local-factor regime diagnostics
 15_factor_adjusted_residual_network.py  forecast factor-adjusted realized volatility with a sparse network HAR
+16_oos_har_network_validation.py         freeze, issue, score, and audit the corrected OOS protocol
 ```
 
 The 13-bis extension starts from the intraday benchmark-residualized panel,
@@ -725,6 +787,12 @@ The Stage 15 network extension lives in `utils/factor_adjusted_residuals.py`,
 `utils/realized_volatility.py`, and `utils/network_har.py`, with figures and
 the compact narrative in `reporting/network.py`. Its generated outputs are
 kept separately in `alpaca_us_banks_1m/reports/factor_adjusted_residual_network/`.
+
+The Stage 16 OOS extension uses `utils/oos_har_network.py` for strict target
+construction, calendar HAR features, target-free issuance, scoring, inference,
+and bootstrap routines, and `reporting/oos_validation.py` for durable reports.
+Its generated outputs are kept separately in
+`alpaca_us_banks_1m/reports/oos_har_network_validation/`.
 
 The source tree separates research orchestration, reusable calculations, and
 presentation. The numbered scripts in `src/` describe each research objective:

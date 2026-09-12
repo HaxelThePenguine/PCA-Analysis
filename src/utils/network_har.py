@@ -75,6 +75,11 @@ class HARFit:
     smearing_factor: float
     selected_penalty: float
     condition_number: float
+    column_norm_ratio: float = np.nan
+    lasso_converged: bool = True
+    lasso_iterations: int = 0
+    lasso_kkt_max_violation: float = 0.0
+    smearing_clipped_observations: int = 0
 
 
 @dataclass(frozen=True)
@@ -87,6 +92,10 @@ class PenaltyTuning:
     min_alpha: float
     one_se_alpha: float
     cv_scores: pd.DataFrame
+    status: str = "ok"
+    n_valid_folds: int = 0
+    requested_folds: int = 0
+    fallback_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -171,6 +180,16 @@ class _BootstrapTask:
     factor_window_sessions: int
     har_window: str | int
     config: HARConfig
+
+
+@dataclass(frozen=True)
+class LassoSolveResult:
+    """Coordinate-descent output with explicit convergence diagnostics."""
+
+    coefficients: np.ndarray
+    converged: bool
+    iterations: int
+    kkt_max_violation: float
 
 
 def _array(value: np.ndarray | Sequence[float], *, ndim: int = 1) -> np.ndarray:
@@ -284,16 +303,108 @@ def _alpha_max(y: np.ndarray, own: np.ndarray, cross: np.ndarray) -> float:
     return _alpha_max_from_partial(partial, len(y))
 
 
-def _alpha_max_from_partial(partial: PartialOutResult, n_observations: int) -> float:
+def _cross_scales(cross_residual: np.ndarray) -> np.ndarray:
+    """Return the sample scales used by the standardized lasso design."""
+
+    if not cross_residual.shape[1]:
+        return np.empty(0)
+    scales = np.std(cross_residual, axis=0, ddof=1)
+    return np.where(np.isfinite(scales) & (scales > 1e-12), scales, 1.0)
+
+
+def _alpha_max_from_partial(
+    partial: PartialOutResult,
+    n_observations: int,
+    scales: np.ndarray | None = None,
+) -> float:
+    """Compute the zero-solution threshold on the solver's standardized scale."""
+
     if not partial.cross_residual.shape[1]:
         return 0.0
+    scales = _cross_scales(partial.cross_residual) if scales is None else np.asarray(scales, dtype=float)
+    standardized = partial.cross_residual / scales
     return float(
-        np.max(np.abs(partial.cross_residual.T @ partial.response_residual)) / n_observations
+        np.max(np.abs(standardized.T @ partial.response_residual)) / n_observations
     )
 
 
 def _soft_threshold(value: float, penalty: float) -> float:
     return float(np.sign(value) * max(abs(value) - penalty, 0.0))
+
+
+def _lasso_kkt_violation(
+    x: np.ndarray,
+    y: np.ndarray,
+    coefficients: np.ndarray,
+    alpha: float,
+) -> float:
+    """Return the maximum KKT violation for the no-intercept lasso."""
+
+    gradient = (x.T @ (x @ coefficients - y)) / len(x)
+    nonzero = np.abs(coefficients) > 1e-10
+    violations = np.where(
+        nonzero,
+        np.abs(gradient + alpha * np.sign(coefficients)),
+        np.maximum(np.abs(gradient) - alpha, 0.0),
+    )
+    return float(np.max(violations)) if len(violations) else 0.0
+
+
+def _fit_lasso_result(
+    x: np.ndarray,
+    y: np.ndarray,
+    alpha: float,
+    *,
+    max_iterations: int,
+    tolerance: float,
+    initial: np.ndarray | None = None,
+    gram: np.ndarray | None = None,
+    cross_product: np.ndarray | None = None,
+) -> LassoSolveResult:
+    """Solve the no-intercept lasso and report convergence/KKT diagnostics."""
+
+    if not x.shape[1]:
+        return LassoSolveResult(np.empty(0), True, 0, 0.0)
+    gram = (x.T @ x) / len(x) if gram is None else gram
+    cross = (x.T @ y) / len(x) if cross_product is None else cross_product
+    if initial is None:
+        coefficients = np.zeros(x.shape[1])
+    else:
+        coefficients = _array(initial)
+        if coefficients.shape != (x.shape[1],):
+            raise ValueError("The lasso warm start has an incompatible shape.")
+        coefficients = coefficients.copy()
+    score_max = float(np.max(np.abs(cross))) if len(cross) else 0.0
+    # At alpha_max the all-zero solution is exact.  The explicit branch also
+    # prevents a tiny floating-point residual from appearing as a selected
+    # edge at the threshold.
+    if alpha >= score_max - 1e-12 * max(1.0, score_max):
+        return LassoSolveResult(
+            np.zeros(x.shape[1]),
+            True,
+            0,
+            _lasso_kkt_violation(x, y, np.zeros(x.shape[1]), alpha),
+        )
+    converged = False
+    iterations = 0
+    for iteration in range(1, max_iterations + 1):
+        iterations = iteration
+        previous = coefficients.copy()
+        for column in range(x.shape[1]):
+            partial = cross[column] - gram[column] @ coefficients + gram[column, column] * coefficients[column]
+            diagonal = gram[column, column]
+            coefficients[column] = _soft_threshold(partial, alpha) / diagonal if diagonal > 1e-14 else 0.0
+        change = np.max(np.abs(coefficients - previous))
+        kkt = _lasso_kkt_violation(x, y, coefficients, alpha)
+        if change <= tolerance and kkt <= max(10.0 * tolerance, 1e-10):
+            converged = True
+            break
+    return LassoSolveResult(
+        coefficients=coefficients,
+        converged=converged,
+        iterations=iterations,
+        kkt_max_violation=_lasso_kkt_violation(x, y, coefficients, alpha),
+    )
 
 
 def _fit_lasso(
@@ -307,28 +418,18 @@ def _fit_lasso(
     gram: np.ndarray | None = None,
     cross_product: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Solve the no-intercept lasso by deterministic coordinate descent."""
+    """Compatibility wrapper returning only lasso coefficients."""
 
-    if not x.shape[1]:
-        return np.empty(0)
-    gram = (x.T @ x) / len(x) if gram is None else gram
-    cross = (x.T @ y) / len(x) if cross_product is None else cross_product
-    if initial is None:
-        coefficients = np.zeros(x.shape[1])
-    else:
-        coefficients = _array(initial)
-        if coefficients.shape != (x.shape[1],):
-            raise ValueError("The lasso warm start has an incompatible shape.")
-        coefficients = coefficients.copy()
-    for _ in range(max_iterations):
-        previous = coefficients.copy()
-        for column in range(x.shape[1]):
-            partial = cross[column] - gram[column] @ coefficients + gram[column, column] * coefficients[column]
-            diagonal = gram[column, column]
-            coefficients[column] = _soft_threshold(partial, alpha) / diagonal if diagonal > 1e-14 else 0.0
-        if np.max(np.abs(coefficients - previous)) <= tolerance:
-            break
-    return coefficients
+    return _fit_lasso_result(
+        x,
+        y,
+        alpha,
+        max_iterations=max_iterations,
+        tolerance=tolerance,
+        initial=initial,
+        gram=gram,
+        cross_product=cross_product,
+    ).coefficients
 
 
 def _prepare_partialling_out(
@@ -341,8 +442,7 @@ def _prepare_partialling_out(
     partial = partial_out(y_train, own_train, cross_train)
     scales = np.ones(cross_train.shape[1])
     if cross_train.shape[1]:
-        scales = np.std(partial.cross_residual, axis=0, ddof=1)
-        scales = np.where(np.isfinite(scales) & (scales > 1e-12), scales, 1.0)
+        scales = _cross_scales(partial.cross_residual)
         cross_standardized = partial.cross_residual / scales
     else:
         cross_standardized = np.empty((len(y_train), 0))
@@ -366,6 +466,9 @@ def _fit_prepared_partialling_out(
 ) -> HARFit:
     """Fit one penalty value after the projection has already been computed."""
 
+    lasso_converged = True
+    lasso_iterations = 0
+    lasso_kkt_max_violation = 0.0
     if cross_train.shape[1]:
         if alpha <= 1e-14:
             network_standardized = np.linalg.lstsq(
@@ -373,8 +476,14 @@ def _fit_prepared_partialling_out(
                 partial.response_residual,
                 rcond=None,
             )[0]
+            lasso_kkt_max_violation = _lasso_kkt_violation(
+                cross_standardized,
+                partial.response_residual,
+                network_standardized,
+                0.0,
+            )
         else:
-            network_standardized = _fit_lasso(
+            lasso_result = _fit_lasso_result(
                 cross_standardized,
                 partial.response_residual,
                 float(alpha),
@@ -384,6 +493,10 @@ def _fit_prepared_partialling_out(
                 gram=lasso_gram,
                 cross_product=lasso_cross_product,
             )
+            network_standardized = lasso_result.coefficients
+            lasso_converged = lasso_result.converged
+            lasso_iterations = lasso_result.iterations
+            lasso_kkt_max_violation = lasso_result.kkt_max_violation
         network_original = network_standardized / scales
     else:
         network_standardized = np.empty(0)
@@ -396,10 +509,12 @@ def _fit_prepared_partialling_out(
     )[0]
     predictions = z_train @ own_conditional + cross_train @ network_original
     residuals = y_train - predictions
-    smearing = float(np.mean(np.exp(np.clip(residuals, -30.0, 30.0))))
+    clipped_residuals = np.clip(residuals, -30.0, 30.0)
+    smearing = float(np.mean(np.exp(clipped_residuals)))
     design = np.column_stack([z_train, cross_train / scales])
     column_norms = np.linalg.norm(design, axis=0)
-    condition_number = float(column_norms.max() / max(column_norms.min(), 1e-12))
+    column_norm_ratio = float(column_norms.max() / max(column_norms.min(), 1e-12))
+    condition_number = float(np.linalg.cond(design))
     return HARFit(
         intercept=float(own_conditional[0]),
         own_coefficients=own_conditional[1:],
@@ -412,6 +527,11 @@ def _fit_prepared_partialling_out(
         smearing_factor=max(smearing, 1e-12),
         selected_penalty=float(alpha),
         condition_number=condition_number,
+        column_norm_ratio=column_norm_ratio,
+        lasso_converged=lasso_converged,
+        lasso_iterations=lasso_iterations,
+        lasso_kkt_max_violation=lasso_kkt_max_violation,
+        smearing_clipped_observations=int(np.sum(clipped_residuals != residuals)),
     )
 
 
@@ -596,7 +716,7 @@ def tune_network_penalty(
                 cross_standardized,
                 lasso_gram,
                 lasso_cross_product,
-                _alpha_max_from_partial(partial, train_end),
+                _alpha_max_from_partial(partial, train_end, scales),
             )
         )
     rows: list[dict[str, float | int]] = []
@@ -662,11 +782,31 @@ def tune_network_penalty(
             }
         )
     cv_scores = pd.DataFrame(rows)
-    full_partial, _, _ = _prepare_partialling_out(y_values, own_values, cross_values)
-    full_alpha_max = _alpha_max_from_partial(full_partial, len(y_values))
+    full_partial, full_scales, _ = _prepare_partialling_out(
+        y_values, own_values, cross_values
+    )
+    full_alpha_max = _alpha_max_from_partial(
+        full_partial, len(y_values), full_scales
+    )
     finite = cv_scores.dropna(subset=["mean_validation_log_mse"])
+    requested_folds = max(int(config.cv_splits), 0)
+    n_valid_folds = len(prepared_splits)
+    if n_valid_folds < requested_folds:
+        status = "fallback_insufficient_folds"
+        fallback_reason = (
+            f"requested {requested_folds} chronological folds, "
+            f"constructed {n_valid_folds}"
+        )
+    else:
+        status = "ok"
+        fallback_reason = ""
     if finite.empty:
-        min_fraction = one_se_fraction = fractions[0]
+        # An empty/insufficient CV sample must not silently choose the weakest
+        # penalty.  Use the strongest candidate and expose the fallback in the
+        # tuning ledger.
+        min_fraction = one_se_fraction = fractions[-1]
+        status = "fallback_no_valid_folds"
+        fallback_reason = "no finite chronological validation losses"
     else:
         min_loss = float(finite["mean_validation_log_mse"].min())
         min_fraction = float(finite.loc[finite["mean_validation_log_mse"].idxmin(), "fraction"])
@@ -684,6 +824,10 @@ def tune_network_penalty(
         min_alpha=float(min_fraction * full_alpha_max),
         one_se_alpha=float(one_se_fraction * full_alpha_max),
         cv_scores=cv_scores,
+        status=status,
+        n_valid_folds=n_valid_folds,
+        requested_folds=requested_folds,
+        fallback_reason=fallback_reason,
     )
 
 
@@ -698,9 +842,11 @@ def fit_own_har(y: np.ndarray, own: np.ndarray, *, config: HARConfig = HARConfig
     coefficients = np.linalg.lstsq(z_train, y_train, rcond=None)[0]
     predictions = z_train @ coefficients
     residuals = y_train - predictions
-    smearing = float(np.mean(np.exp(np.clip(residuals, -30.0, 30.0))))
+    clipped_residuals = np.clip(residuals, -30.0, 30.0)
+    smearing = float(np.mean(np.exp(clipped_residuals)))
     column_norms = np.linalg.norm(z_train, axis=0)
-    condition_number = float(column_norms.max() / max(column_norms.min(), 1e-12))
+    column_norm_ratio = float(column_norms.max() / max(column_norms.min(), 1e-12))
+    condition_number = float(np.linalg.cond(z_train))
     return HARFit(
         intercept=float(coefficients[0]),
         own_coefficients=coefficients[1:],
@@ -713,6 +859,11 @@ def fit_own_har(y: np.ndarray, own: np.ndarray, *, config: HARConfig = HARConfig
         smearing_factor=max(smearing, 1e-12),
         selected_penalty=0.0,
         condition_number=condition_number,
+        column_norm_ratio=column_norm_ratio,
+        lasso_converged=True,
+        lasso_iterations=0,
+        lasso_kkt_max_violation=0.0,
+        smearing_clipped_observations=int(np.sum(clipped_residuals != residuals)),
     )
 
 
