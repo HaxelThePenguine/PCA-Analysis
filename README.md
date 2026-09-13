@@ -60,7 +60,7 @@ Raw and generated data remain under `alpaca_us_banks_1m/` and are excluded from 
 Let $X$ denote the centered return matrix. Correlation PCA standardizes each stock by its sample standard deviation, producing $Z$, and solves
 
 $$
-R=\frac{1}{n-1}Z^\top Z,
+R=\frac{1}{n-1}Z^{\mathsf T}Z,
 \qquad Rv_k=\lambda_kv_k.
 $$
 
@@ -85,16 +85,17 @@ Q(q)=\|\Lambda_0q\|_1,
 \qquad \|q\|_2=1.
 $$
 
-A multistart search selects $K$ linearly independent directions and forms the generally oblique rotation $\Lambda^*=\Lambda_0R$. Scores are recovered by least squares,
+A multistart search selects $K$ linearly independent directions and forms the generally oblique rotation $\Lambda^{*}=\Lambda_0R$. Scores are recovered by least squares,
 
 $$
-\widehat F=Z\Lambda^*(\Lambda^{*\top}\Lambda^*)^{-1}.
+\widehat F
+=Z\Lambda^{*}\left[(\Lambda^{*})^{\mathsf T}\Lambda^{*}\right]^{-1}.
 $$
 
 Because $R$ is nonsingular, the rotation changes the coordinate system but preserves the retained PCA projector:
 
 $$
-\widehat F\Lambda^{*\top}=ZV_KV_K^\top.
+\widehat F(\Lambda^{*})^{\mathsf T}=ZV_KV_K^{\mathsf T}.
 $$
 
 The reference local-factor diagnostic counts loadings below $h_p=1/\log p$. With $p=12$, $h_p=0.4024$ and the five-percent critical count is $\gamma_p=7$. A sparse-looking loading pattern is not enough: the result is also evaluated through whole-session bootstrap alignment, $K=2,\ldots,5$ sensitivity, 60- and 120-session rolling fits, and 200-versus-500-start optimization checks.
@@ -119,7 +120,7 @@ Stage 17 targets next-session realized variance after removing only SPY and XLF.
 
 $$
 y^{B}_{i,d+1}
-=\alpha_i+\beta_i^\top H_{i,d}+\gamma_i^\top F_d+\varepsilon_{i,d+1},
+=\alpha_i+\beta_i^{\mathsf T}H_{i,d}+\gamma_i^{\mathsf T}F_d+\varepsilon_{i,d+1},
 $$
 
 where $H_{i,d}$ contains the bank's own daily, weekly, and monthly log-realized-variance state. The localized specification places the daily, weekly, and monthly histories of all three sparse factors in $F_d$. The aggregate specification instead uses the corresponding histories of total variance in the retained banking subspace and is invariant to rotations within that subspace.
