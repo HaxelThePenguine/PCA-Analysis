@@ -87,8 +87,8 @@ Elastic-Net Sparse PCA provides an exploratory loading map. The main localizatio
 $$
 \Lambda_0=\sqrt{p}[v_1,\ldots,v_K],
 \qquad
-Q(q)=\|\Lambda_0q\|_1,
-\qquad \|q\|_2=1.
+Q(q)=\lVert\Lambda_0q\rVert_1,
+\qquad \lVert q\rVert_2=1.
 $$
 
 A multistart search selects $K$ independent directions and forms the generally oblique rotation $\Lambda_{\mathrm{rot}}=\Lambda_0R$. Least-squares scores are
