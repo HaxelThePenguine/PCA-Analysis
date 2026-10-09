@@ -6,7 +6,7 @@ I started this project to understand what moves U.S. banks together at intraday 
 
 So far, the aggregate banking factor gives the clearest forecasting result. Sparse rotation identifies persistent MS/C, large-bank, and regional-bank patterns, but the localized histories do not improve on the aggregate factor. After removing the complete factor space, the remaining volatility network is weak and unstable.
 
-Detailed results are in [`RESULTS_TO_DATE.md`](RESULTS_TO_DATE.md). The OOS designs and audit are in [`OOS_PROTOCOL.md`](OOS_PROTOCOL.md), [`OOS_AUDIT.md`](OOS_AUDIT.md), and [`FACTOR_HAR_PROTOCOL.md`](FACTOR_HAR_PROTOCOL.md).
+Detailed historical results are in [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md). [OOS_PROTOCOL.md](OOS_PROTOCOL.md) collects the Stage 16–17 targets, timing, models, and evaluation rules.
 
 ## Data and research universe
 
@@ -115,28 +115,13 @@ Factor columns are aligned by absolute loading cosine. Past-only alignment measu
 
 ## Volatility forecasting
 
-### Corrected residual-network experiment
+Stage 16 tests cross-bank predictability after removing SPY/XLF and the full $K=3$ banking subspace. Stage 17 removes only SPY/XLF from the target and asks whether banking-factor histories improve on Own-HAR. The aggregate specification uses total variance in the retained subspace; local factors use its sparse coordinates.
 
-Stage 16 asks whether cross-bank information predicts volatility after removing SPY/XLF and the complete rolling $K=3$ banking subspace. Valid one-minute residual returns are aggregated into non-overlapping five-minute returns and then into daily realized variance. Each target bank receives unpenalized own daily, weekly, and monthly HAR terms. The same histories from the other eleven banks are partialled with respect to the own-HAR block and estimated by chronological lasso, with the one-standard-error penalty as the frozen primary rule.
-
-The historical replay is pseudo-OOS because the sample already influenced the research design. Prospective mode follows a separately frozen protocol and scores forecasts only after the target becomes observable.
-
-### Factor-predictability experiment
-
-Stage 17 removes only SPY and XLF from the target, leaving the internal banking component in next-session realized variance. For bank $i$,
-
-$$
-y^{B}_{i,d+1}
-=\alpha_i+\beta_i^{\top}H_{i,d}+\gamma_i^{\top}F_d+\varepsilon_{i,d+1},
-$$
-
-Here $H_{i,d}$ contains the bank's daily, weekly, and monthly log-realized variance. $F_d$ contains either the corresponding histories of the three local factors or total variance in the retained banking subspace. The aggregate specification is rotation invariant.
-
-Own-HAR, Aggregate-Factor HAR, Local-Factor HAR, Network HAR, Hybrid HAR, and persistence use matched forecast keys and a common estimation mask. QLIKE is the primary loss. Inference aggregates by target date, uses Bartlett-HAC errors, and adjusts the predeclared comparisons for multiplicity.
+Both stages forecast next-session realized variance from daily, weekly, and monthly histories. They use chronological estimation, matched forecast keys, QLIKE loss, and date-level inference. Issuance is separate from scoring. The target formulas, model comparisons, and frozen settings are in [OOS_PROTOCOL.md](OOS_PROTOCOL.md).
 
 ## Main empirical results
 
-These tables summarize the recorded historical runs in `RESULTS_TO_DATE.md`. They must be recomputed after changes to preprocessing or sample selection.
+These are the recorded September 2026 results. They have not been rerun on market data after the October preprocessing and CORE-filtering fixes. [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md) records their provenance and limits.
 
 | Specification | PC1 variance | First three components |
 | --- | ---: | ---: |
@@ -158,9 +143,17 @@ Stage 17 produces the stronger predictive result.
 
 The aggregate banking factor has the strongest historical predictive result. Sparse factors help interpretation but add no forecast value beyond the aggregate. This does not establish causality, return alpha, or live performance.
 
-## Code organization and reproducibility
+## Architecture and execution
 
 Numbered scripts in `src/` run each stage. Calculations live in `src/utils/`, reporting in `src/reporting/`, and shared OOS helpers in `src/utils/oos_common.py`. Every stage exposes `main()` and can be imported without running the pipeline.
+
+| Layer | Role |
+| --- | --- |
+| `src/config.py` | Paths, universes, dates, and cleaning rules |
+| Numbered scripts in `src/` | Stage entry points and saved outputs |
+| `src/utils/` | Preprocessing, factors, rolling estimation, and forecasting |
+| `src/reporting/` | Tables, plots, and summaries |
+| `tests/` | Numerical, timing, and pipeline regression checks |
 
 From the repository root:
 
@@ -203,16 +196,9 @@ Smoke mode uses the last 180 sessions and lighter settings; it still requires th
 
 The downloader filename `01-crwal.py` contains a historical typo and remains unchanged for command compatibility.
 
-## Future research objectives
+## Next step
 
-The next priority is the frozen 252-session prospective comparison of Aggregate-Factor HAR against Own-HAR. Factor count, features, eligibility, and tuning rules stay fixed before evaluation; Stage 16 Network HAR remains a secondary comparison.
-
-Further work, kept separate from that confirmation:
-
-- Compare five-minute RV with jump- and microstructure-robust targets, without changing the frozen target retroactively.
-- Keep factor dynamics parsimonious: compare Aggregate-Factor HAR with HARQ-style controls and a small factor-innovation model using nested tuning and matched QLIKE.
-- Examine calm, volatile, and jump-intensive states with thresholds fixed before evaluation. The March–May 2023 episode remains descriptive unless the burn-in leaves valid forecasts for that period.
-- Assess economic value only with a separately specified allocation rule, execution delay, turnover, costs, constraints, and benchmark.
+Rerun the corrected pipeline on the real dataset, then accumulate the frozen 252-session prospective comparison of Aggregate-Factor HAR against Own-HAR. Factor count, features, eligibility, and tuning rules stay fixed before evaluation. Stage 16 Network HAR remains a secondary comparison.
 
 ## Interpretation discipline
 

@@ -1,275 +1,138 @@
-# Stage 16 OOS HAR and Network HAR Protocol
+# OOS Volatility Forecasting: Stages 16 and 17
 
-This document registers the corrected Stage 16 procedure implemented in
-`src/16_oos_har_network_validation.py`. The protocol version is
-`oos-har-network-v2.0.0`. Historical execution is labelled
-`historical_pseudo_oos`; it is a replay of an already explored sample and is
-not an untouched holdout. The prospective track is frozen at the recorded UTC
-timestamp and is the only track that can produce genuinely new confirmation
-evidence.
+This document collects the forecasting rules for both OOS stages. The code and each run's saved configuration define the executable specification. Results are reported separately in [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md).
 
-The numbered script is the orchestration boundary. Numerical factor-vintage,
-forecasting, scoring, and inference logic resides in
-`src/utils/oos_har_network.py`; strict-return construction, market-calendar
-normalization, clocks, hashes, and deterministic manifest persistence reside in
-`src/utils/oos_common.py`; and durable narrative and graphical output resides
-in `src/reporting/oos_validation.py`. This separation does not alter any
-registered statistical choice.
+The historical sample already informed factor discovery and model design, so the replay is **pseudo-OOS**. Prospective confirmation requires a protocol frozen before the evaluated outcomes become observable.
 
-## Research question and universe
+## What each stage tests
 
-The question is whether lagged cross-stock realized-variance information
-improves one-session-ahead forecasts of factor-adjusted realized variance
-beyond each stock's own HAR dynamics. The confirmation universe is frozen at
-the twelve CORE stocks, in this order:
+| Stage | Target | Main comparison | Protocol version |
+| --- | --- | --- | --- |
+| 16 | Next-session RV after removing SPY/XLF and the full banking factor space | Network HAR versus Own-HAR | `oos-har-network-v2.0.0` |
+| 17 | Next-session RV after removing only SPY/XLF | Aggregate-Factor HAR versus Own-HAR | `oos-factor-har-v1.0.0` |
 
-| Position | Stock |
-| ---: | --- |
-| 1 | JPM |
-| 2 | BAC |
-| 3 | WFC |
-| 4 | C |
-| 5 | USB |
-| 6 | TFC |
-| 7 | KEY |
-| 8 | RF |
-| 9 | FITB |
-| 10 | CFG |
-| 11 | HBAN |
-| 12 | MS |
+Stage 16 tests the network left after factor removal. Stage 17 keeps the banking component in the target and tests its predictive value. The two targets answer different questions and their loss levels are not directly comparable.
 
-SPY and XLF are benchmark controls and are not forecast targets. This is a
-fixed historical research universe, not a point-in-time universe backtest.
+The fixed CORE universe is JPM, BAC, WFC, C, USB, TFC, KEY, RF, FITB, CFG, HBAN, MS. SPY and XLF are controls. CORE plus the controls are selected before complete-case cleaning; missing stocks outside CORE do not reduce this sample. This is a fixed research universe, not a point-in-time universe backtest.
 
-## Information clock
+## Architecture and artifacts
 
-All timestamps are represented in `America/New_York` for session logic. At the
-close of exchange session (d), the procedure may use accepted observations
-through that close to issue a forecast for session (d+1). The ledger records
-`as_of`, the next-session open, the target outcome availability timestamp, the
-training-label cutoff, and the last training-label availability timestamp.
-Every issued row satisfies
+| Component | Responsibility |
+| --- | --- |
+| `src/16_oos_har_network_validation.py`, `src/17_oos_factor_augmented_har.py` | Run modes, configuration, and artifact persistence |
+| `src/utils/oos_common.py` | Exchange clocks, strict returns, calendar alignment, hashes |
+| `src/utils/factor_adjusted_residuals.py` | Training-only benchmark/PCA fits and application to later blocks |
+| `src/utils/oos_har_network.py` | Factor/RV vintages, Stage 16 issuance, delayed scoring |
+| `src/utils/factor_har_oos.py`, `src/utils/network_har.py` | Matched Stage 17 models, HAR estimation, chronological Lasso tuning |
+| `src/reporting/` | Tables, figures, and run summaries |
 
-\[
-\max\{\operatorname{available\_at}(y_s):s\in\mathcal T_d\}
+Generated artifacts live under `alpaca_us_banks_1m/reports/` and stay outside Git. Each run saves its configuration and provenance, factor vintages, coefficients, tuning diagnostics, and forecast ledger. Realized outcomes and losses belong to the later score ledger. The saved forecast hash protects issued predictions from accidental rewriting.
+
+## Information set and preprocessing
+
+At session $d$'s close, predictors may use accepted observations through that close. Training labels must already be observable; the forecast targets the next exchange session. Session logic uses `America/New_York`, including daylight saving and early closes.
+
+$$
+\max_{s\in\mathcal T_d}\operatorname{available\_at}(y_s)
 \leq \operatorname{as\_of}_d
 < \operatorname{open}_{d+1}.
-\]
+$$
 
-The target row is absent from the issuance function. The historical path is a
-causal replay because the current target is not read while its forecast is
-constructed; it is still marked pseudo-OOS because the sample informed prior
-research choices. In prospective mode, a target session is eligible only when
-its open is strictly after the actual recorded protocol freeze and strictly
-after the recorded forecast-issuance timestamp. An already opened or already
-observed target is never reconstructed retrospectively and labelled
-prospective.
+Prospective issuance must also occur after the origin close and before the target open, with the target open strictly after the recorded UTC freeze. Already opened targets are not backfilled as prospective forecasts.
 
-## Preprocessing and target construction
+Only consecutive, same-session one-minute returns are accepted. Overnight moves, gap-spanning returns, and the returns at and after imputed candles are excluded. Prices are forward-filled within sessions only. The 24 January 2023 session and the configured 5 June 2023 feed gap are excluded; genuine extreme returns are not mechanically clipped.
 
-The input prices are the synchronized repository close matrix together with
-its missingness mask. One-minute log returns are accepted only when both price
-endpoints are consecutive one-minute observations in the same exchange
-session. The first return of each session is unavailable, so the overnight
-close-to-open move is never included. Missing intervals remain unavailable;
-there is no interpolation, backward fill, cross-gap differencing, or clipping
-of genuine extreme returns. The contamination mask from the existing pipeline
-is retained and applied after strict differencing. The known bad session
-2023-01-24 is excluded, and the configured 2023-06-05 systemic gap cannot
-create a return spanning the removed timestamps.
+Factor fits use the preceding 120 sessions, with 60 sessions as a robustness check, and update every five sessions. Benchmark coefficients, centering, scaling, and the $K=3$ PCA basis are fitted on training data and held fixed for the later scoring block.
 
-For each factor vintage, SPY/XLF residualization, centering, scaling, PCA and
-the retained (K=3) subspace are fitted only on completed preceding sessions.
-The fitted transformation receives a factor-fit identifier and is applied only
-to its later score block. The L1 rotation is retained for interpretation and
-loading reports. Because it is a nonsingular rotation of the retained PCA
-space, residual construction uses the PCA projector directly:
+## PCA projector and realized variance
 
-\[
-P_3=V_3V_3^\top,
+Let $V_3$ contain the three retained orthonormal eigenvectors. For a column vector of standardized benchmark residuals $z_t$, with training standard deviations in the diagonal matrix $D$,
+
+$$
+P_3=V_3V_3^{\top},
 \qquad
 u_t=D\,(I-P_3)z_t.
-\]
+$$
 
-The implementation records projector discrepancy, residual orthogonality,
-rotation status, optimizer success rate and condition diagnostics. A rotation
-failure therefore affects interpretation metadata, not the definition of the
-full-subspace residual target.
+This defines the Stage 16 factor-adjusted residual. In the code's row-matrix convention the same operation is $U=Z(I-P_3)D$. L1 rotation changes the coordinates within the retained space; it does not change this projector. A rotation failure is recorded separately from the PCA residual target.
 
-Residual returns are grouped into non-overlapping five-minute intervals. An
-interval is valid only when it contains exactly five consecutive valid
-one-minute returns within one session. For stock (i) and session (d), the
-realized target is
+Residuals are summed into non-overlapping five-minute bins and squared within each session:
 
-\[
+$$
 RV_{i,d}=\sum_{b\in d}\left(\sum_{t\in b}u_{i,t}\right)^2,
 \qquad
-y_{i,d}=\log\left(\max(RV_{i,d},\varepsilon)\right),
-\]
+y_{i,d}=\log\!\left(\max(RV_{i,d},10^{-16})\right).
+$$
 
-with the repository's variance floor
+Each bin requires all five consecutive valid minute returns. Scoring requires at least one valid bin and at least 90% valid-bar coverage. These rules determine eligibility after realization; they do not use future quality to decide whether to issue a forecast. Missing, non-positive, and ineligible outcomes retain an explicit status. QLIKE uses raw positive RV, not a clipped proxy.
 
-\[
-\varepsilon=10^{-16}.
-\]
+## HAR models and tuning
 
-The raw positive realized variance is retained for scoring. The floor is a
-diagnostic and is never used to turn a non-positive observed target into a
-positive target silently.
+Daily, weekly, and monthly features are means of log variance on exchange-session positions:
 
-Target quality is determined before confirmation by a fixed rule: at least one
-valid five-minute interval and a valid-bar fraction of at least 0.90. This
-rule governs scoring eligibility after realization. It cannot prevent a
-forecast from being issued at the preceding origin. Missing or low-quality
-targets remain in the score ledger with an explicit status.
+$$
+H_d(x)=\left(
+x_d,\quad \frac{1}{5}\sum_{j=0}^{4}x_{d-j},\quad
+\frac{1}{22}\sum_{j=0}^{21}x_{d-j}
+\right).
+$$
 
-## HAR information set
+A missing session stays on the calendar and invalidates each weekly or monthly lookback crossing it. Own-HAR uses only the target bank's history. Network HAR adds 33 terms from the other eleven banks. Own terms and the intercept are unpenalized; cross-bank terms are partialled out and penalized.
 
-Daily observations are first reindexed to the exchange-session calendar. Thus,
-a missing trading session remains a missing calendar position rather than
-collapsing the next-session target onto the next available row. The features
-use means of log variance, not the logarithm of an average variance:
+The primary specification combines a 120-session factor window with expanding HAR and at least 252 valid training equations. Robustness specifications use rolling-252 HAR or a 60-session factor window with expanding HAR.
 
-\[
-x_{i,d,D}=y_{i,d},
+Lasso uses three chronological training folds, refreshed every 20 issued forecasts. Candidates are $\{0.01,0.03,0.10,0.30,1.00\}\alpha_{\max}$, with standardization and $\alpha_{\max}$ recomputed inside each fold. The primary rule chooses the strongest penalty within one standard error of the minimum validation log-MSE. Stage 16 also records the minimum-loss model and persistence. Fallbacks, convergence, conditioning, and clipping are recorded explicitly; log-to-variance smearing uses training residuals only.
+
+## Stage 17 factor predictors
+
+Write $RV^B$ for benchmark-residual variance, before banking-factor removal. Using the same column-vector convention for $z_t$, frozen PCA basis $V_d$, and L1 loading matrix $\Lambda_d$, scores are
+
+$$
+f^{PC}_{t,d}=V_d^{\top}z_t,
 \qquad
-x_{i,d,W}=\frac{1}{5}\sum_{k=0}^{4}y_{i,d-k},
+f^{LF}_{t,d}=(\Lambda_d^{\top}\Lambda_d)^{-1}\Lambda_d^{\top}z_t.
+$$
+
+Local columns are aligned through time using permutation and sign. The factor-variance measures are
+
+$$
+FV_{k,d}=\sum_{b\in d}\left(\sum_{t\in b}f_{k,t,d}\right)^2,
 \qquad
-x_{i,d,M}=\frac{1}{22}\sum_{k=0}^{21}y_{i,d-k}.
-\]
+CFV_d=\sum_{k=1}^{3}FV^{PC}_{k,d}.
+$$
 
-The ranges follow exchange-session positions and include both endpoints. The
-own-HAR equation is
+$CFV_d$ is invariant to orthogonal rotations of the PCA basis. Local-factor variances depend on the chosen sparse coordinates.
 
-\[
-y_{i,d+1}=a_i+\sum_{h\in\{D,W,M\}}b_{i,h}x_{i,d,h}+e_{i,d+1},
-\]
+| Model | Predictors beyond own-bank HAR |
+| --- | --- |
+| Aggregate-Factor HAR | Daily, weekly, monthly $\log CFV$ |
+| Local-Factor HAR | Daily, weekly, monthly log-variance of each of the three local factors |
+| Network HAR | Penalized histories of the other banks |
+| Hybrid HAR | Unpenalized local-factor histories plus penalized other-bank histories |
+| Persistence | Origin variance carried forward, without a fitted HAR equation |
 
-and the Network HAR extension is
+Together with Own-HAR, these six models share a common finite training mask and identical forecast keys. The prospective primary comparison is Aggregate-Factor HAR versus Own-HAR; localization and network comparisons remain diagnostics.
 
-\[
-y_{i,d+1}=a_i+\sum_hb_{i,h}x_{i,d,h}
- +\sum_{j\neq i}\sum_h\gamma_{i,j,h}x_{j,d,h}+e_{i,d+1}.
-\]
-
-The intercept and the three own terms are unpenalized. The 33 cross-stock
-terms are penalized after partialling out the intercept and own-HAR terms. A
-selected directed edge (j\to i) is a conditional predictive relationship;
-it is not a structural causal or contagion claim.
-
-The primary HAR fit is expanding with at least 252 usable equations. The
-retained robustness specifications are a 252-session rolling HAR window with
-the 120-session factor vintage and an expanding HAR window with the
-60-session factor vintage. Each specification is compared against its own
-factor-adjusted target and own-HAR benchmark.
-
-## Lasso tuning and numerical controls
-
-Penalty tuning occurs every 20 eligible origins according to the fixed
-schedule. The candidates are
-
-\[
-\alpha\in\{0.01,0.03,0.10,0.30,1.00\}\alpha_{\max},
-\qquad
-\alpha_{\max}=\frac{1}{n}
-\max_k\left|X_{\mathrm{std},k}^{\top}y_{\mathrm{res}}\right|.
-\]
-
-The cross design is standardized inside each chronological training fold and
-again on the full training sample. The absolute alpha value, not only the
-fraction, is recomputed on the corresponding sample. Three chronological inner
-folds are retained. Minimum validation log-MSE is a tuning objective; final
-forecast evaluation remains QLIKE. The primary penalty is the strongest
-candidate within one standard error of the minimum validation log-MSE. The
-minimum-loss candidate is a secondary model.
-
-The coordinate-descent solver records convergence, iteration count and maximum
-KKT violation. Reaching `max_iter` is not treated as convergence. If no valid
-chronological validation loss exists, the strongest candidate is selected with
-an explicit fallback status and reason. Training-only residual smearing is
-used to map the log forecast to variance units:
-
-\[
-\widehat{RV}_{i,d+1}=\exp(\widehat y_{i,d+1})
-\,\overline{\exp(e_{i,\mathcal T_d})}.
-\]
-
-Exponent clipping and smearing clipping counts are recorded separately.
-
-## Evaluation and inference
+## Evaluation and execution
 
 The primary loss is
 
-\[
-QLIKE(RV,\widehat{RV})=
-\frac{RV}{\widehat{RV}}-\log\left(\frac{RV}{\widehat{RV}}\right)-1.
-\]
+$$
+\operatorname{QLIKE}(RV,\widehat{RV})=
+\frac{RV}{\widehat{RV}}
+-\log\!\left(\frac{RV}{\widehat{RV}}\right)-1.
+$$
 
-It is evaluated only for positive, quality-eligible observed variance, using
-the raw observed variance. The primary comparison is Network HAR 1-SE minus
-own HAR on identical `(specification, target date, stock)` keys. The date-level
-differential is
+Loss differences are model A minus model B: negative values favor A. Inference averages stocks within target date before applying Bartlett-HAC at lags 5 and 20. Stage 17 uses Holm adjustment across predeclared comparisons. Stage 16 adds a paired moving-block bootstrap with 2,000 replications and block lengths 20/5; its optional edge bootstrap uses 200 replications, conditional on generated features and fixed penalties. Directed edges represent conditional predictability, not causal contagion.
 
-\[
-\delta_d=\frac{1}{N_d}\sum_i
-\left[QLIKE_{i,d}^{Network}-QLIKE_{i,d}^{Own}\right].
-\]
+Both scripts accept `--mode smoke`, `audit`, `freeze`, `prospective`, and `score`. Stage 16 also supports `report`. Run modes are:
 
-Inference is performed over dates after averaging the stock panel within each
-date. Twelve stocks on one day are not treated as twelve independent
-replications. Bartlett HAC uses lag 5 primarily and lag 20 as a fixed
-sensitivity. A paired circular moving-block bootstrap uses 2,000 replications,
-block lengths 20 and 5, and the same date-index vector for every stock in a
-replication. Percentile intervals describe the observed loss series. The
-reported bootstrap p-value, when present, is computed from the centered null
-distribution.
+| Mode | Purpose |
+| --- | --- |
+| `smoke` | Last 180 sessions with lighter settings; still requires local market data |
+| `audit` | Historical pseudo-OOS replay; `--resume` continues compatible checkpoints |
+| `freeze` | Save the prospective protocol and actual UTC freeze timestamp |
+| `prospective` | Issue eligible forecasts without reading target outcomes |
+| `score --run-id RUN_ID` | Join outcomes once observable, preserving the forecast ledger |
 
-Per-stock inference is secondary and is reported with Benjamini–Hochberg and
-Holm adjustments. The conditional edge bootstrap uses 200 replications at a
-small predeclared set of checkpoints, holds the observed penalty fixed and
-resamples training rows jointly across target equations. It is uncertainty
-conditional on generated features and fixed penalties, not a full re-estimation
-bootstrap of factors, tuning and graph selection.
-
-These choices draw on the HAR motivation in [Corsi (2009)](https://academic.oup.com/jfec/article-abstract/7/2/174/856522), the volatility-proxy and loss-function discussion in [Patton (2011)](https://doi.org/10.1016/j.jeconom.2010.03.034), and the predictive-procedure comparison framework of [Giacomini and White (2006)](https://doi.org/10.1111/j.1468-0262.2006.00718.x). Their assumptions do not turn this nested, expanding, penalized experiment into a guarantee of textbook Diebold–Mariano or conditional-predictive-ability validity.
-
-## Artifacts, freeze and execution
-
-Every run writes a machine-readable manifest containing protocol and
-configuration hashes, code hashes, freeze timestamp, last data examined,
-universe, target convention, preprocessing rules, schedules, candidate
-penalties, evaluation endpoint, data provenance, origin dates and run status.
-Forecast ledgers contain no realized target or loss columns and are protected
-by a stored SHA-256 digest. Score ledgers are created only by the later scoring
-mode, which rebuilds eligible realized outcomes from the then-current market
-data without rewriting the forecast ledger. Factor-fit metadata, RV-vintage
-metadata, coefficients, edge histories, tuning outcomes and failure
-diagnostics are written beside model, stock, period, HAC, bootstrap and graph
-summaries. Generated artifacts remain outside Git.
-
-On Windows PowerShell, the main commands are:
-
-```powershell
-& .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode smoke --no-figures --n-jobs 2
-& .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode audit --no-figures --n-jobs 2 --run-id historical_oos_v2
-& .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode freeze
-& .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode prospective --no-figures --n-jobs 2
-& .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode score --run-id PROSPECTIVE_RUN_ID
-& .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode report --run-id RUN_ID
-```
-
-The equivalent POSIX invocation replaces the interpreter path with
-`./.venv/bin/python` and uses forward slashes. The audit run may resume with
-`--resume`: existing compatible specification checkpoints are resumed, while
-specifications not yet started begin normally. Compatibility is determined by
-the forecast-generating statistical settings and the data and calendar
-prefixes. Operational changes such as worker count and checkpoint cadence do
-not invalidate a checkpoint, whereas model, protocol, data, calendar or run
-identity changes do. A completed run is never silently recomputed from an
-incompatible checkpoint.
-
-The confirmation endpoint is 252 exchange sessions, with descriptive checks
-scheduled at 63 and 126 sessions. These are design checkpoints, not optional
-stopping rules and not a power calculation. If no eligible post-freeze target
-exists, the prospective status remains `ready / awaiting_future_data` or
-`awaiting_future_data`.
+Use `python src/<stage>.py --help` for arguments. Checkpoint compatibility follows model settings, data/calendar prefixes, and run identity; worker count and checkpoint cadence are operational settings. The prospective horizon is 252 sessions, with descriptive checks at 63 and 126, not optional stopping rules. A frozen configuration must not be changed retrospectively to improve evaluated outcomes.
