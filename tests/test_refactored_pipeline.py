@@ -29,7 +29,12 @@ from utils.local_factor import (
     build_session_moments,
 )
 from utils.pca import fit_pca, pca_diagnostics, reconstruction_by_stock
-from utils.preprocessing import build_contaminated_mask, compute_intraday_returns
+from utils.preprocessing import (
+    build_contaminated_mask,
+    build_price_matrix,
+    compute_intraday_returns,
+)
+from utils.oos_common import normalize_calendar
 from utils.rolling_pca import collect_rolling_results
 from utils.variance import build_variance_ledger
 
@@ -64,6 +69,24 @@ def load_stage(filename):
 
 
 class NumericalBoundaryTest(unittest.TestCase):
+    def test_calendar_preserves_local_clocks_across_daylight_saving(self):
+        for offsets in (("-05:00", "-04:00"), ("", "")):
+            with self.subTest(offsets=offsets):
+                days = ("2026-03-06", "2026-03-09")
+                calendar = pd.DataFrame(
+                    {
+                        "date": days,
+                        "session_open": [f"{day} 09:30:00{offset}" for day, offset in zip(days, offsets)],
+                        "session_close": [f"{day} 16:00:00{offset}" for day, offset in zip(days, offsets)],
+                        "open_minute": 570, "close_minute": 960, "expected_bars": 390,
+                    }
+                )
+                normalized = normalize_calendar(calendar)
+                self.assertEqual(normalized.session_open.dt.hour.tolist(), [9, 9])
+                self.assertEqual(normalized.session_close.dt.hour.tolist(), [16, 16])
+                utc_opens = normalized.session_open.dt.tz_convert("UTC")
+                self.assertEqual(utc_opens.dt.hour.tolist(), [14, 13])
+
     def test_reconstruction_ledger_matches_pca_variance_share(self):
         panel = sample_panel().loc[:, list(CORE_UNIVERSE)]
         for method in ("covariance", "correlation"):
@@ -159,6 +182,54 @@ class NumericalBoundaryTest(unittest.TestCase):
             original["dynamic_train"], perturbed["dynamic_train"]
         )
 
+    def test_kalman_benchmark_fit_does_not_use_holdout_or_future_minutes(self):
+        panel = sample_panel(80)
+        window = make_windows(panel)[0]
+        original = fit_window(panel, window, k=3, starts=8, seed=42)
+        changed = panel.copy()
+        changed.iloc[window.train[-1] + 1 :] *= 50
+        perturbed = fit_window(changed, window, k=3, starts=8, seed=42)
+        self.assertEqual(original["x_train"].shape, (48, len(CORE_UNIVERSE)))
+        self.assertEqual(original["x_test"].shape, (12, len(CORE_UNIVERSE)))
+        for key in ("H", "static_train", "dynamic_train"):
+            np.testing.assert_allclose(original[key], perturbed[key])
+        training = panel.iloc[window.train]
+        from utils.benchmark import residualize_against_benchmarks
+
+        expected = residualize_against_benchmarks(training, CORE_UNIVERSE)
+        sessions = expected["residual_returns"].groupby(training.index.normalize()).sum()
+        np.testing.assert_allclose(original["pca"].means, sessions.mean())
+
+    def test_price_alignment_keeps_calendar_minutes_when_spy_is_missing(self):
+        expected = pd.date_range(
+            "2026-01-02 09:30", periods=3, freq="min", tz="America/New_York"
+        )
+        calendar = pd.DataFrame(
+            {"session_open": [expected[0]], "session_close": [expected[-1] + pd.Timedelta(minutes=1)]}
+        )
+        observed = pd.Series([100.0, 102.0], index=expected[[0, 2]])
+        with (
+            patch("utils.preprocessing.SYMBOLS", ("A", "SPY")),
+            patch("utils.preprocessing.load_close_series", return_value=observed),
+            patch("pandas.read_csv", return_value=calendar),
+        ):
+            prices = build_price_matrix()
+        self.assertTrue(prices.index.equals(expected))
+        self.assertTrue(prices.iloc[1].isna().all())
+
+    def test_contamination_does_not_cross_sessions(self):
+        index = pd.to_datetime(["2026-01-02 15:59", "2026-01-05 09:30"])
+        returns = pd.DataFrame({"A": [0.1, np.nan]}, index=index)
+        missing = pd.DataFrame({"A": [True, False]}, index=index)
+        self.assertEqual(build_contaminated_mask(missing, returns).A.tolist(), [True, False])
+
+    def test_contamination_rejects_a_missing_mask_row(self):
+        index = pd.date_range("2026-01-02 09:30", periods=3, freq="min")
+        returns = pd.DataFrame({"A": [np.nan, 0.1, 0.2]}, index=index)
+        missing = pd.DataFrame(False, index=index[:2], columns=["A"])
+        with self.assertRaisesRegex(ValueError, "does not align"):
+            build_contaminated_mask(missing, returns)
+
     def test_preprocessing_excludes_overnight_and_imputation_returns(self):
         index = pd.to_datetime(
             [
@@ -176,6 +247,58 @@ class NumericalBoundaryTest(unittest.TestCase):
 
 
 class PipelineIntegrationTest(unittest.TestCase):
+    def test_preprocessing_does_not_fill_overnight_or_bridge_a_gap(self):
+        module = load_stage("03-preprocess.py")
+        index = pd.to_datetime(
+            ["2026-01-02 09:30", "2026-01-02 09:31", "2026-01-02 09:33",
+             "2026-01-05 09:30", "2026-01-05 09:31", "2026-01-05 09:32"]
+        ).tz_localize("America/New_York")
+        prices = pd.DataFrame({"A": [100.0, 101.0, 103.0, np.nan, 150.0, 151.0]}, index=index)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            with (
+                patch.object(module, "build_price_matrix", return_value=prices),
+                patch.object(module, "ensure_project_directories"),
+                patch.object(module, "CLOSE_MATRIX_FILE", directory / "prices.parquet"),
+                patch.object(module, "RETURN_MATRIX_FILE", directory / "returns.parquet"),
+                patch.object(module, "MISSING_MASK_FILE", directory / "missing.parquet"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                module.main()
+            saved_prices = pd.read_parquet(directory / "prices.parquet")
+            returns = pd.read_parquet(directory / "returns.parquet")
+        self.assertTrue(pd.isna(saved_prices.iloc[3, 0]))
+        self.assertTrue(returns.iloc[[0, 2, 3, 4]].isna().all().all())
+        self.assertAlmostEqual(returns.iloc[5, 0], np.log(151.0 / 150.0))
+
+    def test_oos_loaders_ignore_missing_stocks_outside_core(self):
+        index = pd.date_range(
+            "2026-01-02 09:30", periods=4, freq="min", tz="America/New_York"
+        )
+        columns = [*CORE_UNIVERSE, *BENCHMARKS, "COF"]
+        prices = pd.DataFrame(np.arange(4)[:, None] + np.full((4, len(columns)), 100.0),
+                              index=index, columns=columns)
+        prices.loc[index[1], "COF"] = np.nan
+        missing = prices.isna()
+        prices = prices.ffill()
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            prices.to_parquet(directory / "prices.parquet")
+            missing.to_parquet(directory / "missing.parquet")
+            for filename in ("16_oos_har_network_validation.py", "17_oos_factor_augmented_har.py"):
+                module = load_stage(filename)
+                with (
+                    self.subTest(stage=filename),
+                    patch.object(module, "CLOSE_MATRIX_FILE", directory / "prices.parquet"),
+                    patch.object(module, "MISSING_MASK_FILE", directory / "missing.parquet"),
+                ):
+                    if filename.startswith("16"):
+                        complete = module._load_strict_complete_panel()[2]
+                    else:
+                        complete = module._load_inputs()[0]
+                    self.assertEqual(list(complete.columns), [*CORE_UNIVERSE, *BENCHMARKS])
+                    self.assertTrue(complete.index.equals(index[1:]))
+
     def test_rolling_charts_accept_daylight_saving_offsets(self):
         from reporting.rolling_pca import plot_benchmark_variance_removed
 

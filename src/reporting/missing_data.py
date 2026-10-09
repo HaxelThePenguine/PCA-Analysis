@@ -43,7 +43,7 @@ def report_missingness(
     print(daily_missing_summary(missing).head(30))
 
     for date_to_inspect in dates:
-        day = missing.loc[date_to_inspect]
+        day = missing.loc[missing.index.date == pd.Timestamp(date_to_inspect).date()]
         day = day[day["n_missing"] > 0]
         print(f"\n=== {date_to_inspect} ===\n")
         print_timestamp_rows(day, compact=True)

@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from config import BAD_SESSION_DATES, NY_TZ
+from utils.missing_data import normalize_ny_timestamp
 from utils.preprocessing import clean_returns, compute_strict_intraday_returns
 
 
@@ -108,15 +109,9 @@ def session_date_index(values: Iterable[object]) -> pd.DatetimeIndex:
 
 
 def _exchange_timestamps(values: pd.Series) -> pd.Series:
-    try:
-        parsed = pd.to_datetime(values)
-    except (TypeError, ValueError):
-        # Pandas 3 rejects a Series mixing EST and EDT offsets. Parsing through
-        # UTC preserves the represented instant across daylight-saving changes.
-        parsed = pd.to_datetime(values, utc=True)
-    if parsed.dt.tz is None:
-        return parsed.dt.tz_localize(NY_TZ)
-    return parsed.dt.tz_convert(NY_TZ)
+    """Preserve local clocks for naive values and mixed EST/EDT offsets."""
+
+    return values.map(normalize_ny_timestamp)
 
 
 def normalize_calendar(calendar: pd.DataFrame) -> pd.DataFrame:

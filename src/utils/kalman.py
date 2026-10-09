@@ -7,7 +7,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from config import CORE_UNIVERSE
+from config import BENCHMARKS, CORE_UNIVERSE
+from utils.benchmark import residualize_against_benchmarks
 from utils.l1_rotation import align_loading_columns, fit_l1_rotation, local_factor_test
 from utils.pca import fit_pca
 from utils.rolling import rolling_starts, session_index
@@ -167,10 +168,19 @@ def fit_window(
     starts: int,
     seed: int,
 ) -> dict[str, object]:
-    """Fit window PCA, Kalman factors, smoothing, and the L1 rotation."""
+    """Fit benchmarks, PCA, and Kalman parameters on training sessions only."""
 
     train = panel.iloc[window.train]
     test = panel.iloc[window.test]
+    if all(benchmark in panel.columns for benchmark in BENCHMARKS):
+        stocks = [column for column in panel.columns if column not in BENCHMARKS]
+        benchmark_fit = residualize_against_benchmarks(train, stocks)
+        coefficients = benchmark_fit["coefficients"].to_numpy(dtype=float)
+        test_design = np.column_stack([np.ones(len(test)), test.loc[:, list(BENCHMARKS)]])
+        test = test.loc[:, stocks] - test_design @ coefficients.T
+        train = benchmark_fit["residual_returns"]
+        train = train.groupby(train.index.normalize()).sum()
+        test = test.groupby(test.index.normalize()).sum()
     pca = fit_pca(train, method="correlation")
     x_train = pca.analysis_data.to_numpy(dtype=float)
     x_test = (
@@ -178,7 +188,7 @@ def fit_window(
         .divide(pca.scales, axis="columns")
         .to_numpy(dtype=float)
     )
-    H = np.sqrt(panel.shape[1]) * pca.eigenvectors[:, :k]
+    H = np.sqrt(train.shape[1]) * pca.eigenvectors[:, :k]
     rotation_result = fit_l1_rotation(
         pca, n_components=k, n_starts=starts, random_state=seed
     )
@@ -418,7 +428,7 @@ def collect_window_results(
                 }
             )
         for factor in range(k):
-            for stock, value in zip(panel.columns, aligned[:, factor]):
+            for stock, value in zip(result["pca"].analysis_data.columns, aligned[:, factor]):
                 loading_rows.append(
                     {
                         "window_id": window.name,

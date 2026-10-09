@@ -21,8 +21,10 @@ from typing import Iterable
 import pandas as pd
 
 from config import (
+    BENCHMARKS,
     CALENDAR_FILE,
     CLOSE_MATRIX_FILE,
+    CORE_UNIVERSE,
     MISSING_MASK_FILE,
     REPORTS_DIR,
     ensure_project_directories,
@@ -37,6 +39,7 @@ from utils.factor_har_oos import (
     issue_factor_har_forecasts,
     matched_qlike_comparisons,
 )
+from utils.data import load_panel
 from utils.network_har import HARConfig
 from utils.oos_common import (
     file_sha256,
@@ -102,7 +105,12 @@ def _effective_config(*, n_jobs: int, smoke: bool = False) -> OOSConfig:
 
 def _load_inputs(smoke: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     calendar = pd.read_csv(CALENDAR_FILE)
-    prices = pd.read_parquet(CLOSE_MATRIX_FILE)
+    prices = load_panel(
+        CLOSE_MATRIX_FILE,
+        [*CORE_UNIVERSE, *BENCHMARKS],
+        context="CORE benchmark prices",
+        require_complete=False,
+    )
     missing = pd.read_parquet(MISSING_MASK_FILE)
     _, complete, _ = strict_clean_return_panel(prices, missing)
     if smoke:

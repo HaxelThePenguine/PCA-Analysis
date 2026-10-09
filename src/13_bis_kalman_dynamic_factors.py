@@ -35,22 +35,18 @@ CRISIS_END = pd.Timestamp("2023-05-31")
 OUT_DIR = REPORTS_DIR / "kalman_dynamic_local_factors"
 
 
-def load_session_residuals() -> pd.DataFrame:
-    """Residualize the intraday panel, then aggregate residual returns by session."""
-    panel = load_benchmark_panel()
-    residuals = residualize_against_benchmarks(panel, stocks=STOCKS)["residual_returns"]
-    sessions = residuals.groupby(residuals.index.normalize(), sort=True).sum()
-    sessions.index.name = "session"
-    validate_panel(sessions, context="Session residual panel", require_complete=True)
-    return sessions
-
-
 def main() -> None:
     ensure_project_directories()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    panel = load_session_residuals()
+    panel = load_benchmark_panel()
     windows = make_windows(panel)
-    static_pca = fit_pca(panel, method="correlation")
+    # The full-sample fit is a descriptive reference. Window fits estimate
+    # benchmark coefficients from their own training observations.
+    residuals = residualize_against_benchmarks(panel, stocks=STOCKS)["residual_returns"]
+    sessions = residuals.groupby(residuals.index.normalize()).sum()
+    sessions.index.name = "session"
+    validate_panel(sessions, context="Session residual panel", require_complete=True)
+    static_pca = fit_pca(sessions, method="correlation")
     static_result = fit_l1_rotation(
         static_pca, n_components=PRIMARY_K, n_starts=PRIMARY_STARTS, random_state=SEED
     )
@@ -92,7 +88,7 @@ def main() -> None:
     for filename, table in outputs.items():
         table.to_csv(OUT_DIR / filename, index=False)
     plot_loadings(loadings, out_dir=OUT_DIR)
-    print_summary(candidates, panel, stress, summary, windows, out_dir=OUT_DIR)
+    print_summary(candidates, sessions, stress, summary, windows, out_dir=OUT_DIR)
 
 
 if __name__ == "__main__":

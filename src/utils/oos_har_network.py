@@ -171,48 +171,29 @@ def build_calendar_har_features(
     observed = log_daily_variance.copy()
     observed.index = dates
     observed = observed.reindex(calendar_dates)
-    values = observed.to_numpy(dtype=float)
     first_position = max(HAR_LOOKBACK.values()) - 1
     if len(calendar_dates) <= first_position + 1:
         raise ValueError("The calendar is too short for 22-session HAR features.")
 
-    origins: list[pd.Timestamp] = []
-    targets: list[pd.Timestamp] = []
-    feature_rows: list[list[float]] = []
-    response_rows: list[np.ndarray] = []
-    columns = [(stock, horizon) for stock in observed.columns for horizon in HORIZONS]
-    for position in range(first_position, len(calendar_dates) - 1):
-        row: list[float] = []
-        for stock_position in range(values.shape[1]):
-            row.extend(
-                [
-                    values[position, stock_position],
-                    np.nanmean(values[position - 4 : position + 1, stock_position])
-                    if np.isfinite(values[position - 4 : position + 1, stock_position]).all()
-                    else np.nan,
-                    np.nanmean(values[position - 21 : position + 1, stock_position])
-                    if np.isfinite(values[position - 21 : position + 1, stock_position]).all()
-                    else np.nan,
-                ]
-            )
-        origins.append(calendar_dates[position])
-        targets.append(calendar_dates[position + 1])
-        feature_rows.append(row)
-        response_rows.append(values[position + 1])
-    features = pd.DataFrame(
-        feature_rows,
-        index=pd.DatetimeIndex(origins, name="forecast_origin"),
-        columns=pd.MultiIndex.from_tuples(columns, names=["stock", "horizon"]),
-    )
-    response = pd.DataFrame(
-        response_rows,
-        index=features.index,
-        columns=observed.columns,
-    )
+    blocks = {
+        horizon: observed if lookback == 1 else observed.rolling(lookback).mean()
+        for horizon, lookback in HAR_LOOKBACK.items()
+    }
+    features = pd.concat(
+        {
+            stock: pd.DataFrame({horizon: blocks[horizon][stock] for horizon in HORIZONS})
+            for stock in observed.columns
+        },
+        axis=1,
+    ).iloc[first_position:-1].copy()
+    features.index = features.index.rename("forecast_origin")
+    features.columns.names = ["stock", "horizon"]
+    response = observed.shift(-1).iloc[first_position:-1].copy()
+    response.index = features.index
     return CalendarHARDesign(
         calendar_dates=calendar_dates,
         origins=features.index,
-        targets=pd.DatetimeIndex(targets, name="target_date"),
+        targets=calendar_dates[first_position + 1 :].rename("target_date"),
         response=response,
         features=features,
         origin_positions=np.arange(first_position, len(calendar_dates) - 1, dtype=int),

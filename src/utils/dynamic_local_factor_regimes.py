@@ -944,10 +944,10 @@ def _merge_sensitivity_annotations(
     result = frame.merge(
         summary, on="window_id", how="left", suffixes=("", "_sensitivity")
     )
-    result["sensitivity_run"] = result["sensitivity_run"].fillna(False).astype(bool)
+    result["sensitivity_run"] = result["sensitivity_run"].eq(True)
     result["sensitivity_reason"] = result["sensitivity_reason"].fillna("")
     result["sensitivity_instability_flag"] = (
-        result["sensitivity_instability_flag"].fillna(False).astype(bool)
+        result["sensitivity_instability_flag"].eq(True)
     )
     return result
 

@@ -5,8 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from config import BAD_SESSION_DATES, NY_TZ, RAW_SYMBOL_DIR, SYMBOLS, SYSTEMIC_GAP
+from config import BAD_SESSION_DATES, CALENDAR_FILE, NY_TZ, RAW_SYMBOL_DIR, SYMBOLS, SYSTEMIC_GAP
 from utils.data import require_columns
+from utils.missing_data import build_expected_index
 
 
 def load_close_series(symbol: str) -> pd.Series:
@@ -28,14 +29,15 @@ def load_close_series(symbol: str) -> pd.Series:
 
 
 def build_price_matrix() -> pd.DataFrame:
-    """Align all symbols to SPY's observed timestamp index."""
+    """Align all symbols to the exchange calendar, preserving missing minutes."""
 
     prices = pd.concat(
         {symbol: load_close_series(symbol) for symbol in SYMBOLS},
         axis=1,
         sort=False,
     ).sort_index()
-    return prices.reindex(prices["SPY"].dropna().index)
+    calendar = pd.read_csv(CALENDAR_FILE)
+    return prices.reindex(build_expected_index(calendar))
 
 
 def remove_systemic_gap(prices: pd.DataFrame) -> pd.DataFrame:
@@ -57,10 +59,9 @@ def compute_intraday_returns(
 ) -> pd.DataFrame:
     """Compute within-session log returns.
 
-    The default retains the historical Stage 3 behavior.  The corrected OOS
-    protocol passes ``require_consecutive=True`` so a row cannot silently
-    represent a return spanning a missing timestamp (for example, the first
-    row after the documented 2023-06-05 feed gap).
+    Pipeline stages require consecutive minutes. Set ``require_consecutive``
+    to reject returns spanning a missing timestamp, including the first row
+    after the documented 2023-06-05 feed gap.
     """
 
     if not isinstance(prices.index, pd.DatetimeIndex):
@@ -93,12 +94,12 @@ def build_contaminated_mask(
 ) -> pd.DataFrame:
     """Mark returns at and immediately after every forward-filled candle."""
 
-    aligned = (
-        missing.reindex(index=returns.index, columns=returns.columns)
-        .fillna(False)
-        .astype(bool)
-    )
-    return aligned | aligned.shift(1, fill_value=False)
+    aligned = missing.reindex(index=returns.index, columns=returns.columns)
+    if aligned.isna().any().any():
+        raise ValueError("The missingness mask does not align with the return matrix.")
+    aligned = aligned.astype(bool)
+    previous = aligned.groupby(returns.index.normalize()).shift(1, fill_value=False)
+    return aligned | previous
 
 
 def clean_returns(

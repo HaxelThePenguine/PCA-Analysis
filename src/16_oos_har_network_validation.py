@@ -23,14 +23,17 @@ import numpy as np
 import pandas as pd
 
 from config import (
+    BENCHMARKS,
     CALENDAR_FILE,
     CLOSE_MATRIX_FILE,
     CONTAMINATED_MASK_FILE,
+    CORE_UNIVERSE,
     MISSING_MASK_FILE,
     REPORTS_DIR,
     ensure_project_directories,
 )
 from reporting.oos_validation import write_figures, write_results_markdown
+from utils.data import load_panel
 from utils.network_har import (
     HAR_LOOKBACK,
     edge_stability,
@@ -81,7 +84,12 @@ def _load_calendar() -> pd.DataFrame:
 def _load_strict_complete_panel() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load the processed price/missingness artifacts and rebuild strict returns."""
 
-    prices = pd.read_parquet(CLOSE_MATRIX_FILE)
+    prices = load_panel(
+        CLOSE_MATRIX_FILE,
+        [*CORE_UNIVERSE, *BENCHMARKS],
+        context="CORE benchmark prices",
+        require_complete=False,
+    )
     missing = pd.read_parquet(MISSING_MASK_FILE)
     cleaned, complete, contaminated = strict_clean_return_panel(prices, missing)
     return prices, cleaned, complete, contaminated

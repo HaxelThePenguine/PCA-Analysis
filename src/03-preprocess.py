@@ -11,7 +11,7 @@ from config import (
 from reporting.preprocessing import print_clean_prices, print_raw_prices
 from utils.preprocessing import (
     build_price_matrix,
-    compute_intraday_returns,
+    compute_strict_intraday_returns,
     remove_systemic_gap,
 )
 
@@ -25,8 +25,8 @@ def main() -> None:
 
     prices = remove_systemic_gap(prices)
     missing_mask = prices.isna()
-    prices_clean = prices.ffill()
-    returns = compute_intraday_returns(prices_clean)
+    prices_clean = prices.groupby(prices.index.normalize()).ffill()
+    returns = compute_strict_intraday_returns(prices_clean)
 
     print_clean_prices(prices_clean, returns, missing_mask)
 
