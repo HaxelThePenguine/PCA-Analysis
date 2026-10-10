@@ -15,7 +15,7 @@ from utils.acquisition import (
 
 
 def main() -> None:
-    """Run the complete download, consolidation, and reporting pipeline."""
+    """Download minute bars and save coverage reports."""
 
     ensure_project_directories()
     data_client, trading_client = create_clients()

@@ -17,7 +17,7 @@ from utils.preprocessing import clean_returns
 
 
 def main() -> None:
-    """Clean the raw return matrix and persist all masks and panels."""
+    """Save cleaned returns and contamination masks."""
 
     ensure_project_directories()
     returns = pd.read_parquet(RETURN_MATRIX_FILE)

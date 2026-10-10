@@ -1,4 +1,4 @@
-"""Focused regression tests for the shared numerical utilities."""
+"""PCA reconstruction, benchmark residuals, scaling, and stage imports."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from utils.pca import fit_pca, fit_varimax  # noqa: E402
 
 
 class ScriptStructureTest(unittest.TestCase):
-    """Ensure numbered stages are import-safe and expose a main entry point."""
+    """Numbered stages should import without running the pipeline."""
 
     def test_numbered_scripts_are_import_safe(self) -> None:
         for path in sorted(SRC_DIR.glob("[0-9][0-9]*.py")):
@@ -30,7 +30,7 @@ class ScriptStructureTest(unittest.TestCase):
 
 
 class PCAUtilitiesTest(unittest.TestCase):
-    """Check the invariant numerical contracts of the PCA helpers."""
+    """PCA variance, reconstruction, and rotation checks."""
 
     def setUp(self) -> None:
         generator = np.random.default_rng(42)
@@ -72,7 +72,7 @@ class PCAUtilitiesTest(unittest.TestCase):
 
 
 class DataUtilitiesTest(unittest.TestCase):
-    """Check benchmark projection and intraday scaling contracts."""
+    """SPY/XLF projection and intraday scaling checks."""
 
     def test_residuals_are_orthogonal_to_benchmarks(self) -> None:
         generator = np.random.default_rng(7)

@@ -1,1 +1,1 @@
-"""Shared data and numerical routines for the research pipeline."""
+"""Data preparation, factor estimation, and forecasting."""

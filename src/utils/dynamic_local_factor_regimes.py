@@ -1,4 +1,4 @@
-"""Reusable routines for dynamic factor."""
+"""Rolling L1 fits, loading alignment, and regime diagnostics."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ class WindowDefinition:
 
 @dataclass(frozen=True)
 class WindowFit:
-    """Small, serializable summary of one window's numerical fit."""
+    """Numerical fit and diagnostics for one window."""
 
     definition: WindowDefinition
     structural_loadings: pd.DataFrame
@@ -169,7 +169,7 @@ def deterministic_seed(
     n_starts: int,
     base_seed: int = RANDOM_STATE,
 ) -> int:
-    """Derive a reproducible 32-bit seed from window identity and start count."""
+    """Derive a 32-bit seed from the window and number of starts."""
 
     token = "|".join(
         (
@@ -506,7 +506,7 @@ def _instability_reasons(
     local_changed: bool,
     condition_number: float,
 ) -> list[str]:
-    """Return descriptive flags without calling them formal break tests."""
+    """Flag changes in loadings, support, and local-factor status."""
 
     reasons: list[str] = []
     if np.isfinite(previous_cosine) and previous_cosine < COSINE_INSTABILITY_THRESHOLD:
@@ -1023,7 +1023,7 @@ def build_regime_summary(stability: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_unstable_windows(stability: pd.DataFrame) -> pd.DataFrame:
-    """Return descriptive instability candidates, not formal break tests."""
+    """List descriptive instability candidates; these are not break tests."""
 
     result = stability[
         stability["regime_candidate"] | stability["sensitivity_instability_flag"]

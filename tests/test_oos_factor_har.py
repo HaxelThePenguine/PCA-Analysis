@@ -1,4 +1,4 @@
-"""Regression tests for Stage 17 factor-augmented OOS forecasts."""
+"""Matched factor-HAR forecasts and delayed outcome scoring."""
 
 from __future__ import annotations
 

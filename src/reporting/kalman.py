@@ -1,4 +1,4 @@
-"""Charts and console output for kalman."""
+"""Kalman loading histories and holdout summaries."""
 
 from __future__ import annotations
 

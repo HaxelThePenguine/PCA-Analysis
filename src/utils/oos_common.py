@@ -1,4 +1,4 @@
-"""Shared clocks, hashing, calendar, and persistence helpers for OOS stages."""
+"""Exchange dates, data hashes, and saved OOS configurations."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from utils.preprocessing import clean_returns, compute_strict_intraday_returns
 
 
 def utc_now_iso() -> str:
-    """Return an explicit UTC timestamp without fractional seconds."""
+    """Return UTC time to whole seconds."""
 
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -194,7 +194,7 @@ def safe_positive_variance(
 
 
 def write_json(path: Path, value: Mapping[str, object]) -> None:
-    """Write deterministic, human-readable UTF-8 JSON."""
+    """Save sorted, indented UTF-8 JSON."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
     content = json.dumps(value, indent=2, sort_keys=True, default=_json_default)

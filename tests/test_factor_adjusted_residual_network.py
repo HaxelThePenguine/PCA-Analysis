@@ -1,4 +1,4 @@
-"""Focused invariants for the factor-adjusted residual network stage."""
+"""Factor projection, HAR forecasts, and network stability tests."""
 
 from __future__ import annotations
 

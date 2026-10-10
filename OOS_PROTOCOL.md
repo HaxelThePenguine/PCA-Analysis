@@ -1,6 +1,6 @@
 # OOS Volatility Forecasting: Stages 16 and 17
 
-This document collects the forecasting rules for both OOS stages. The code and each run's saved configuration define the executable specification. Results are reported separately in [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md).
+Stages 16 and 17 forecast next-session bank volatility with different targets. The rules below describe the models, available information, and evaluation. Each run saves its configuration; historical results are in [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md).
 
 The historical sample already informed factor discovery and model design, so the replay is **pseudo-OOS**. Prospective confirmation requires a protocol frozen before the evaluated outcomes become observable.
 
@@ -15,18 +15,18 @@ Stage 16 tests the network left after factor removal. Stage 17 keeps the banking
 
 The fixed CORE universe is JPM, BAC, WFC, C, USB, TFC, KEY, RF, FITB, CFG, HBAN, MS. SPY and XLF are controls. CORE plus the controls are selected before complete-case cleaning; missing stocks outside CORE do not reduce this sample. This is a fixed research universe, not a point-in-time universe backtest.
 
-## Architecture and artifacts
+## Code and saved outputs
 
-| Component | Responsibility |
+| File | Role |
 | --- | --- |
-| `src/16_oos_har_network_validation.py`, `src/17_oos_factor_augmented_har.py` | Run modes, configuration, and artifact persistence |
+| `src/16_oos_har_network_validation.py`, `src/17_oos_factor_augmented_har.py` | Run modes, configuration, and saved outputs |
 | `src/utils/oos_common.py` | Exchange clocks, strict returns, calendar alignment, hashes |
 | `src/utils/factor_adjusted_residuals.py` | Training-only benchmark/PCA fits and application to later blocks |
 | `src/utils/oos_har_network.py` | Factor/RV vintages, Stage 16 issuance, delayed scoring |
 | `src/utils/factor_har_oos.py`, `src/utils/network_har.py` | Matched Stage 17 models, HAR estimation, chronological Lasso tuning |
 | `src/reporting/` | Tables, figures, and run summaries |
 
-Generated artifacts live under `alpaca_us_banks_1m/reports/` and stay outside Git. Each run saves its configuration and provenance, factor vintages, coefficients, tuning diagnostics, and forecast ledger. Realized outcomes and losses belong to the later score ledger. The saved forecast hash protects issued predictions from accidental rewriting.
+Run outputs are saved under `alpaca_us_banks_1m/reports/` and excluded from Git. They include the configuration, data and code fingerprints, factor vintages, coefficients, tuning diagnostics, and forecast ledger. Scoring later joins outcomes and losses into a separate ledger. A stored forecast hash detects changes to issued predictions.
 
 ## Information set and preprocessing
 
@@ -135,4 +135,4 @@ Both scripts accept `--mode smoke`, `audit`, `freeze`, `prospective`, and `score
 | `prospective` | Issue eligible forecasts without reading target outcomes |
 | `score --run-id RUN_ID` | Join outcomes once observable, preserving the forecast ledger |
 
-Use `python src/<stage>.py --help` for arguments. Checkpoint compatibility follows model settings, data/calendar prefixes, and run identity; worker count and checkpoint cadence are operational settings. The prospective horizon is 252 sessions, with descriptive checks at 63 and 126, not optional stopping rules. A frozen configuration must not be changed retrospectively to improve evaluated outcomes.
+Use `python src/<stage>.py --help` for arguments. Resuming a checkpoint requires matching model settings, data/calendar prefixes, and run identity; worker count and checkpoint cadence may change. The prospective comparison runs for 252 sessions, with descriptive checks at 63 and 126 and no early stopping. Its frozen configuration stays fixed throughout evaluation.

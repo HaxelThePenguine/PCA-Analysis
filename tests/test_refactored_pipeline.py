@@ -1,4 +1,4 @@
-"""Contracts at the boundary between research stages and reusable calculations."""
+"""Stage imports, numerical results, and pipeline integration tests."""
 
 from __future__ import annotations
 

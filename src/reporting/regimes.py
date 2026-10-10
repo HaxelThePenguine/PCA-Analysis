@@ -1,4 +1,4 @@
-"""Charts and console output for regimes."""
+"""Rolling L1 loading, support, and regime figures."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ COLORS = {"LF1": "#2F6690", "LF2": "#D99A2B", "LF3": "#C26A2E"}
 
 
 def _shade_crisis(axis: Axes, dates: pd.Series | pd.DatetimeIndex) -> None:
-    """Highlight March-May 2023 without assigning a causal interpretation."""
+    """Shade the March-May 2023 interval."""
     parsed = pd.to_datetime(dates)
     if len(parsed) == 0:
         return
@@ -373,7 +373,7 @@ def _grouped_bar(
 
 
 def plot_regime_comparison(regime_summary: pd.DataFrame, *, out_dir: Path) -> None:
-    """Plot the explicit pre-crisis, crisis, post-crisis, and recent comparison."""
+    """Compare pre-crisis, crisis, post-crisis, and recent windows."""
     data = regime_summary[regime_summary["alignment_method"] == "past_only"]
     selected = data[data["window_sessions"] == 60]
     figure, axes = plt.subplots(1, 2, figsize=(15, 5.5))
@@ -499,7 +499,7 @@ def make_plots(
 
 
 def print_summary(results: dict[str, Any], *, out_dir: Path) -> None:
-    """Print a concise real-data summary for reproducibility logs."""
+    """Print rolling stability and sensitivity summaries."""
     stability = results["stability"]
     diagnostics = results["diagnostics"]
     sensitivity = results["sensitivity"]

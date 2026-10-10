@@ -1,4 +1,4 @@
-"""Publication-style figures and a compact narrative for stage 15."""
+"""HAR forecast comparisons and residual-network figures."""
 
 from __future__ import annotations
 
@@ -269,7 +269,7 @@ def plot_variance_removed(factor_diagnostics: pd.DataFrame, *, out_dir: Path) ->
 
 
 def plot_factor_loading_evolution(factor_loadings: pd.DataFrame, *, out_dir: Path) -> None:
-    """Plot the most important primary factor loadings through time."""
+    """Plot the largest primary factor loadings through time."""
 
     data = factor_loadings[
         factor_loadings["spec_name"].astype(str).eq("factor_adjusted_120")
@@ -296,7 +296,7 @@ def plot_factor_loading_evolution(factor_loadings: pd.DataFrame, *, out_dir: Pat
         axis.legend(frameon=False, ncol=4, fontsize=8, loc="upper left")
         axis.grid(axis="y", alpha=0.25)
     axes[-1].set_xlabel("Training-window end")
-    figure.suptitle("Evolution of the most important K=3 structural loadings", y=0.995)
+    figure.suptitle("Largest K=3 structural loadings through time", y=0.995)
     style_axis(axes[-1], format_dates=True)
     figure.tight_layout()
     save_figure(figure, out_dir / "15_factor_loading_evolution.png", tight_bbox=True)
@@ -331,7 +331,7 @@ def print_summary(
     *,
     out_dir: Path,
 ) -> str:
-    """Write and print a concise evidence-led stage-15 summary."""
+    """Save and print the Stage 15 forecast and network summary."""
 
     primary = forecast_summary[
         (forecast_summary["model"].isin(["own_har", "network_har_l1_1se"]))
@@ -362,18 +362,18 @@ def print_summary(
     else:
         edge_sentence = "No directed edge met the descriptive 0.70 persistence rule in the primary network."
     summary = (
-        "Stage 15 studies one-session-ahead predictability of factor-adjusted bank realized variance. "
-        "The benchmark projection and rolling correlation-PCA/L1 transformation are estimated only from preceding sessions. "
-        "Removing all three rotated directions is algebraically identical to removing the complete rolling K=3 PCA subspace; L1 rotation supplies labels and does not change the residual projector.\n\n"
+        "Stage 15 forecasts next-session factor-adjusted bank variance. "
+        "Benchmark coefficients and PCA/L1 factors are fitted on preceding sessions. "
+        "Removing all three L1 directions gives the same residuals as removing the K=3 PCA subspace.\n\n"
         + qlike_sentence
         + " "
         + test_sentence
         + " "
         + edge_sentence
         + "\n\n"
-        "These results are pseudo-out-of-sample because the historical 2023–2026 sample was already inspected during factor discovery and because the lasso is repeatedly selected within that sample. "
-        "The directed network is a conditional Granger-predictive description under the stated information set, not structural causality, contagion, alpha, or evidence of deployable trading profitability. "
-        "The March–May 2023 stress interval is not used as an outer forecast comparison when the factor-estimation burn-in removes it from the valid forecast sample."
+        "The 2023–2026 sample informed factor discovery and model selection, so these results are pseudo-OOS. "
+        "Network edges describe conditional predictability; they do not establish causality, contagion, or trading profitability. "
+        "The March–May 2023 stress comparison is unavailable if factor warm-up removes that interval from the forecast sample."
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "15_summary.txt").write_text(summary + "\n", encoding="utf-8")

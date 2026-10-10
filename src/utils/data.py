@@ -1,4 +1,4 @@
-"""Shared data loading, validation, normalization, and output helpers."""
+"""Parquet panels, column checks, and minute-of-day normalization."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def validate_panel(
     context: str,
     require_complete: bool = True,
 ) -> None:
-    """Validate the structural invariants shared by analysis panels."""
+    """Check panel timestamps, columns, and missing values."""
 
     if panel.empty:
         raise ValueError(f"{context} is empty.")

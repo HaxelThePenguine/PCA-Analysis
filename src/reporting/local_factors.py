@@ -1,4 +1,4 @@
-"""Charts and console output for local factors."""
+"""L1 loadings, local-factor diagnostics, and bootstrap stability."""
 
 from __future__ import annotations
 

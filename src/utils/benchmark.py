@@ -1,4 +1,4 @@
-"""Reusable benchmark projection and residualization utilities."""
+"""SPY/XLF regressions and benchmark-residual return panels."""
 
 from __future__ import annotations
 

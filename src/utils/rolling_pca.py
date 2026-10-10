@@ -1,4 +1,4 @@
-"""Session-based rolling PCA and within-window benchmark diagnostics."""
+"""Rolling PCA and SPY/XLF variance removal within each window."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Regression tests for the frozen Stage 16 OOS protocol."""
+"""Forecast timing, checkpoint resume, and Stage 16 scoring."""
 
 from __future__ import annotations
 

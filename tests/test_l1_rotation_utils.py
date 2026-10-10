@@ -1,4 +1,4 @@
-"""Regression tests for sparse local-factor identification utilities."""
+"""L1 rotation geometry, local-factor thresholds, and reconstruction."""
 
 from __future__ import annotations
 

@@ -1,11 +1,7 @@
-"""Auditable Stage 16 out-of-sample HAR and Network HAR utilities.
+"""Stage 16 HAR forecasts, saved factor vintages, and delayed scoring.
 
-The module deliberately keeps forecast issuance separate from outcome scoring.
-It is therefore possible to persist a forecast ledger while the target session
-is still in the future and to join realized variance only in a later scoring
-run.  The historical Stage 15 implementation remains available for legacy
-comparison; this module is the corrected, versioned protocol.
-"""
+Forecast ledgers contain predictions and issuance metadata. Realized
+variance and losses are added to a separate score ledger."""
 
 from __future__ import annotations
 
@@ -402,15 +398,10 @@ def forecast_checkpoint_specification(
     mode: str,
     freeze_timestamp: str | None,
 ) -> dict[str, object]:
-    """Return only settings that can change forecast/checkpoint contents.
+    """Return settings that affect forecast contents.
 
-    The complete protocol manifest intentionally contains operational and
-    inference settings too.  Those settings are not a valid resume key:
-    changing worker count, checkpoint cadence, HAC lag, or bootstrap controls
-    cannot change an issued forecast.  Keeping a narrower signature makes
-    checkpoints portable across machines without weakening statistical
-    compatibility checks.
-    """
+    Worker count, checkpoint cadence, HAC lags, and bootstrap settings do not
+    change predictions and are excluded from the resume signature."""
 
     har = asdict(config.har)
     for name in (
@@ -655,10 +646,8 @@ def _write_forecast_checkpoint(
                     if isinstance(value, (pd.Timestamp, datetime))
                     else value
                 ).astype("string")
-        # Legacy CSV inference can turn a descriptive value such as the
-        # rolling window label "252" into an integer.  New rows retain the
-        # string representation, so normalize every remaining object column
-        # before Arrow schema inference.
+        # CSV may parse "252" as an integer. Normalize object columns before
+        # combining resumed rows with new rows in Parquet.
         for column in frame.columns:
             dtype = frame[column].dtype
             if pd.api.types.is_object_dtype(dtype) or isinstance(dtype, pd.StringDtype):
@@ -857,13 +846,10 @@ def issue_target_free_forecasts(
     resume: bool = False,
     stop_after_origins: int | None = None,
 ) -> ForecastRunResult:
-    """Issue forecasts without reading the current target outcome.
+    """Issue forecasts from observed histories only.
 
-    The current target row is deliberately never used in this function.  The
-    response values used for fitting stop at the previous origin, while the
-    current row contributes only its already-observed D/W/M features.  The
-    returned ledger contains no realized target or loss columns.
-    """
+    Training responses stop before the current origin. The origin row supplies
+    D/W/M predictors; the returned ledger contains no outcomes or losses."""
 
     if mode not in {"historical_pseudo_oos", "prospective"}:
         raise ValueError("mode must be 'historical_pseudo_oos' or 'prospective'.")
@@ -899,10 +885,7 @@ def issue_target_free_forecasts(
     issued_counts: dict[str, int] = {stock: 0 for stock in stocks}
     start_row = 0
     completed_checkpoint_frames: dict[str, pd.DataFrame] = {}
-    # Stage 15 keeps one immutable design array per target worker.  The
-    # target-free protocol cannot reuse its whole-history worker unchanged
-    # because it must checkpoint at completed origins, but it can retain the
-    # same low-cost design precomputation.
+    # Precompute each target design once; checkpoint after completed origins.
     target_design: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, tuple[str, ...], list[tuple[str, str]]]] = {}
     for target in stocks:
         own_all, cross_all, feature_names, cross_pairs = _feature_matrix(
@@ -1320,10 +1303,8 @@ def validate_identical_model_keys(
     missing_models = requested.difference(present)
     if missing_models:
         raise ValueError(f"Forecast ledger is missing required models: {sorted(missing_models)}")
-    # Counting distinct labels is sufficient because duplicate forecast keys
-    # were rejected above and the panel is restricted to the requested model
-    # set.  Avoid aggregating Python sets: pandas 3 can coerce those objects to
-    # ndarrays during boolean indexing, yielding an unhashable-index error.
+    # Duplicate keys were rejected above, so distinct model counts suffice.
+    # Aggregated Python sets can break boolean indexing in pandas 3.
     requested_label = "|".join(requested_order)
     model_labels = forecasts["model"].astype("string")
     requested_rows = model_labels.isin(requested_order)
@@ -1369,11 +1350,9 @@ def score_forecasts(
     config: OOSConfig = OOSConfig(),
     models: Sequence[str] = FORECAST_MODELS,
 ) -> pd.DataFrame:
-    """Join realized outcomes after issuance and retain every score status.
+    """Join realized outcomes and record their scoring status.
 
-    Raw positive RV is used directly in QLIKE.  A non-positive target is
-    recorded as unscorable rather than being silently replaced by a floor.
-    """
+    QLIKE uses raw positive RV. Non-positive targets are marked unscorable."""
 
     validate_identical_model_keys(forecasts, models)
     value = forecasts.copy()
@@ -1482,9 +1461,7 @@ def score_forecasts(
         errors="ignore",
     )
     validate_identical_model_keys(scored_key_check, models)
-    # A date/stock is comparison-eligible only if every declared model has an
-    # eligible outcome.  This prevents a failing model from benefiting by
-    # dropping difficult targets.
+    # Compare a date/stock only when every model has an eligible outcome.
     scored_counts = (
         value[value["score_status"] == "scored"]
         .groupby(list(MODEL_KEY_COLUMNS), dropna=False)
@@ -1788,13 +1765,10 @@ def conditional_edge_bootstrap(
     block_lengths: Sequence[int] | None = None,
     checkpoint_step: int | None = None,
 ) -> pd.DataFrame:
-    """Estimate conditional edge-selection frequency at fixed checkpoints.
+    """Estimate edge-selection frequency by resampling training rows.
 
-    The factor/RV features and the one-SE penalty selected on the observed
-    training sample are held fixed conceptually; only the training rows are
-    resampled.  One shared date draw is reused across target equations at a
-    checkpoint, so graph summaries retain cross-equation dependence.
-    """
+    Factor/RV features and the observed one-SE penalty stay fixed. Each
+    checkpoint uses a shared date draw across target equations."""
 
     design = build_calendar_har_features(log_daily_variance, calendar)
     stocks = list(log_daily_variance.columns)
@@ -1862,9 +1836,7 @@ def conditional_edge_bootstrap(
                 )
                 for rep in range(repetitions)
             }
-            # A separate index vector is required for each target if missing
-            # rows make training samples differ, but the draw starts are shared
-            # conceptually and the common prefix is used for joint diagnostics.
+            # Targets with different training lengths use prefixes of the same draw.
             selections: dict[tuple[str, str, str], list[bool]] = {}
             signs: dict[tuple[str, str, str], list[int]] = {}
             for rep in range(repetitions):

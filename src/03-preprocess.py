@@ -17,7 +17,7 @@ from utils.preprocessing import (
 
 
 def main() -> None:
-    """Create and persist the synchronized preprocessing outputs."""
+    """Save aligned prices, missing-bar masks, and log returns."""
 
     ensure_project_directories()
     prices = build_price_matrix()

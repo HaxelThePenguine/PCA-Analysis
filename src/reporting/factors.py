@@ -1,4 +1,4 @@
-"""Charts and console output for factors."""
+"""PCA, Varimax, and Sparse PCA loading comparisons."""
 
 from __future__ import annotations
 
@@ -195,6 +195,6 @@ def print_summary(fitted, panel, *, out_dir: Path) -> None:
         print("Elastic-Net score correlation:")
         print(elastic_net.score_correlation.round(3).to_string())
     print(
-        "\nSparse PCA note: reconstruction percentages are reported instead of ordinary PCA explained-variance shares because sparse factors are penalized."
+        "\nSparse PCA percentages measure reconstruction; penalized factors do not have ordinary PCA variance shares."
     )
     print(f"\nOutputs saved to: {out_dir}")

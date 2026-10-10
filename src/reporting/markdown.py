@@ -1,4 +1,4 @@
-"""Shared Markdown rendering for report tables."""
+"""Markdown tables for saved reports."""
 
 from __future__ import annotations
 

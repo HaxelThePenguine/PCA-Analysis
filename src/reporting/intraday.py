@@ -1,4 +1,4 @@
-"""Charts and console output for intraday."""
+"""Minute-of-day volatility profiles and normalized PCA results."""
 
 from __future__ import annotations
 

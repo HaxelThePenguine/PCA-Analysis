@@ -1,4 +1,4 @@
-"""Charts and console output for acquisition."""
+"""Download coverage and trading-session summaries."""
 
 from __future__ import annotations
 

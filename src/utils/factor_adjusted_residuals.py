@@ -1,4 +1,4 @@
-"""Leakage-controlled benchmark and rolling PCA/L1 residual construction."""
+"""Fit benchmark and PCA/L1 factors on trailing sessions, then apply them forward."""
 
 from __future__ import annotations
 
@@ -127,8 +127,7 @@ def fit_factor_window(
         rotation = rotation_result.rotation.copy()
         l1_optimizer_success_rate = float(rotation_result.optimizer_success_rate)
     except Exception as error:  # pragma: no cover - injected-failure path
-        # The L1 rotation is interpretive.  A non-convex optimizer failure must
-        # not alter the causal residual target defined by the PCA subspace.
+        # The PCA projector still defines the residual target if L1 rotation fails.
         l1_rotation_status = f"failed:{type(error).__name__}"
         loadings = pca.loadings.iloc[:, : config.n_components].copy()
         rotation = pd.DataFrame(
@@ -153,9 +152,7 @@ def fit_factor_window(
         benchmarks=benchmarks,
         coefficients=benchmark_fit["coefficients"].copy(),
         residual_means=residuals.mean(),
-        # Reuse the exact scaling stored by correlation PCA so that the
-        # out-of-sample projection is numerically identical to the training
-        # representation.
+        # Apply the same scales used by the training PCA.
         residual_scales=pca.scales.copy().clip(lower=config.scale_floor),
         pca_explained=pca.explained.copy(),
         pca_eigenvalues=pca.eigenvalues.copy(),

@@ -1,4 +1,4 @@
-"""Session-safe five-minute realized variance construction."""
+"""Five-minute realized variance from complete within-session return bins."""
 
 from __future__ import annotations
 

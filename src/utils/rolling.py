@@ -1,4 +1,4 @@
-"""Session-based rolling-window helpers shared by numbered stages."""
+"""Trailing windows indexed by trading session."""
 
 from __future__ import annotations
 

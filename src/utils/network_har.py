@@ -1,4 +1,4 @@
-"""Leakage-controlled network HAR estimation and stability summaries."""
+"""Own-HAR and penalized cross-bank HAR estimation."""
 
 from __future__ import annotations
 
@@ -375,9 +375,7 @@ def _fit_lasso_result(
             raise ValueError("The lasso warm start has an incompatible shape.")
         coefficients = coefficients.copy()
     score_max = float(np.max(np.abs(cross))) if len(cross) else 0.0
-    # At alpha_max the all-zero solution is exact.  The explicit branch also
-    # prevents a tiny floating-point residual from appearing as a selected
-    # edge at the threshold.
+    # At alpha_max, force exact zeros so rounding does not select an edge.
     if alpha >= score_max - 1e-12 * max(1.0, score_max):
         return LassoSolveResult(
             np.zeros(x.shape[1]),
@@ -776,9 +774,7 @@ def tune_network_penalty(
         status = "ok"
         fallback_reason = ""
     if finite.empty:
-        # An empty/insufficient CV sample must not silently choose the weakest
-        # penalty.  Use the strongest candidate and expose the fallback in the
-        # tuning ledger.
+        # With insufficient CV history, use the strongest penalty and log the fallback.
         min_fraction = one_se_fraction = fractions[-1]
         status = "fallback_no_valid_folds"
         fallback_reason = "no finite chronological validation losses"

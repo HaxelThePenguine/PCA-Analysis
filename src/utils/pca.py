@@ -1,4 +1,4 @@
-"""Reusable PCA, Varimax, and Elastic-Net Sparse PCA utilities."""
+"""Covariance PCA, correlation PCA, Varimax, and Elastic-Net Sparse PCA."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class PCAResult:
-    """Container for one covariance or correlation PCA fit."""
+    """Covariance or correlation PCA estimates."""
 
     method: str
     analysis_data: pd.DataFrame
@@ -60,7 +60,7 @@ def reconstruction_by_stock(result: PCAResult, n_components: int = 3) -> pd.Data
 
 @dataclass(frozen=True)
 class VarimaxResult:
-    """Container for an orthogonal rotation of selected PCA components."""
+    """Orthogonally rotated PCA loadings and scores."""
 
     rotated_loadings: pd.DataFrame
     rotated_weights: pd.DataFrame
@@ -72,7 +72,7 @@ class VarimaxResult:
 
 @dataclass(frozen=True)
 class SparsePCAResult:
-    """Container for the Elastic-Net Sparse PCA fit."""
+    """Elastic-Net Sparse PCA estimates."""
 
     l1_penalty: float
     l2_penalty: float
@@ -113,13 +113,11 @@ def orient_eigenvectors(vectors: np.ndarray) -> np.ndarray:
 
 
 def fit_pca(data: pd.DataFrame, method: str = "covariance") -> PCAResult:
-    """Fit covariance or correlation PCA and return a reusable result.
+    """Fit covariance or correlation PCA.
 
-    ``weights`` are the normalized eigenvectors used to construct scores.
-    ``loadings`` are the conventional eigenvector loadings, equal to
-    ``weights * sqrt(eigenvalue)``.  For correlation PCA they are also the
-    correlations between variables and principal-component scores.
-    """
+    ``weights`` are normalized eigenvectors. ``loadings`` equal
+    ``weights * sqrt(eigenvalue)``; for correlation PCA they also give
+    variable-score correlations."""
 
     _validate_data(data)
     if method not in {"covariance", "correlation"}:
@@ -433,8 +431,7 @@ def fit_elastic_net_sparse_pca(
         columns=labels,
     )
 
-    # Use least-squares reconstruction only to measure the information kept
-    # by the sparse score space; this is not an economic regression model.
+    # Least-squares reconstruction measures variance retained by the sparse scores.
     reconstruction_coefficients = np.linalg.lstsq(
         scores.to_numpy(),
         x,

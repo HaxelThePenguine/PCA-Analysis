@@ -1,4 +1,4 @@
-"""Reusable routines for variance."""
+"""Additive benchmark and residual-PC variance decomposition."""
 
 from __future__ import annotations
 
@@ -42,9 +42,7 @@ def build_variance_ledger(
     values = residual_pca.eigenvalues
     vectors = residual_pca.eigenvectors
 
-    # vectors[i, j] is the eigenvector weight of stock i on residual PC j.
-    # Therefore lambda_j * weight_ij^2 is PC j's contribution to stock i's
-    # residual variance.
+    # Residual PC j contributes lambda_j * weight_ij^2 to stock i's variance.
     component_variance = (vectors**2) * values[None, :]
     component_labels = [
         f"residual_PC{component + 1}_variance"

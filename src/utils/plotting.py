@@ -1,4 +1,4 @@
-"""Small plotting helpers shared by the analysis scripts."""
+"""Axis styling and figure saving."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def style_axis(
     grid_linewidth: float = 0.8,
     format_dates: bool = False,
 ) -> None:
-    """Apply the project's restrained chart styling to one axis."""
+    """Set grid, spine, and tick styles."""
 
     axis.grid(axis=grid_axis, color=grid_color, linewidth=grid_linewidth)
     axis.set_axisbelow(True)

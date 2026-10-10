@@ -1,4 +1,4 @@
-"""Console presentation of preprocessing and return-quality results."""
+"""Return distributions, cleaning counts, and panel coverage."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Charts and console output for variance."""
+"""Stock-level and aggregate variance-decomposition charts."""
 
 from __future__ import annotations
 

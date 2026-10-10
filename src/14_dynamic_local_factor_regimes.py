@@ -50,7 +50,7 @@ OUTPUT_FILES = {
 
 
 def write_outputs(results: dict[str, Any], *, out_dir: Path) -> None:
-    """Write all machine-readable stage-14 artifacts to the ignored report folder."""
+    """Save Stage 14 result tables."""
     out_dir.mkdir(parents=True, exist_ok=True)
     for filename, key in OUTPUT_FILES.items():
         results[key].to_csv(out_dir / filename, index=False)
@@ -69,7 +69,7 @@ def run_analysis(
     make_figures: bool = True,
     write_files: bool = True,
 ) -> dict[str, Any]:
-    """Run the dynamic local-factor regime analysis and return all result tables."""
+    """Estimate rolling L1 factors and collect stability diagnostics."""
     if panel is None:
         required = STOCKS + list(BENCHMARKS)
         panel = load_panel(
@@ -177,7 +177,7 @@ def run_analysis(
 
 
 def main() -> None:
-    """Run stage 14 on the configured real-data panel."""
+    """Run Stage 14 on the local return panel."""
     results = run_analysis()
     print_summary(results, out_dir=OUT_DIR)
 

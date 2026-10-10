@@ -1,14 +1,14 @@
 # Results to Date
 
-**Historical snapshot:** 13 September 2026. **Market-data endpoint:** 9 September 2026.
+Results recorded on 13 September 2026, using market data through 9 September 2026.
 
-These numbers come from the recorded market-data runs, before the 9 October 2026 fixes in commit `be7444c`. CORE filtering, calendar alignment, and Kalman training isolation have since been corrected. The historical figures below have not been recomputed with those changes; the current code still needs a rerun on the real dataset. Synthetic smoke runs verify execution, not these empirical results.
+These runs predate the October changes to CORE filtering, calendar alignment, and Kalman training fits. The figures below still need to be recomputed on market data with those changes. Synthetic tests check the code but cannot validate the empirical results.
 
-## Main finding
+## Forecasting result
 
 The aggregate banking factor is the strongest historical forecasting signal. In Stage 17, it improves pooled QLIKE by roughly 5% over Own-HAR across the three specifications. Sparse local factors help interpret the loading space but do not outperform the aggregate representation. After removing the complete factor space, Stage 16 finds little stable network signal.
 
-All results are **historical pseudo-OOS**: the 2023–2026 sample informed factor discovery and model design. Untouched prospective confirmation remains pending.
+All results are historical pseudo-OOS: the 2023–2026 sample informed factor discovery and model design. Prospective confirmation is pending.
 
 ## Common variation and local factors
 
@@ -45,13 +45,13 @@ Stage 14 uses 174 trailing 60-session windows and 162 trailing 120-session windo
 | 120 | LF2 | 0.871 | 0.775 | 98.1% |
 | 120 | LF3 | 0.997 | 0.932 | 0.0% |
 
-LF2 remains the main identification warning: 77 of 305 windows receiving a 500-start refit disagree with the 200-start primary fit under the recorded comparison. $K=3$ is an interpretive choice; the eigenvalue-ratio diagnostic selects one dominant factor. The factors are oblique, not independent shocks.
+LF2 is the least stable identification: 77 of 305 windows refitted with 500 starts disagree with the 200-start fit. $K=3$ is an interpretive choice; the eigenvalue-ratio diagnostic selects one dominant factor. The factors are oblique and their scores can be correlated.
 
-The previous Kalman holdout comparison is not retained as evidence of model superiority: its benchmark fit used full-sample information. That comparison needs to be rerun after the training-only correction.
+The earlier Kalman holdout comparison used full-sample benchmark coefficients. It needs to be rerun with training-only coefficients before comparing model performance.
 
 ## Stage 16: network after factor removal
 
-Run `historical_oos_v2_20260912` evaluates factor-adjusted RV under `oos-har-network-v2.0.0`.
+Stage 16 forecasts realized variance after removing SPY/XLF and the full banking factor space.
 
 | Specification | Own-HAR QLIKE | Network-HAR 1SE QLIKE | Improvement |
 | --- | ---: | ---: | ---: |
@@ -67,7 +67,7 @@ The 90% valid-bar rule leaves 199 of 529 forecast dates for the 120-session desi
 
 ## Stage 17: factor predictability
 
-The target retains the banking component after SPY/XLF removal. All models use matched forecast keys and one training mask under `oos-factor-har-v1.0.0`.
+The target retains the banking component after SPY/XLF removal. All models use the same forecast keys and training mask.
 
 | Specification | Own-HAR | Aggregate-Factor HAR | Local-Factor HAR | Aggregate improvement |
 | --- | ---: | ---: | ---: | ---: |
@@ -81,8 +81,8 @@ Holm-adjusted HAC p-values for the primary comparison are 0.134 at lag 5 and 0.0
 
 Local-Factor HAR is worse than Aggregate-Factor HAR by 3.297%, 7.035%, and 2.281% across the three designs. Its nine factor-history regressors also create more collinearity: median condition numbers range from about 906 to 2,425. The hybrid reaches about 27,703–316,426. The aggregate signal is more parsimonious and stable.
 
-## What remains to establish
+## Pending validation
 
 The next empirical step is the frozen 252-session prospective comparison of Aggregate-Factor HAR against Own-HAR, after rerunning the corrected pipeline on real data. The current record supports volatility predictability and descriptive loading patterns; it does not establish causal shocks, contagion, or tradable return alpha.
 
-See [README.md](README.md) for architecture and execution, and [OOS_PROTOCOL.md](OOS_PROTOCOL.md) for target definitions, timing, tuning, and evaluation rules. Generated run evidence lives under `alpaca_us_banks_1m/reports/` and is not included in Git.
+See [README.md](README.md) for execution and [OOS_PROTOCOL.md](OOS_PROTOCOL.md) for forecast definitions and evaluation. Run tables and reports are saved locally under `alpaca_us_banks_1m/reports/`.

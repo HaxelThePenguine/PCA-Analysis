@@ -1,4 +1,4 @@
-"""Charts and console output for baseline."""
+"""Covariance and correlation PCA figures and summaries."""
 
 from __future__ import annotations
 

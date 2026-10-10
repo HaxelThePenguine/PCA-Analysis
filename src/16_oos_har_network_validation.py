@@ -1,12 +1,9 @@
-r"""Stage 16: frozen-protocol HAR and Network HAR validation.
+"""Stage 16: next-session HAR forecasts after banking-factor removal.
 
-Examples from the repository root::
+Run from the repository root, for example::
 
-    .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode freeze
-    .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode audit
-    .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode prospective
-    .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode score --run-id RUN_ID
-    .\.venv\Scripts\python.exe src\16_oos_har_network_validation.py --mode report --run-id RUN_ID
+    python src/16_oos_har_network_validation.py --mode audit
+    python src/16_oos_har_network_validation.py --mode report --run-id RUN_ID
 """
 
 from __future__ import annotations
@@ -213,14 +210,10 @@ def _read_checkpoint_table(checkpoint_dir: Path, stem: str, table_format: str) -
 
 
 def _canonicalize_checkpoint_table(stem: str, frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    """Normalize checkpoint identities and remove equivalent resume overlaps.
+    """Normalize date keys and remove matching checkpoint overlaps.
 
-    Older CSV rows used a space-separated timestamp while migrated Parquet
-    rows use ISO ``T`` separators.  A resume at a checkpoint boundary could
-    therefore append the same economic key twice without triggering the raw
-    string duplicate check.  Forecast duplicates are accepted only when their
-    numerical predictions agree to floating-point tolerance.
-    """
+    CSV and Parquet timestamps can differ only by their space/T separator.
+    Duplicate forecasts must agree within floating-point tolerance."""
 
     if frame.empty:
         return frame.copy(), 0
@@ -303,12 +296,10 @@ def _load_completed_historical_resume(
     dict[str, pd.DataFrame],
     dict[str, int],
 ] | None:
-    """Recover a fully issued historical run without rebuilding factor vintages.
+    """Load completed forecasts without rebuilding factors.
 
-    The shortcut is intentionally all-or-nothing.  Any incomplete checkpoint
-    or missing realized-outcome artifact returns control to the normal causal
-    construction/resume path.  Incompatible completed artifacts fail loudly.
-    """
+    Incomplete checkpoints or missing outcomes fall back to normal resume.
+    Incompatible completed checkpoints raise an error."""
 
     calendar_value = normalize_calendar(calendar)
     expected_origins = len(calendar_value) - max(HAR_LOOKBACK.values())
@@ -543,10 +534,8 @@ def _write_run_results(
     _write_table(run_dir, "edge_history.csv", forecast_result.edge_history)
     _write_table(run_dir, "tuning_history.csv", forecast_result.tuning_history)
     _write_table(run_dir, "forecast_diagnostics.csv", forecast_result.origin_diagnostics)
-    # A finalization-only recovery of a legacy completed checkpoint may not
-    # have factor diagnostics, because older code deferred writing them until
-    # after scoring.  Preserve any existing files and do not replace them with
-    # empty tables.  New runs persist these diagnostics before HAR issuance.
+    # Older checkpoints may lack factor tables. Keep existing files when
+    # finalizing them with empty diagnostic inputs.
     if factor_tables:
         _write_factor_tables(run_dir, factor_tables)
 
@@ -658,7 +647,7 @@ def run_historical(
     run_edge_bootstrap: bool = False,
     resume: bool = False,
 ) -> tuple[Path, dict[str, pd.DataFrame]]:
-    """Run historical pseudo-OOS audit/replay for the frozen corrected procedure."""
+    """Replay the historical sample using the frozen OOS settings."""
 
     started = time.perf_counter()
     run_id = run_id or _run_id("historical_pseudo_oos" if not smoke else "smoke", config)
@@ -666,9 +655,7 @@ def run_historical(
     calendar = _load_calendar()
     prices, cleaned, complete, contaminated = _load_strict_complete_panel()
     if smoke:
-        # A smoke run is an execution-path check, not a second historical
-        # result.  A final calendar slice remains long enough for the 60-day
-        # factor warm-up, 22-session HAR lag, and reduced training minimum.
+        # The smoke slice covers factor warm-up, HAR lags, and reduced training.
         calendar_value = normalize_calendar(calendar)
         smoke_dates = pd.DatetimeIndex(calendar_value["session_date"].tail(180))
         calendar_dates = pd.DatetimeIndex(pd.to_datetime(calendar["date"])).normalize()
@@ -748,8 +735,7 @@ def run_historical(
                 )
             )
             _write_table(run_dir, f"control_vintages_{window}.csv", _long_controls(vintage))
-        # Factor diagnostics are valuable audit artifacts and must survive a
-        # later failure in the much longer HAR/scoring portion of the run.
+        # Save factor diagnostics before the longer HAR and scoring steps.
         _write_factor_tables(run_dir, factor_tables)
         manifest["factor_diagnostics_status"] = "persisted_before_forecast_issuance"
         write_json(run_dir / "manifest.json", manifest)
@@ -843,7 +829,7 @@ def run_historical(
 
 
 def run_freeze(*, config: OOSConfig) -> Path:
-    """Register the corrected protocol before any eligible future outcome exists."""
+    """Save the protocol and UTC freeze time for prospective forecasts."""
 
     run_id = _run_id("protocol_freeze", config)
     run_dir = _run_directory(run_id)
@@ -870,7 +856,7 @@ def run_freeze(*, config: OOSConfig) -> Path:
 
 
 def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, make_figures: bool = True) -> Path:
-    """Issue only post-freeze forecasts; current data normally yields an empty ledger."""
+    """Issue forecasts for eligible targets after the freeze."""
 
     if freeze_manifest is None:
         freeze_manifest = OUT_DIR / "latest_protocol_manifest.json"
@@ -884,9 +870,7 @@ def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, m
         raise ValueError("The frozen protocol manifest failed its configuration hash check.")
     if frozen.get("code_provenance") != _code_provenance():
         raise ValueError("Protocol code changed after freeze; run freeze again before issuance.")
-    # Worker count is an execution control, not a research decision.  Every
-    # statistical setting comes from the immutable freeze rather than today's
-    # source defaults or command line.
+    # Keep frozen model settings; only the worker count can change here.
     config = replace(
         frozen_config,
         har=replace(frozen_config.har, n_jobs=config.har.n_jobs),
@@ -1010,7 +994,7 @@ def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, m
 
 
 def run_report(*, run_id: str | None = None) -> Path:
-    """Regenerate the durable report from an existing run directory."""
+    """Rebuild the report from saved run tables."""
 
     if run_id is None:
         directories = sorted([path for path in RUNS_DIR.iterdir() if path.is_dir()]) if RUNS_DIR.exists() else []

@@ -1,4 +1,4 @@
-"""13-bis: session Kalman factors followed by the existing L1 rotation."""
+"""Compare session-level PCA and Kalman factors after L1 rotation."""
 
 from __future__ import annotations
 
@@ -40,8 +40,7 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     panel = load_benchmark_panel()
     windows = make_windows(panel)
-    # The full-sample fit is a descriptive reference. Window fits estimate
-    # benchmark coefficients from their own training observations.
+    # Use the full sample for loading alignment; fit each window on training data.
     residuals = residualize_against_benchmarks(panel, stocks=STOCKS)["residual_returns"]
     sessions = residuals.groupby(residuals.index.normalize()).sum()
     sessions.index.name = "session"

@@ -1,4 +1,4 @@
-"""Charts and console output for rolling pca."""
+"""Rolling PCA variance shares and loading stability."""
 
 from __future__ import annotations
 
@@ -189,6 +189,6 @@ def print_summary(metrics, panel, sessions, *, out_dir: Path) -> None:
     print("\n=== CORRELATION PCA ROLLING SUMMARY ===")
     print(summary.to_string())
     print(
-        "\nBootstrap confidence bands are intentionally not implemented yet; the current outputs are descriptive rolling estimates."
+        "\nRolling estimates are descriptive; bootstrap confidence bands are not available."
     )
     print(f"\nOutputs saved to: {out_dir}")

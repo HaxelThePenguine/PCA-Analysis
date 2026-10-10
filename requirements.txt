@@ -3,6 +3,7 @@ matplotlib
 numpy
 pandas
 pyarrow
+python-dotenv
 scikit-learn
 scipy
 statsmodels

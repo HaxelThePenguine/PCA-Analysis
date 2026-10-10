@@ -1,4 +1,4 @@
-"""Reusable routines for acquisition."""
+"""Alpaca SIP downloads, monthly consolidation, and coverage checks."""
 
 from __future__ import annotations
 
@@ -16,12 +16,14 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetCalendarRequest
+from dotenv import load_dotenv
 
 from config import (
     CHUNKS_DIR,
     END_DATE,
     MAX_RETRIES,
     NY_TZ,
+    PROJECT_ROOT,
     RAW_SYMBOL_DIR,
     START_DATE,
     SYMBOLS,
@@ -44,12 +46,13 @@ BAR_COLUMNS = [
 
 
 def read_credentials() -> tuple[str, str]:
-    """Read the Alpaca credentials required by the downloader."""
+    """Read Alpaca credentials from the environment or the local .env file."""
 
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
     api_key = os.getenv("ALPACA_API_KEY")
     secret_key = os.getenv("ALPACA_SECRET_KEY")
     if not api_key or not secret_key:
-        raise RuntimeError("ALPACA_API_KEY / ALPACA_SECRET_KEY not found.")
+        raise RuntimeError("Set ALPACA_API_KEY and ALPACA_SECRET_KEY in .env or the environment.")
     return api_key, secret_key
 
 
@@ -175,7 +178,7 @@ def save_chunk_by_symbol(
     chunk_dir: Path,
     symbols: Sequence[str] = SYMBOLS,
 ) -> None:
-    """Persist one monthly Parquet file per symbol or fail atomically."""
+    """Save monthly bars per symbol; reject completion if a symbol is missing."""
 
     print(f"  RTH bars: {len(bars):,}")
     missing_symbols = []

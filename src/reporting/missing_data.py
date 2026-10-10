@@ -1,4 +1,4 @@
-"""Charts and console output for missing data."""
+"""Missing-bar coverage and gap summaries."""
 
 from __future__ import annotations
 

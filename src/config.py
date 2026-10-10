@@ -1,8 +1,4 @@
-"""Shared project configuration.
-
-All paths are resolved from the project root so the scripts can be run from
-the repository root, an IDE, or another working directory.
-"""
+"""Paths, stock universes, sample dates, and cleaning rules."""
 
 from __future__ import annotations
 
@@ -41,7 +37,7 @@ BANKS = (
     "SYF",
 )
 
-# Keep this order aligned with the beta columns used by residualization.
+# Beta columns follow the SPY, XLF order.
 BENCHMARKS = ("SPY", "XLF")
 SYMBOLS = BANKS + BENCHMARKS
 
@@ -71,12 +67,12 @@ UTC_TZ = "UTC"
 MAX_RETRIES = 6
 
 
-# Intermediate preprocessing outputs.
+# Aligned prices and raw returns.
 CLOSE_MATRIX_FILE = INTERMEDIATE_DIR / "close_matrix.parquet"
 RETURN_MATRIX_FILE = INTERMEDIATE_DIR / "return_matrix.parquet"
 MISSING_MASK_FILE = INTERMEDIATE_DIR / "missing_mask.parquet"
 
-# Clean analysis outputs.
+# Cleaned return panels.
 RETURN_MATRIX_CLEAN_FILE = PROCESSED_DIR / "return_matrix_clean.parquet"
 RETURN_MATRIX_COMPLETE_FILE = PROCESSED_DIR / "return_matrix_complete.parquet"
 CONTAMINATED_MASK_FILE = PROCESSED_DIR / "contaminated_mask.parquet"
@@ -101,7 +97,7 @@ PROJECT_DIRECTORIES = (
 
 
 def ensure_project_directories() -> None:
-    """Create only the project folders needed by the pipeline."""
+    """Create the data and report folders."""
 
     for directory in PROJECT_DIRECTORIES:
         directory.mkdir(parents=True, exist_ok=True)

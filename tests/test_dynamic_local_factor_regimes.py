@@ -1,4 +1,4 @@
-"""Regression tests for the rolling dynamic local-factor stage."""
+"""Rolling windows, loading alignment, and regime flags."""
 
 from __future__ import annotations
 

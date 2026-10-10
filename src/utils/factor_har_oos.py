@@ -1,10 +1,7 @@
-"""Causal factor-augmented HAR forecasts for benchmark-residual variance.
+"""Factor-augmented HAR forecasts for SPY/XLF-residual variance.
 
-Stage 17 asks a different question from Stage 16.  The response is realized
-variance after removing only SPY and XLF, while the predictors add common and
-economically localized factor-volatility histories.  Forecast issuance remains
-separate from outcome scoring and never reads the current target observation.
-"""
+Stage 17 keeps the banking component in the target and adds aggregate or
+local factor-volatility histories. Outcomes are joined after issuance."""
 
 from __future__ import annotations
 

@@ -156,7 +156,7 @@ def factor_count_rows(
     transformation: str,
     pca: PCAResult,
 ) -> list[dict[str, Any]]:
-    """Report the eigenvalue-ratio diagnostic without treating it as certainty."""
+    """Report adjacent eigenvalue ratios as a factor-count diagnostic."""
 
     upper = min(MAX_FACTOR_COUNT, len(pca.eigenvalues) - 1)
     ratios = pca.eigenvalues[:upper] / pca.eigenvalues[1 : upper + 1]

@@ -1,1 +1,1 @@
-"""Charts and console summaries; no model estimation."""
+"""Tables, figures, and console summaries."""

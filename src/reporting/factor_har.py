@@ -1,4 +1,4 @@
-"""Tabular inference and presentation for the Stage 17 Factor-HAR experiment."""
+"""Model comparisons and HAC tests for factor-augmented HAR."""
 
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ def write_results_markdown(
     comparisons: pd.DataFrame,
     hac: pd.DataFrame,
 ) -> None:
-    """Write the self-contained Stage 17 run report."""
+    """Save the Stage 17 model comparisons and inference tables."""
 
     lines = [
         "# Stage 17 OOS Factor-HAR Results",
@@ -94,9 +94,9 @@ def write_results_markdown(
         f"Status: `{manifest.get('status', 'unknown')}`.",
         "",
         "The target is next-session realized variance after removing only SPY and XLF. "
-        "Every reported comparison uses identical forecast keys. Negative mean QLIKE "
-        "differences favor model A over model B. Historical audit results are pseudo-OOS "
-        "development evidence and are not an untouched holdout.",
+        "Comparisons use the same forecast keys. Negative mean QLIKE "
+        "differences favor model A. Historical runs are pseudo-OOS because the sample "
+        "informed model development.",
         "",
     ]
     if model_summary.empty:

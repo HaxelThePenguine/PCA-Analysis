@@ -17,7 +17,7 @@ from utils.preprocessing import build_complete_universe
 
 
 def main() -> None:
-    """Build and save both configured analysis universes."""
+    """Save complete CORE and FULL return panels."""
 
     ensure_project_directories()
     returns = pd.read_parquet(RETURN_MATRIX_CLEAN_FILE)

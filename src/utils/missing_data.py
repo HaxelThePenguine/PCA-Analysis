@@ -1,4 +1,4 @@
-"""Reusable routines for missing data."""
+"""Exchange-calendar minute grids and missing-bar counts."""
 
 from __future__ import annotations
 

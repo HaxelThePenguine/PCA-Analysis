@@ -2,8 +2,10 @@
 __pycache__/
 *.py[cod]
 .env
+.env.*
+!.env.example
 
-# Raw and generated market-data files are kept outside version control.
+# Local market data and analysis outputs.
 alpaca_us_banks_1m/chunks/
 alpaca_us_banks_1m/raw/
 alpaca_us_banks_1m/intermediate/

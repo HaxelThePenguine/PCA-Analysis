@@ -2,17 +2,17 @@
 
 ## Research objective
 
-I started this project to understand what moves U.S. banks together at intraday frequency, and what remains after removing SPY and XLF exposure. The pipeline goes from one-minute SIP bars to PCA, sparse factor identification, and next-session volatility forecasts. The main questions are whether the internal banking factors are stable and interpretable, and whether they help predict volatility out of sample.
+I use one-minute returns to study what moves U.S. banks together after removing SPY and XLF exposure. PCA and sparse rotation describe the banking factors; rolling estimates check their stability, and HAR models test whether their histories help forecast next-session volatility.
 
-So far, the aggregate banking factor gives the clearest forecasting result. Sparse rotation identifies persistent MS/C, large-bank, and regional-bank patterns, but the localized histories do not improve on the aggregate factor. After removing the complete factor space, the remaining volatility network is weak and unstable.
+The aggregate banking factor gives the strongest historical forecasting result. Sparse rotation identifies MS/C, large-bank, and regional-bank patterns, but their separate histories do not improve on the aggregate factor. The volatility network left after removing the full factor space is weak and unstable.
 
-Detailed historical results are in [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md). [OOS_PROTOCOL.md](OOS_PROTOCOL.md) collects the Stage 16–17 targets, timing, models, and evaluation rules.
+Results are in [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md), with forecast definitions and evaluation rules in [OOS_PROTOCOL.md](OOS_PROTOCOL.md).
 
 ## Data and research universe
 
 Historical observations come from the Alpaca SIP feed. The sample runs from 1 January 2023 through 9 September 2026 and contains 924 regular U.S. trading sessions. Prices are sampled at one-minute frequency during the official regular session, including exchange-calendar early closes.
 
-| Item | Production choice |
+| Item | Setting |
 | --- | --- |
 | Frequency | One-minute SIP bars |
 | Fields | OHLC, volume, trade count, and VWAP |
@@ -48,14 +48,14 @@ SIP minute bars
     -> SPY/XLF residualization
     -> PCA, sparse rotation, and rolling stability
     -> realized-volatility construction
-    -> target-free walk-forward issuance and delayed scoring
+    -> walk-forward forecasts and scoring once outcomes are observed
 ```
 
-Raw and generated data remain under `alpaca_us_banks_1m/` and are excluded from Git. Source code, protocol documents, and tests remain versioned.
+Local market data and analysis outputs are saved under `alpaca_us_banks_1m/`. Git excludes the raw bars, processed panels, and generated analysis reports.
 
 ### Universe selection and temporal splits
 
-CORE and FULL select stocks; they are not train/test datasets. Stage 6 drops incomplete rows separately for each universe. The OOS stages select CORE plus SPY/XLF before cleaning, so missing observations in stocks outside CORE do not reduce the primary sample.
+CORE and FULL define stock universes. Stage 6 drops incomplete rows separately for each. The OOS stages select CORE plus SPY/XLF before cleaning, so missing observations outside CORE do not reduce the primary sample.
 
 Time splits use whole trading sessions. The Kalman comparison uses 48 training and 12 holdout sessions within each 60-session window, with benchmark coefficients, scaling, and PCA fitted on training only. Stages 16 and 17 use walk-forward estimation: training labels must be observable at the forecast origin, tuning stays within the training history, and target outcomes are joined only during scoring. Missing sessions stay on the exchange calendar when constructing HAR lags.
 
@@ -70,7 +70,7 @@ R=\frac{1}{n-1}Z^{\top}Z,
 \qquad Rv_k=\lambda_kv_k.
 $$
 
-The score is $f_k=Zv_k$; the loading is $L_{ik}=\sqrt{\lambda_k}v_{ik}$. Both are kept explicitly. Correlation PCA is primary because stocks have different volatility scales; covariance PCA provides a comparison.
+The score is $f_k=Zv_k$ and the loading is $L_{ik}=\sqrt{\lambda_k}v_{ik}$. Correlation PCA is primary because stocks have different volatility scales; covariance PCA provides a comparison.
 
 Broad market and sector exposure is removed stock by stock through
 
@@ -78,7 +78,7 @@ $$
 r_{i,t}=\alpha_i+\beta_{i,M}r_{SPY,t}+\beta_{i,F}r_{XLF,t}+e_{i,t}.
 $$
 
-The variance ledger reconciles benchmark and residual PCA contributions. SPY and XLF are controls, so their residuals are not structural shocks.
+The variance decomposition adds benchmark and residual PCA contributions back to total stock variance. SPY/XLF residuals still contain correlated banking movements.
 
 ### Sparse localization inside the PCA space
 
@@ -121,7 +121,7 @@ Both stages forecast next-session realized variance from daily, weekly, and mont
 
 ## Main empirical results
 
-These are the recorded September 2026 results. They have not been rerun on market data after the October preprocessing and CORE-filtering fixes. [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md) records their provenance and limits.
+These figures come from the September 2026 runs. They need to be recomputed after the October changes to calendar alignment and CORE filtering; see [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md) for the sample dates and limitations.
 
 | Specification | PC1 variance | First three components |
 | --- | ---: | ---: |
@@ -129,7 +129,7 @@ These are the recorded September 2026 results. They have not been rerun on marke
 | Intraday-normalized correlation PCA | 64.47% | 75.81% |
 | SPY/XLF residual correlation PCA | 35.71% | 56.11% |
 
-SPY/XLF account for 43.59% of total CORE variance. The full-sample $K=3$ L1 rotation produces small-loading counts of 9, 8, and 4. LF1 is concentrated on MS, C, and WFC; LF2 on JPM, BAC, WFC, and an unstable C/MS boundary; LF3 on JPM and the seven regional-bank names. LF1 and LF2 pass the local-factor diagnostic. LF3 does not, but its direction and support are exceptionally stable, so it is best described as a broad regional-bank cluster.
+SPY/XLF account for 43.59% of total CORE variance. The full-sample $K=3$ L1 rotation gives small-loading counts of 9, 8, and 4. LF1 concentrates on MS, C, and WFC; LF2 on JPM, BAC, WFC, with an unstable C/MS boundary; LF3 on JPM and the seven regional-bank names. LF1 and LF2 pass the local-factor diagnostic. LF3 has stable direction and support but is too broad to pass that rule.
 
 The corrected Stage 16 network gain is small. Under the primary 120-session expanding specification, QLIKE changes from 0.240384 for Own-HAR to 0.240250 for Network HAR, a relative improvement of 0.056%. No primary directed edge reaches the frozen 70% stability threshold.
 
@@ -141,7 +141,7 @@ Stage 17 produces the stronger predictive result.
 | 120-session factor, rolling-252 HAR | 0.213218 | 0.202685 | 0.216944 | 4.940% |
 | 60-session factor, expanding HAR | 0.214540 | 0.204428 | 0.209091 | 4.713% |
 
-The aggregate banking factor has the strongest historical predictive result. Sparse factors help interpretation but add no forecast value beyond the aggregate. This does not establish causality, return alpha, or live performance.
+Separate sparse-factor histories do not improve on the aggregate specification. These historical volatility forecasts still need prospective validation.
 
 ## Architecture and execution
 
@@ -162,7 +162,16 @@ python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-To download SIP data, define `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` in your environment. If the raw data are already available, start at Stage 2. Run the stages below in order with `python src/<filename>`; Stages 16 and 17 also require a mode.
+To download SIP data, copy `.env.example` to `.env` in the repository root and fill in both values:
+
+```text
+ALPACA_API_KEY=your_api_key
+ALPACA_SECRET_KEY=your_secret_key
+```
+
+The downloader reads `.env` automatically. Existing environment variables take precedence. The keys need access to historical SIP data, and `.env` is excluded from Git.
+
+If the raw data are already available, start at Stage 2. Run the stages below in order with `python src/<filename>`; Stages 16 and 17 also require a mode.
 
 ```text
 01-crwal.py                           acquire/resume SIP data and quality reports
@@ -192,11 +201,15 @@ python src/16_oos_har_network_validation.py --mode smoke --no-figures
 python src/17_oos_factor_augmented_har.py --mode smoke
 ```
 
-Smoke mode uses the last 180 sessions and lighter settings; it still requires the local dataset. Tests cover reconstruction, variance reconciliation, preprocessing, CORE selection, holdout isolation, rolling causality, import safety, parallel equivalence, checkpointing, and scoring. Generated artifacts stay under `alpaca_us_banks_1m/reports/` and are excluded from Git.
+Smoke mode uses the last 180 sessions with lighter settings and requires the local dataset. For the full historical forecasts, run:
 
-The downloader filename `01-crwal.py` contains a historical typo and remains unchanged for command compatibility.
+```text
+python src/16_oos_har_network_validation.py --mode audit
+python src/17_oos_factor_augmented_har.py --mode audit
+```
 
+Tests cover reconstruction, variance decomposition, preprocessing, CORE selection, training/holdout separation, rolling timing, imports, parallel forecasts, checkpoint resume, and scoring.
 
-## Interpretation discipline
+## Interpretation
 
 PCA signs are arbitrary, and sparse weights do not prove economic inclusion or exclusion. L1 factors depend on the retained dimension and rotation criterion. Residualization does not create exogenous shocks; directed network edges describe conditional predictability, not contagion. Historical walk-forward results remain pseudo-OOS when the same history informed model discovery. The main claim still needs prospective confirmation.

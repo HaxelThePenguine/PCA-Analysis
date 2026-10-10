@@ -51,7 +51,7 @@ GROUPS = {
 
 @dataclass(frozen=True)
 class Stage15Config:
-    """Small immutable configuration object for deterministic production runs."""
+    """Factor windows and HAR settings for Stage 15."""
 
     factor_windows: tuple[int, ...] = FACTOR_WINDOWS
     factor_update_step: int = 5

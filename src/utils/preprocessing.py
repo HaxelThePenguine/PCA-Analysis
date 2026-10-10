@@ -1,4 +1,4 @@
-"""Reusable routines for preprocessing."""
+"""Price alignment, within-session returns, and contamination masks."""
 
 from __future__ import annotations
 

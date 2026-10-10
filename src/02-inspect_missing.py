@@ -27,7 +27,7 @@ COMMON_GAPS_COLUMNS = (
 
 
 def main() -> None:
-    """Build, report, and save the raw-data missingness matrix."""
+    """Save the missing-bar matrix and gap reports."""
 
     ensure_project_directories()
     calendar = pd.read_csv(

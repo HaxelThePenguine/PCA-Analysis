@@ -1,4 +1,4 @@
-"""Charts and console output for residuals."""
+"""SPY/XLF exposure and residual PCA comparisons."""
 
 from __future__ import annotations
 

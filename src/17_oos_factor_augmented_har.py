@@ -1,12 +1,9 @@
-r"""Stage 17: OOS predictive validation of common and sparse local factors.
+"""Stage 17: test banking-factor histories as next-session HAR predictors.
 
-Examples from the repository root::
+Run from the repository root, for example::
 
-    .\.venv\Scripts\python.exe src\17_oos_factor_augmented_har.py --mode smoke --n-jobs 2
-    .\.venv\Scripts\python.exe src\17_oos_factor_augmented_har.py --mode audit --n-jobs 12
-    .\.venv\Scripts\python.exe src\17_oos_factor_augmented_har.py --mode freeze
-    .\.venv\Scripts\python.exe src\17_oos_factor_augmented_har.py --mode prospective --n-jobs 12
-    .\.venv\Scripts\python.exe src\17_oos_factor_augmented_har.py --mode score --run-id RUN_ID
+    python src/17_oos_factor_augmented_har.py --mode audit --n-jobs 2
+    python src/17_oos_factor_augmented_har.py --mode score --run-id RUN_ID
 """
 
 from __future__ import annotations
