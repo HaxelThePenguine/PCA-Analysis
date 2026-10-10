@@ -196,9 +196,6 @@ Smoke mode uses the last 180 sessions and lighter settings; it still requires th
 
 The downloader filename `01-crwal.py` contains a historical typo and remains unchanged for command compatibility.
 
-## Next step
-
-Rerun the corrected pipeline on the real dataset, then accumulate the frozen 252-session prospective comparison of Aggregate-Factor HAR against Own-HAR. Factor count, features, eligibility, and tuning rules stay fixed before evaluation. Stage 16 Network HAR remains a secondary comparison.
 
 ## Interpretation discipline
 
