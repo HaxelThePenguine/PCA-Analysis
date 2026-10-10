@@ -228,7 +228,7 @@ def fit_window(
 def variance(
     observed: np.ndarray, reconstructed: np.ndarray
 ) -> tuple[float, float, float]:
-    """Return reconstructed variance, residual variance, and explained percent."""
+    """Return mean squared reconstruction, residual MSE, and explained percent."""
 
     residual = observed - reconstructed
     total = float(np.square(observed).mean())

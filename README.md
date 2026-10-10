@@ -4,13 +4,13 @@
 
 I use one-minute returns to study what moves U.S. banks together after removing SPY and XLF exposure. PCA and sparse rotation describe the banking factors; rolling estimates check their stability, and HAR models test whether their histories help forecast next-session volatility.
 
-The aggregate banking factor gives the strongest historical forecasting result. Sparse rotation identifies MS/C, large-bank, and regional-bank patterns, but their separate histories do not improve on the aggregate factor. The volatility network left after removing the full factor space is weak and unstable.
+Aggregate-Factor HAR reduces historical pooled QLIKE by 2.916–3.784% relative to Own-HAR across the three specifications. Separate local-factor histories do not improve on the aggregate representation. Sparse rotation identifies MS/C, large-bank, and regional-bank patterns.
 
 Results are in [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md), with forecast definitions and evaluation rules in [OOS_PROTOCOL.md](OOS_PROTOCOL.md).
 
 ## Data and research universe
 
-Historical observations come from the Alpaca SIP feed. The sample runs from 1 January 2023 through 9 September 2026 and contains 924 regular U.S. trading sessions. Prices are sampled at one-minute frequency during the official regular session, including exchange-calendar early closes.
+Historical observations come from the Alpaca SIP feed. The sample runs from 1 January 2023 through 9 September 2026 and contains 924 regular U.S. trading sessions; 923 remain usable after the auction-session exclusion. Prices are sampled at one-minute frequency during the official regular session, including exchange-calendar early closes.
 
 | Item | Setting |
 | --- | --- |
@@ -121,27 +121,25 @@ Both stages forecast next-session realized variance from daily, weekly, and mont
 
 ## Main empirical results
 
-These figures come from the September 2026 runs. They need to be recomputed after the October changes to calendar alignment and CORE filtering; see [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md) for the sample dates and limitations.
+These figures were recomputed on 10 October 2026 using market data through 9 September 2026. [RESULTS_TO_DATE.md](RESULTS_TO_DATE.md) includes rolling stability, the corrected Kalman comparison, sample coverage, and inference.
 
 | Specification | PC1 variance | First three components |
-| --- | ---: | ---: |
+| --- | --- | --- |
 | Raw correlation PCA | 63.77% | 75.85% |
-| Intraday-normalized correlation PCA | 64.47% | 75.81% |
+| Intraday-normalized covariance PCA | 64.47% | 75.81% |
 | SPY/XLF residual correlation PCA | 35.71% | 56.11% |
 
-SPY/XLF account for 43.59% of total CORE variance. The full-sample $K=3$ L1 rotation gives small-loading counts of 9, 8, and 4. LF1 concentrates on MS, C, and WFC; LF2 on JPM, BAC, WFC, with an unstable C/MS boundary; LF3 on JPM and the seven regional-bank names. LF1 and LF2 pass the local-factor diagnostic. LF3 has stable direction and support but is too broad to pass that rule.
+SPY/XLF account for 43.59% of total CORE variance. The $K=3$ L1 rotation gives small-loading counts of 9, 8, and 4: LF1 and LF2 pass the local-factor rule, while LF3 is a broader regional-bank cluster.
 
-The corrected Stage 16 network gain is small. Under the primary 120-session expanding specification, QLIKE changes from 0.240384 for Own-HAR to 0.240250 for Network HAR, a relative improvement of 0.056%. No primary directed edge reaches the frozen 70% stability threshold.
+After removing the full banking factor space, Network HAR improves primary QLIKE by 0.030%. No primary directed HAR term reaches the 70% stability threshold.
 
-Stage 17 produces the stronger predictive result.
+| Specification | Own-HAR | Aggregate-Factor HAR | Local-Factor HAR | Aggregate improvement |
+| --- | --- | --- | --- | --- |
+| 120-session factor, expanding HAR | 0.171383 | 0.164923 | 0.167543 | 3.770% |
+| 120-session factor, rolling-252 HAR | 0.170997 | 0.166010 | 0.173207 | 2.916% |
+| 60-session factor, expanding HAR | 0.171903 | 0.165398 | 0.168505 | 3.784% |
 
-| Specification | Own-HAR | Aggregate factor | Local factors | Aggregate improvement |
-| --- | ---: | ---: | ---: | ---: |
-| 120-session factor, expanding HAR | 0.210206 | 0.199614 | 0.206196 | 5.039% |
-| 120-session factor, rolling-252 HAR | 0.213218 | 0.202685 | 0.216944 | 4.940% |
-| 60-session factor, expanding HAR | 0.214540 | 0.204428 | 0.209091 | 4.713% |
-
-Separate sparse-factor histories do not improve on the aggregate specification. These historical volatility forecasts still need prospective validation.
+Aggregate-Factor HAR reduces historical pooled QLIKE by 2.916–3.784% relative to Own-HAR across the three specifications. Separate local-factor histories do not improve on the aggregate representation. These historical forecasts still need prospective validation.
 
 ## Architecture and execution
 

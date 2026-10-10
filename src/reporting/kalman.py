@@ -42,7 +42,7 @@ def print_summary(
 ) -> None:
     dynamic = summary.iloc[2]
     recurring = candidates[candidates["recurring_candidate"]]
-    answer = f"Kalman dynamic factors: median filtered holdout residual variance {dynamic['holdout_residual_variance_median']:.6g}, one-step {dynamic['one_step_residual_variance_median']:.6g}; loading cosine {dynamic['cosine_median']:.3f}, support Jaccard {dynamic['support_jaccard_median']:.3f}. Recurring candidates: {len(recurring)}; group labels remain data-dependent."
+    answer = f"Kalman dynamic factors: median filtered holdout reconstruction MSE {dynamic['holdout_residual_variance_median']:.6g}, one-step MSE {dynamic['one_step_residual_variance_median']:.6g}; loading cosine {dynamic['cosine_median']:.3f}, support Jaccard {dynamic['support_jaccard_median']:.3f}. Recurring candidates: {len(recurring)}; group labels remain data-dependent."
     (out_dir / "13_bis_summary.txt").write_text(answer + "\n", encoding="utf-8")
     print("=== 13-BIS KALMAN DYNAMIC FACTORS + L1 ===")
     print(f"Session residual panel: {panel.shape}; windows: {len(windows)}")

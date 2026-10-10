@@ -353,7 +353,8 @@ def print_summary(
         test_sentence = f"The pooled HAC loss differential is {pooled['mean_difference']:.6g} with HAC standard error {pooled['hac_se']:.6g} and nominal p-value {pooled['p_value']:.6g}; negative values favor the network model."
     else:
         test_sentence = "No pooled HAC comparison was available."
-    stable = edge_stability[edge_stability["stable_edge"]].sort_values("selection_probability", ascending=False)
+    primary_edges = edge_stability["spec_name"].isin(primary["spec_name"].unique())
+    stable = edge_stability[primary_edges & edge_stability["stable_edge"]].sort_values("selection_probability", ascending=False)
     if not stable.empty:
         strongest = ", ".join(
             f"{row.edge_id} ({row.selection_probability:.2f})" for row in stable.head(5).itertuples()
