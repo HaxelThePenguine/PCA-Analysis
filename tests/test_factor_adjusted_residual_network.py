@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import runpy
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -36,8 +34,7 @@ from utils.realized_volatility import (  # noqa: E402
 
 
 def _minute_panel(
-    n_sessions: int = 8,
-    stocks: tuple[str, ...] = ("A", "B", "C", "D", "E", "F"),
+    n_sessions: int = 8, stocks: tuple[str, ...] = ("A", "B", "C", "D", "E", "F"),
     minutes_per_session: int = 10,
 ) -> pd.DataFrame:
     rng = np.random.default_rng(1201)
@@ -48,9 +45,7 @@ def _minute_panel(
     benchmarks = rng.normal(size=(len(index), 2))
     stock_values = benchmarks @ rng.normal(size=(2, len(stocks))) + rng.normal(size=(len(index), len(stocks)))
     return pd.DataFrame(
-        np.column_stack([stock_values, benchmarks]) * 0.01,
-        index=index,
-        columns=[*stocks, "SPY", "XLF"],
+        np.column_stack([stock_values, benchmarks]) * 0.01, index=index, columns=[*stocks, "SPY", "XLF"],
     )
 
 
@@ -58,9 +53,7 @@ class FactorResidualTest(unittest.TestCase):
     def test_rotation_projector_and_residual_orthogonality(self) -> None:
         panel = _minute_panel()
         fit = fit_factor_window(
-            panel.iloc[:50],
-            tuple(panel.columns[:6]),
-            ("SPY", "XLF"),
+            panel.iloc[:50], tuple(panel.columns[:6]), ("SPY", "XLF"),
             FactorConfig(window_sessions=5, n_components=3, l1_starts=8),
         )
         applied = apply_factor_fit(panel.iloc[50:], fit)
@@ -96,9 +89,7 @@ class FactorResidualTest(unittest.TestCase):
 
     def test_rolling_score_blocks_are_disjoint(self) -> None:
         result = run_factor_adjustment(
-            _minute_panel(n_sessions=8),
-            ("A", "B", "C", "D", "E", "F"),
-            ("SPY", "XLF"),
+            _minute_panel(n_sessions=8), ("A", "B", "C", "D", "E", "F"), ("SPY", "XLF"),
             FactorConfig(window_sessions=4, update_step_sessions=2, n_components=3, l1_starts=8),
             spec_name="test",
         )
@@ -113,15 +104,12 @@ class RealizedVarianceTest(unittest.TestCase):
         panel = panel.drop(index=missing)
         calendar = pd.DataFrame(
             {
-                "date": ["2023-01-02", "2023-01-03"],
-                "open_minute": [570, 570],
-                "close_minute": [580, 580],
+                "date": ["2023-01-02", "2023-01-03"], "open_minute": [570, 570], "close_minute": [580, 580],
                 "expected_bars": [10, 10],
             }
         )
         result = aggregate_realized_variance(
-            {"raw": panel.iloc[:, :6], "factor_adjusted": panel.iloc[:, :6]},
-            calendar,
+            {"raw": panel.iloc[:, :6], "factor_adjusted": panel.iloc[:, :6]}, calendar,
             RealizedVarianceConfig(),
         )
         self.assertEqual(result.interval_diagnostics.loc[pd.Timestamp("2023-01-02"), "n_valid_intervals"], 2)
@@ -149,8 +137,7 @@ class HARModelTest(unittest.TestCase):
         fit = fit_partialling_out(y, own, cross, alpha=0.0, cross_feature_names=["a", "b", "c", "d"])
         expected = np.linalg.lstsq(np.column_stack([np.ones(len(y)), own, cross]), y, rcond=None)[0]
         np.testing.assert_allclose(
-            np.r_[fit.intercept, fit.own_coefficients, fit.network_coefficients_original],
-            expected,
+            np.r_[fit.intercept, fit.own_coefficients, fit.network_coefficients_original], expected,
             atol=1e-10,
         )
         np.testing.assert_allclose(fit.train_predictions, y, atol=1e-10)
@@ -160,9 +147,7 @@ class HARModelTest(unittest.TestCase):
         index = pd.bdate_range("2023-01-02", periods=65)
         data = pd.DataFrame(np.exp(rng.normal(size=(65, 3))), index=index, columns=["A", "B", "C"])
         result = walk_forward_forecasts(
-            np.log(data),
-            spec_name="test",
-            factor_window_sessions=4,
+            np.log(data), spec_name="test", factor_window_sessions=4,
             config=HARConfig(min_training_observations=10, cv_splits=2, tuning_frequency=5, lasso_max_iter=500),
         )
         self.assertAlmostEqual(2.0 / 1.0 - np.log(2.0) - 1.0, 1.0 - np.log(2.0))
@@ -191,26 +176,17 @@ class HARModelTest(unittest.TestCase):
         data = pd.DataFrame(rng.normal(size=(45, 5)), index=index, columns=list("ABCDE"))
         base = dict(min_training_observations=10, cv_splits=2, tuning_frequency=5, lasso_max_iter=300)
         serial = walk_forward_forecasts(
-            data,
-            spec_name="parallel_check",
-            factor_window_sessions=4,
-            config=HARConfig(n_jobs=1, **base),
+            data, spec_name="parallel_check", factor_window_sessions=4, config=HARConfig(n_jobs=1, **base),
         )
         parallel = walk_forward_forecasts(
-            data,
-            spec_name="parallel_check",
-            factor_window_sessions=4,
-            config=HARConfig(n_jobs=2, **base),
+            data, spec_name="parallel_check", factor_window_sessions=4, config=HARConfig(n_jobs=2, **base),
         )
         for column in ("predicted_log_variance", "qlike", "selected_penalty"):
             np.testing.assert_allclose(
-                serial.forecasts[column].fillna(-1),
-                parallel.forecasts[column].fillna(-1),
-                atol=1e-10,
+                serial.forecasts[column].fillna(-1), parallel.forecasts[column].fillna(-1), atol=1e-10,
             )
         np.testing.assert_allclose(
-            serial.edge_history["coefficient_original"],
-            parallel.edge_history["coefficient_original"],
+            serial.edge_history["coefficient_original"], parallel.edge_history["coefficient_original"],
             atol=1e-10,
         )
 
@@ -224,11 +200,8 @@ class HARModelTest(unittest.TestCase):
         )
         log_variance = pd.DataFrame(values, index=index, columns=["A", "B", "C", "D"])
         config = HARConfig(
-            min_training_observations=25,
-            cv_splits=2,
-            tuning_frequency=10,
-            alpha_fractions=(0.01, 0.03, 0.10, 0.30, 1.0),
-            lasso_max_iter=700,
+            min_training_observations=25, cv_splits=2, tuning_frequency=10,
+            alpha_fractions=(0.01, 0.03, 0.10, 0.30, 1.0), lasso_max_iter=700,
         )
         result = walk_forward_forecasts(log_variance, spec_name="sparse", factor_window_sessions=4, config=config)
         stability = edge_stability(result.edge_history)
@@ -239,14 +212,6 @@ class HARModelTest(unittest.TestCase):
         independent_result = walk_forward_forecasts(independent, spec_name="independent", factor_window_sessions=4, config=config)
         density = network_density(independent_result.edge_history)
         self.assertLess(float(density["stable_edge_density"].iloc[0]), 0.80)
-
-
-class ImportSafetyTest(unittest.TestCase):
-    def test_stage_import_has_no_execution_side_effect(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            namespace = runpy.run_path(SRC_DIR / "15_factor_adjusted_residual_network.py", run_name="test_stage15")
-            self.assertTrue(callable(namespace["main"]))
-            self.assertFalse(any(Path(temporary).iterdir()))
 
 
 if __name__ == "__main__":

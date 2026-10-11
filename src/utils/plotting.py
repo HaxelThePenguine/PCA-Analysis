@@ -13,12 +13,8 @@ DEFAULT_GRID_COLOR = "#D9DEE5"
 
 
 def style_axis(
-    axis: Axes,
-    *,
-    grid_axis: Literal["x", "y", "both"] = "y",
-    grid_color: str = DEFAULT_GRID_COLOR,
-    grid_linewidth: float = 0.8,
-    format_dates: bool = False,
+    axis: Axes, *, grid_axis: Literal["x", "y", "both"] = "y", grid_color: str = DEFAULT_GRID_COLOR,
+    grid_linewidth: float = 0.8, format_dates: bool = False,
 ) -> None:
     """Set grid, spine, and tick styles."""
 
@@ -32,13 +28,7 @@ def style_axis(
         axis.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
 
 
-def save_figure(
-    figure: Figure,
-    path: Path,
-    *,
-    dpi: int = 180,
-    tight_bbox: bool = False,
-) -> None:
+def save_figure(figure: Figure, path: Path, *, dpi: int = 180, tight_bbox: bool = False) -> None:
     """Save and close a Matplotlib figure."""
 
     from matplotlib import pyplot as plt

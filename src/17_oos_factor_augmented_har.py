@@ -18,43 +18,19 @@ from typing import Iterable
 import pandas as pd
 
 from config import (
-    BENCHMARKS,
-    CALENDAR_FILE,
-    CLOSE_MATRIX_FILE,
-    CORE_UNIVERSE,
-    MISSING_MASK_FILE,
-    REPORTS_DIR,
+    BENCHMARKS, CALENDAR_FILE, CLOSE_MATRIX_FILE, CORE_UNIVERSE, MISSING_MASK_FILE, REPORTS_DIR,
     ensure_project_directories,
 )
-from reporting.factor_har import (
-    build_hac_comparisons,
-    summarize_models,
-    write_results_markdown,
-)
-from utils.factor_har_oos import (
-    FACTOR_HAR_MODELS,
-    issue_factor_har_forecasts,
-    matched_qlike_comparisons,
-)
+from reporting.factor_har import (build_hac_comparisons, summarize_models, write_results_markdown,)
+from utils.factor_har_oos import (FACTOR_HAR_MODELS, issue_factor_har_forecasts, matched_qlike_comparisons,)
 from utils.data import load_panel
 from utils.network_har import HARConfig
 from utils.oos_common import (
-    file_sha256,
-    normalize_calendar,
-    stable_hash,
-    strict_clean_return_panel,
-    utc_now_iso,
-    write_json,
+    file_sha256, normalize_calendar, stable_hash, strict_clean_return_panel, utc_now_iso, write_json,
 )
 from utils.oos_har_network import (
-    OOSConfig,
-    FactorVintageRun,
-    ForecastRunResult,
-    build_factor_vintage_run,
-    deserialize_config,
-    score_forecasts,
-    serialize_config,
-    validate_forecast_ledger,
+    OOSConfig, FactorVintageRun, ForecastRunResult, build_factor_vintage_run, deserialize_config,
+    score_forecasts, serialize_config, validate_forecast_ledger,
 )
 
 
@@ -76,11 +52,7 @@ def _specifications(config: OOSConfig) -> tuple[tuple[int, str | int, str], ...]
 
 def _effective_config(*, n_jobs: int, smoke: bool = False) -> OOSConfig:
     har = HARConfig(n_jobs=n_jobs, random_seed=17017)
-    value = OOSConfig(
-        protocol_version=PROTOCOL_VERSION,
-        factor_seed=17017,
-        har=har,
-    )
+    value = OOSConfig(protocol_version=PROTOCOL_VERSION, factor_seed=17017, har=har)
     if not smoke:
         return value
     return replace(
@@ -90,12 +62,8 @@ def _effective_config(*, n_jobs: int, smoke: bool = False) -> OOSConfig:
         factor_l1_starts=8,
         min_valid_training_observations=40,
         har=replace(
-            har,
-            min_training_observations=40,
-            rolling_training_observations=60,
-            tuning_frequency=10,
-            cv_splits=2,
-            alpha_fractions=(0.1, 0.3, 1.0),
+            har, min_training_observations=40, rolling_training_observations=60, tuning_frequency=10,
+            cv_splits=2, alpha_fractions=(0.1, 0.3, 1.0),
         ),
     )
 
@@ -103,9 +71,7 @@ def _effective_config(*, n_jobs: int, smoke: bool = False) -> OOSConfig:
 def _load_inputs(smoke: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     calendar = pd.read_csv(CALENDAR_FILE)
     prices = load_panel(
-        CLOSE_MATRIX_FILE,
-        [*CORE_UNIVERSE, *BENCHMARKS],
-        context="CORE benchmark prices",
+        CLOSE_MATRIX_FILE, [*CORE_UNIVERSE, *BENCHMARKS], context="CORE benchmark prices",
         require_complete=False,
     )
     missing = pd.read_parquet(MISSING_MASK_FILE)
@@ -126,14 +92,10 @@ def _load_inputs(smoke: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
 def _code_provenance() -> dict[str, str]:
     source = Path(__file__).parent
     files = (
-        Path(__file__),
-        source / "utils" / "oos_common.py",
-        source / "utils" / "factor_har_oos.py",
-        source / "utils" / "oos_har_network.py",
-        source / "utils" / "factor_adjusted_residuals.py",
-        source / "utils" / "network_har.py",
-        source / "utils" / "realized_volatility.py",
-        source / "reporting" / "factor_har.py",
+        Path(__file__), source / "utils" / "oos_common.py", source / "utils" / "factor_har_oos.py",
+        source / "utils" / "oos_har_network.py", source / "utils" / "factor_adjusted_residuals.py",
+        source / "utils" / "network_har.py", source / "utils" / "realized_volatility.py",
+        source / "utils" / "har_records.py", source / "reporting" / "factor_har.py",
     )
     return {path.name: file_sha256(path) for path in files}
 
@@ -141,16 +103,11 @@ def _code_provenance() -> dict[str, str]:
 def _manifest(config: OOSConfig, *, mode: str, freeze: str, status: str) -> dict[str, object]:
     configuration = serialize_config(config)
     return {
-        "protocol_version": PROTOCOL_VERSION,
-        "mode": mode,
-        "status": status,
-        "freeze_timestamp_utc": freeze,
-        "protocol_hash": stable_hash(configuration),
-        "configuration": configuration,
+        "protocol_version": PROTOCOL_VERSION, "mode": mode, "status": status, "freeze_timestamp_utc": freeze,
+        "protocol_hash": stable_hash(configuration), "configuration": configuration,
         "code_provenance": _code_provenance(),
         "response": "next-session benchmark-residual log realized variance",
-        "models": list(FACTOR_HAR_MODELS),
-        "primary_specification": PRIMARY_SPEC,
+        "models": list(FACTOR_HAR_MODELS), "primary_specification": PRIMARY_SPEC,
         "primary_comparison": "aggregate_factor_har minus own_har",
         "primary_loss": "QLIKE on raw positive realized variance",
         "factor_information_rule": "factor fit and score at d use information available no later than close(d)",
@@ -210,32 +167,23 @@ def _vintage_tables(vintage: FactorVintageRun) -> dict[str, pd.DataFrame]:
         "benchmark_rv": vintage.benchmark_daily_variance,
         "aggregate_log": vintage.aggregate_factor_daily_log_variance,
         "local_log": vintage.local_factor_daily_log_variance,
-        "factor_metadata": vintage.factor_metadata,
-        "rv_metadata": vintage.rv_metadata,
+        "factor_metadata": vintage.factor_metadata, "rv_metadata": vintage.rv_metadata,
     }
 
 
 def _empty_forecast_ledger() -> pd.DataFrame:
     return pd.DataFrame(
         columns=[
-            "protocol_version", "run_id", "spec_name", "model", "stock",
-            "forecast_origin", "as_of", "target_date", "target_open",
-            "target_outcome_available_at", "training_label_cutoff",
+            "protocol_version", "run_id", "spec_name", "model", "stock", "forecast_origin", "as_of",
+            "target_date", "target_open", "target_outcome_available_at", "training_label_cutoff",
             "target_data_present_at_issue", "predicted_log_variance", "predicted_variance",
         ]
     )
 
 
 def _fit_specs(
-    complete: pd.DataFrame,
-    calendar: pd.DataFrame,
-    config: OOSConfig,
-    run_dir: Path,
-    *,
-    run_id: str,
-    mode: str,
-    freeze_timestamp: str | None = None,
-    resume: bool = False,
+    complete: pd.DataFrame, calendar: pd.DataFrame, config: OOSConfig, run_dir: Path, *, run_id: str,
+    mode: str, freeze_timestamp: str | None = None, resume: bool = False,
 ) -> tuple[ForecastRunResult, dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     specs = _specifications(config)
     vintages: dict[int, dict[str, pd.DataFrame]] = {}
@@ -247,11 +195,7 @@ def _fit_specs(
             continue
         print(f"[stage17] causal factor/RV vintages: {window} sessions", flush=True)
         vintage = build_factor_vintage_run(
-            complete,
-            calendar,
-            factor_window_sessions=window,
-            config=config,
-            spec_name=f"factor_{window}",
+            complete, calendar, factor_window_sessions=window, config=config, spec_name=f"factor_{window}",
         )
         _write_vintage(run_dir, window, vintage)
         vintages[window] = _vintage_tables(vintage)
@@ -269,33 +213,21 @@ def _fit_specs(
         if resume and stored_forecast.exists():
             print(f"[stage17] loaded completed forecasts: {spec_name}", flush=True)
             for key, stem in (
-                ("forecasts", "forecast_ledger"),
-                ("coefficients", "coefficients"),
-                ("edges", "edges"),
-                ("tuning", "tuning"),
-                ("diagnostics", "diagnostics"),
+                ("forecasts", "forecast_ledger"), ("coefficients", "coefficients"),
+                ("edges", "edges"), ("tuning", "tuning"), ("diagnostics", "diagnostics"),
             ):
                 path = run_dir / f"{stem}_{spec_name}.parquet"
                 result_frames[key].append(pd.read_parquet(path) if path.exists() else pd.DataFrame())
             continue
         print(f"[stage17] target-free issuance: {spec_name}", flush=True)
         issued = issue_factor_har_forecasts(
-            vintage["benchmark_log"],
-            vintage["aggregate_log"],
-            vintage["local_log"],
-            calendar,
-            spec_name=spec_name,
-            config=config,
-            run_id=run_id,
-            factor_metadata=vintage["factor_metadata"],
-            har_window=har_window,
-            mode=mode,
-            freeze_timestamp=freeze_timestamp,
+            vintage["benchmark_log"], vintage["aggregate_log"], vintage["local_log"], calendar,
+            spec_name=spec_name, config=config, run_id=run_id, factor_metadata=vintage["factor_metadata"],
+            har_window=har_window, mode=mode, freeze_timestamp=freeze_timestamp,
         )
         for key, stem, frame in (
             ("forecasts", "forecast_ledger", issued.forecasts),
-            ("coefficients", "coefficients", issued.coefficients),
-            ("edges", "edges", issued.edge_history),
+            ("coefficients", "coefficients", issued.coefficients), ("edges", "edges", issued.edge_history),
             ("tuning", "tuning", issued.tuning_history),
             ("diagnostics", "diagnostics", issued.origin_diagnostics),
         ):
@@ -334,21 +266,13 @@ def run_audit(*, config: OOSConfig, smoke: bool, run_id: str | None, resume: boo
     run_id = run_id or _run_id("smoke" if smoke else "historical_audit")
     run_dir = _run_directory(run_id)
     complete, calendar = _load_inputs(smoke)
-    manifest = _manifest(
-        config,
-        mode="historical_pseudo_oos",
-        freeze=utc_now_iso(),
-        status="running",
-    )
+    manifest = _manifest(config, mode="historical_pseudo_oos", freeze=utc_now_iso(), status="running")
     manifest["run_id"] = run_id
     write_json(run_dir / "manifest.json", manifest)
     result, realized, metadata = _fit_specs(
-        complete, calendar, config, run_dir, run_id=run_id,
-        mode="historical_pseudo_oos", resume=resume,
+        complete, calendar, config, run_dir, run_id=run_id, mode="historical_pseudo_oos", resume=resume,
     )
-    scored = score_forecasts(
-        result.forecasts, realized, metadata, config=config, models=FACTOR_HAR_MODELS
-    )
+    scored = score_forecasts(result.forecasts, realized, metadata, config=config, models=FACTOR_HAR_MODELS)
     comparisons = matched_qlike_comparisons(scored)
     pairs = list(comparisons[["model_a", "model_b"]].drop_duplicates().itertuples(index=False, name=None))
     model_summary = summarize_models(scored)
@@ -358,23 +282,16 @@ def run_audit(*, config: OOSConfig, smoke: bool, run_id: str | None, resume: boo
     manifest["n_scored_rows"] = int((scored["score_status"] == "scored").sum())
     write_json(run_dir / "manifest.json", manifest)
     for name, frame in (
-        ("forecast_ledger.csv", result.forecasts),
-        ("score_ledger.csv", scored),
-        ("model_summary.csv", model_summary),
-        ("matched_comparisons.csv", comparisons),
-        ("hac_comparisons.csv", hac),
-        ("coefficients.csv", result.coefficients),
-        ("edges.csv", result.edge_history),
-        ("tuning.csv", result.tuning_history),
+        ("forecast_ledger.csv", result.forecasts), ("score_ledger.csv", scored),
+        ("model_summary.csv", model_summary), ("matched_comparisons.csv", comparisons),
+        ("hac_comparisons.csv", hac), ("coefficients.csv", result.coefficients),
+        ("edges.csv", result.edge_history), ("tuning.csv", result.tuning_history),
         ("diagnostics.csv", result.origin_diagnostics),
     ):
         _write_frame(run_dir / name, frame)
     write_results_markdown(
-        run_dir / "FACTOR_HAR_RESULTS.md",
-        manifest=manifest,
-        model_summary=model_summary,
-        comparisons=comparisons,
-        hac=hac,
+        run_dir / "FACTOR_HAR_RESULTS.md", manifest=manifest, model_summary=model_summary,
+        comparisons=comparisons, hac=hac,
     )
     print(f"[stage17] completed: {run_dir}", flush=True)
     return run_dir
@@ -384,10 +301,7 @@ def run_freeze(*, config: OOSConfig) -> Path:
     run_id = _run_id("protocol_freeze")
     run_dir = _run_directory(run_id)
     manifest = _manifest(
-        config,
-        mode="protocol_freeze",
-        freeze=utc_now_iso(),
-        status="ready / awaiting_future_data",
+        config, mode="protocol_freeze", freeze=utc_now_iso(), status="ready / awaiting_future_data",
     )
     manifest["run_id"] = run_id
     write_json(run_dir / "manifest.json", manifest)
@@ -404,24 +318,17 @@ def run_prospective(*, config: OOSConfig) -> Path:
     if frozen.get("code_provenance") != _code_provenance():
         raise ValueError("Stage 17 code changed after protocol freeze; freeze again.")
     frozen_config = deserialize_config(frozen["configuration"])
-    config = replace(
-        frozen_config,
-        har=replace(frozen_config.har, n_jobs=config.har.n_jobs),
-    )
+    config = replace(frozen_config, har=replace(frozen_config.har, n_jobs=config.har.n_jobs))
     freeze = str(frozen["freeze_timestamp_utc"])
     run_id = _run_id("prospective")
     run_dir = _run_directory(run_id)
     complete, calendar = _load_inputs(False)
     result, _, _ = _fit_specs(
-        complete, calendar, config, run_dir, run_id=run_id,
-        mode="prospective", freeze_timestamp=freeze,
+        complete, calendar, config, run_dir, run_id=run_id, mode="prospective", freeze_timestamp=freeze,
     )
     manifest = dict(frozen)
     manifest.update(
-        run_id=run_id,
-        mode="prospective",
-        status=result.status,
-        issued_at_utc=utc_now_iso(),
+        run_id=run_id, mode="prospective", status=result.status, issued_at_utc=utc_now_iso(),
         n_forecast_rows=len(result.forecasts),
     )
     _write_frame(run_dir / "forecast_ledger.csv", result.forecasts)
@@ -448,10 +355,7 @@ def run_score(*, config: OOSConfig, run_id: str) -> Path:
     forecasts = pd.read_csv(ledger_path)
     validate_forecast_ledger(forecasts)
     frozen_config = deserialize_config(manifest["configuration"])
-    config = replace(
-        frozen_config,
-        har=replace(frozen_config.har, n_jobs=config.har.n_jobs),
-    )
+    config = replace(frozen_config, har=replace(frozen_config.har, n_jobs=config.har.n_jobs))
     complete, calendar = _load_inputs(False)
     realized: dict[str, pd.DataFrame] = {}
     metadata: dict[str, pd.DataFrame] = {}
@@ -459,18 +363,12 @@ def run_score(*, config: OOSConfig, run_id: str) -> Path:
     for window in sorted({window for window, _, _ in _specifications(config)}):
         print(f"[stage17] rebuilding causal outcomes: {window} sessions", flush=True)
         vintages[window] = build_factor_vintage_run(
-            complete,
-            calendar,
-            factor_window_sessions=window,
-            config=config,
-            spec_name=f"factor_{window}",
+            complete, calendar, factor_window_sessions=window, config=config, spec_name=f"factor_{window}",
         )
     for window, _, spec_name in _specifications(config):
         realized[spec_name] = vintages[window].benchmark_daily_variance
         metadata[spec_name] = vintages[window].rv_metadata.assign(spec_name=spec_name)
-    scored = score_forecasts(
-        forecasts, realized, metadata, config=config, models=FACTOR_HAR_MODELS
-    )
+    scored = score_forecasts(forecasts, realized, metadata, config=config, models=FACTOR_HAR_MODELS)
     comparisons = matched_qlike_comparisons(scored)
     pairs = list(comparisons[["model_a", "model_b"]].drop_duplicates().itertuples(index=False, name=None))
     summary = summarize_models(scored)
@@ -486,10 +384,7 @@ def run_score(*, config: OOSConfig, run_id: str) -> Path:
     ):
         _write_frame(run_dir / name, frame)
     write_results_markdown(
-        run_dir / "FACTOR_HAR_RESULTS.md",
-        manifest=manifest,
-        model_summary=summary,
-        comparisons=comparisons,
+        run_dir / "FACTOR_HAR_RESULTS.md", manifest=manifest, model_summary=summary, comparisons=comparisons,
         hac=hac,
     )
     return run_dir
@@ -515,12 +410,7 @@ def main(argv: Iterable[str] | None = None) -> None:
             parser.error("--mode score requires --run-id")
         run_score(config=config, run_id=args.run_id)
     else:
-        run_audit(
-            config=config,
-            smoke=args.mode == "smoke",
-            run_id=args.run_id,
-            resume=args.resume,
-        )
+        run_audit(config=config, smoke=args.mode == "smoke", run_id=args.run_id, resume=args.resume)
 
 
 if __name__ == "__main__":

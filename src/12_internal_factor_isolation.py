@@ -4,19 +4,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from config import (
-    CORE_UNIVERSE,
-    REPORTS_DIR,
-    ensure_project_directories,
-)
-from reporting.factors import (
-    plot_loading_heatmaps,
-    plot_sparse_path,
-    print_summary,
-)
-from utils.benchmark import (
-    build_factor_panels,
-)
+from config import (CORE_UNIVERSE, REPORTS_DIR, ensure_project_directories,)
+from reporting.factors import (plot_loading_heatmaps, plot_sparse_path, print_summary,)
+from utils.benchmark import (build_factor_panels,)
 from utils.data import load_benchmark_panel
 from utils.factor import fit_sparse_penalty_path, fit_transformation
 

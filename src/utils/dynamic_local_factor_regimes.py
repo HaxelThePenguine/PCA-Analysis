@@ -163,21 +163,15 @@ class AlignmentResult:
 
 
 def deterministic_seed(
-    window_sessions: int,
-    window_start: pd.Timestamp,
-    window_end: pd.Timestamp,
-    n_starts: int,
+    window_sessions: int, window_start: pd.Timestamp, window_end: pd.Timestamp, n_starts: int,
     base_seed: int = RANDOM_STATE,
 ) -> int:
     """Derive a 32-bit seed from the window and number of starts."""
 
     token = "|".join(
         (
-            str(base_seed),
-            str(window_sessions),
-            pd.Timestamp(window_start).date().isoformat(),
-            pd.Timestamp(window_end).date().isoformat(),
-            str(n_starts),
+            str(base_seed), str(window_sessions), pd.Timestamp(window_start).date().isoformat(),
+            pd.Timestamp(window_end).date().isoformat(), str(n_starts),
         )
     )
     digest = sha256(token.encode("utf-8")).digest()
@@ -199,9 +193,7 @@ def _classify_session(value: pd.Timestamp) -> str:
     return "recent_2026"
 
 
-def classify_window_regime(
-    window_sessions: Iterable[pd.Timestamp],
-) -> tuple[str, str, bool]:
+def classify_window_regime(window_sessions: Iterable[pd.Timestamp]) -> tuple[str, str, bool]:
     """Classify a window by majority regime and expose mixed-regime windows."""
 
     labels = [_classify_session(session) for session in window_sessions]
@@ -222,9 +214,7 @@ def is_quarterly_window(window_end: pd.Timestamp) -> bool:
 
 
 def build_window_definitions(
-    panel: pd.DataFrame,
-    window_sizes: Iterable[int] = WINDOWS,
-    step_sessions: int = STEP_SESSIONS,
+    panel: pd.DataFrame, window_sizes: Iterable[int] = WINDOWS, step_sessions: int = STEP_SESSIONS,
 ) -> list[WindowDefinition]:
     """Build exact-session trailing windows from the observations in ``panel``."""
 
@@ -237,27 +227,17 @@ def build_window_definitions(
             positions = session_window_positions(codes, start, window_size)
             window_sessions = sessions[start : end + 1]
             if len(window_sessions) != window_size:
-                raise AssertionError(
-                    "A rolling window did not contain the requested sessions."
-                )
+                raise AssertionError("A rolling window did not contain the requested sessions.")
             regime, sequence, crosses = classify_window_regime(window_sessions)
             window_start = pd.Timestamp(window_sessions[0])
             window_end = pd.Timestamp(window_sessions[-1])
             window_id = f"{window_size}_{_date_label(window_end)}"
             definitions.append(
                 WindowDefinition(
-                    window_id=window_id,
-                    window_sessions=window_size,
-                    start_index=start,
-                    end_index=end,
-                    window_start=window_start,
-                    window_end=window_end,
-                    positions=positions,
-                    n_observations=len(positions),
-                    regime=regime,
-                    regime_sequence=sequence,
-                    crosses_regime_boundary=crosses,
-                    is_quarterly_window=is_quarterly_window(window_end),
+                    window_id=window_id, window_sessions=window_size, start_index=start, end_index=end,
+                    window_start=window_start, window_end=window_end, positions=positions,
+                    n_observations=len(positions), regime=regime, regime_sequence=sequence,
+                    crosses_regime_boundary=crosses, is_quarterly_window=is_quarterly_window(window_end),
                 )
             )
     return definitions
@@ -280,11 +260,7 @@ def _eigenvalue_ratios(eigenvalues: np.ndarray) -> tuple[float, float, float]:
 
 
 def fit_window(
-    panel: pd.DataFrame,
-    definition: WindowDefinition,
-    *,
-    n_starts: int,
-    random_seed: int,
+    panel: pd.DataFrame, definition: WindowDefinition, *, n_starts: int, random_seed: int,
 ) -> WindowFit:
     """Fit benchmark residuals, correlation PCA, and L1 rotation in one window."""
 
@@ -294,76 +270,46 @@ def fit_window(
     residualization = residualize_against_benchmarks(window_panel, stocks=STOCKS)
     residuals = residualization["residual_returns"]
     pca = fit_pca(residuals, method="correlation")
-    rotation = fit_l1_rotation(
-        pca,
-        n_components=N_COMPONENTS,
-        n_starts=n_starts,
-        random_state=random_seed,
-    )
+    rotation = fit_l1_rotation(pca, n_components=N_COMPONENTS, n_starts=n_starts, random_state=random_seed)
     local_test = rotation.local_factor_test
     condition_number = float(np.linalg.cond(rotation.rotation.to_numpy()))
     max_residual_corr = float(
-        residualization["diagnostics"][
-            [f"corr_resid_{benchmark}" for benchmark in BENCHMARKS]
-        ]
-        .abs()
+        residualization["diagnostics"][[f"corr_resid_{benchmark}" for benchmark in BENCHMARKS]] .abs()
         .to_numpy()
         .max()
     )
     return WindowFit(
-        definition=definition,
-        structural_loadings=rotation.rotated_loadings.copy(),
-        score_loadings=rotation.score_loadings.copy(),
-        score_correlation=rotation.score_correlation.copy(),
-        eigenvalues=pca.eigenvalues.copy(),
-        explained=pca.explained.copy(),
-        small_loading_threshold=float(local_test.h_n),
-        gamma_n=int(local_test.gamma_n),
+        definition=definition, structural_loadings=rotation.rotated_loadings.copy(),
+        score_loadings=rotation.score_loadings.copy(), score_correlation=rotation.score_correlation.copy(),
+        eigenvalues=pca.eigenvalues.copy(), explained=pca.explained.copy(),
+        small_loading_threshold=float(local_test.h_n), gamma_n=int(local_test.gamma_n),
         small_counts=local_test.small_counts.to_numpy(dtype=int),
-        local_factor_flags=(
-            local_test.small_counts.to_numpy(dtype=int) > int(local_test.gamma_n)
-        ),
+        local_factor_flags=(local_test.small_counts.to_numpy(dtype=int) > int(local_test.gamma_n)),
         has_any_local_factors=bool(local_test.has_local_factors),
         l1_norms=rotation.l1_norms.to_numpy(dtype=float),
         solution_frequencies=rotation.solution_frequencies.to_numpy(dtype=int),
         sources=tuple(rotation.sources.astype(str).tolist()),
         optimizer_success_rate=float(rotation.optimizer_success_rate),
-        rotation_condition_number=condition_number,
-        reconstruction_pct=float(rotation.reconstruction_pct),
+        rotation_condition_number=condition_number, reconstruction_pct=float(rotation.reconstruction_pct),
         reconstruction_max_abs_error=float(rotation.reconstruction_max_abs_error),
-        benchmark_variance_removed_pct=float(
-            residualization["diagnostics"]["variance_removed_pct"].mean()
-        ),
-        max_abs_residual_benchmark_corr=max_residual_corr,
-        n_starts=int(n_starts),
+        benchmark_variance_removed_pct=float(residualization["diagnostics"]["variance_removed_pct"].mean()),
+        max_abs_residual_benchmark_corr=max_residual_corr, n_starts=int(n_starts),
         random_seed=int(random_seed),
     )
 
 
 def fit_full_sample_reference(
-    panel: pd.DataFrame,
-    *,
-    n_starts: int = FULL_SAMPLE_STARTS,
-    random_seed: int = FULL_SAMPLE_RANDOM_STATE,
+    panel: pd.DataFrame, *, n_starts: int = FULL_SAMPLE_STARTS, random_seed: int = FULL_SAMPLE_RANDOM_STATE,
 ) -> pd.DataFrame:
     """Fit the ex-post full-sample residual reference used only for plots."""
 
     residualization = residualize_against_benchmarks(panel, stocks=STOCKS)
     pca = fit_pca(residualization["residual_returns"], method="correlation")
-    result = fit_l1_rotation(
-        pca,
-        n_components=N_COMPONENTS,
-        n_starts=n_starts,
-        random_state=random_seed,
-    )
+    result = fit_l1_rotation(pca, n_components=N_COMPONENTS, n_starts=n_starts, random_state=random_seed)
     return result.rotated_loadings.copy()
 
 
-def _column_signs(
-    reference: np.ndarray,
-    estimate: np.ndarray,
-    order: np.ndarray,
-) -> np.ndarray:
+def _column_signs(reference: np.ndarray, estimate: np.ndarray, order: np.ndarray) -> np.ndarray:
     """Recover the signs used by ``align_loading_columns`` for other matrices."""
 
     signs = np.ones(reference.shape[1], dtype=float)
@@ -373,18 +319,12 @@ def _column_signs(
     return signs
 
 
-def _align_fit(
-    fit: WindowFit,
-    reference: pd.DataFrame,
-) -> AlignmentResult:
+def _align_fit(fit: WindowFit, reference: pd.DataFrame) -> AlignmentResult:
     """Align structural loadings and apply the same permutation/sign to scores."""
 
     reference_values = reference.to_numpy(dtype=float)
     estimate_values = fit.structural_loadings.to_numpy(dtype=float)
-    aligned_values, order, similarities = align_loading_columns(
-        reference_values,
-        estimate_values,
-    )
+    aligned_values, order, similarities = align_loading_columns(reference_values, estimate_values)
     signs = _column_signs(reference_values, estimate_values, order)
     score_values = fit.score_loadings.to_numpy(dtype=float)[:, order] * signs[None, :]
     source_factors = tuple(fit.structural_loadings.columns[index] for index in order)
@@ -393,20 +333,10 @@ def _align_fit(
     score_correlation = score_correlation * signs[:, None] * signs[None, :]
     return AlignmentResult(
         structural_loadings=pd.DataFrame(
-            aligned_values,
-            index=fit.structural_loadings.index,
-            columns=FACTORS,
+            aligned_values, index=fit.structural_loadings.index, columns=FACTORS,
         ),
-        score_loadings=pd.DataFrame(
-            score_values,
-            index=fit.score_loadings.index,
-            columns=FACTORS,
-        ),
-        score_correlation=pd.DataFrame(
-            score_correlation,
-            index=FACTORS,
-            columns=FACTORS,
-        ),
+        score_loadings=pd.DataFrame(score_values, index=fit.score_loadings.index, columns=FACTORS),
+        score_correlation=pd.DataFrame(score_correlation, index=FACTORS, columns=FACTORS),
         source_factors=source_factors,
         order=order,
         signs=signs,
@@ -414,10 +344,7 @@ def _align_fit(
     )
 
 
-def _same_factor_cosines(
-    current: pd.DataFrame,
-    previous: pd.DataFrame | None,
-) -> np.ndarray:
+def _same_factor_cosines(current: pd.DataFrame, previous: pd.DataFrame | None) -> np.ndarray:
     """Return sign-invariant same-column cosines for aligned loading matrices."""
 
     if previous is None:
@@ -425,32 +352,19 @@ def _same_factor_cosines(
     current_values = current.to_numpy(dtype=float)
     previous_values = previous.to_numpy(dtype=float)
     numerator = np.sum(current_values * previous_values, axis=0)
-    denominator = np.linalg.norm(current_values, axis=0) * np.linalg.norm(
-        previous_values,
-        axis=0,
-    )
+    denominator = np.linalg.norm(current_values, axis=0) * np.linalg.norm(previous_values, axis=0)
     return np.abs(numerator / denominator)
 
 
-def _jaccard_support(
-    current: np.ndarray,
-    anchor: np.ndarray,
-    threshold: float,
-) -> np.ndarray:
+def _jaccard_support(current: np.ndarray, anchor: np.ndarray, threshold: float) -> np.ndarray:
     """Compute support Jaccard similarity for each aligned factor."""
 
     current_active = np.abs(current) >= threshold
     anchor_active = np.abs(anchor) >= threshold
     scores = []
     for factor in range(current.shape[1]):
-        intersection = np.logical_and(
-            current_active[:, factor],
-            anchor_active[:, factor],
-        ).sum()
-        union = np.logical_or(
-            current_active[:, factor],
-            anchor_active[:, factor],
-        ).sum()
+        intersection = np.logical_and(current_active[:, factor], anchor_active[:, factor]).sum()
+        union = np.logical_or(current_active[:, factor], anchor_active[:, factor]).sum()
         scores.append(1.0 if union == 0 else float(intersection / union))
     return np.asarray(scores)
 
@@ -460,25 +374,18 @@ def _factor_metadata(fit: WindowFit) -> dict[str, Any]:
 
     ratios = _eigenvalue_ratios(fit.eigenvalues)
     return {
-        "n_sessions": fit.definition.window_sessions,
-        "n_observations": fit.definition.n_observations,
+        "n_sessions": fit.definition.window_sessions, "n_observations": fit.definition.n_observations,
         "pc1_explained_pct": 100.0 * fit.explained[0],
         "cumulative_explained_pct_first3": 100.0 * fit.explained[:3].sum(),
-        "eigenvalue_ratio_pc1_pc2": ratios[0],
-        "eigenvalue_ratio_pc2_pc3": ratios[1],
+        "eigenvalue_ratio_pc1_pc2": ratios[0], "eigenvalue_ratio_pc2_pc3": ratios[1],
         "eigenvalue_ratio_pc3_pc4": ratios[2],
         "benchmark_variance_removed_pct": fit.benchmark_variance_removed_pct,
         "max_abs_residual_benchmark_corr": fit.max_abs_residual_benchmark_corr,
-        "has_any_local_factors": fit.has_any_local_factors,
-        "reconstruction_pct": fit.reconstruction_pct,
-        "reconstruction_max_abs_error": fit.reconstruction_max_abs_error,
-        "n_starts": fit.n_starts,
-        "random_seed": fit.random_seed,
-        "optimizer_success_rate": fit.optimizer_success_rate,
+        "has_any_local_factors": fit.has_any_local_factors, "reconstruction_pct": fit.reconstruction_pct,
+        "reconstruction_max_abs_error": fit.reconstruction_max_abs_error, "n_starts": fit.n_starts,
+        "random_seed": fit.random_seed, "optimizer_success_rate": fit.optimizer_success_rate,
         "rotation_condition_number": fit.rotation_condition_number,
-        "max_abs_factor_score_correlation": _factor_score_correlation_maximum(
-            fit.score_correlation
-        ),
+        "max_abs_factor_score_correlation": _factor_score_correlation_maximum(fit.score_correlation),
     }
 
 
@@ -486,13 +393,10 @@ def _base_window_metadata(definition: WindowDefinition) -> dict[str, Any]:
     """Return window metadata shared by all output tables."""
 
     return {
-        "window_id": definition.window_id,
-        "window_sessions": definition.window_sessions,
+        "window_id": definition.window_id, "window_sessions": definition.window_sessions,
         "window_start": _date_label(definition.window_start),
-        "window_end": _date_label(definition.window_end),
-        "window_start_index": definition.start_index,
-        "window_end_index": definition.end_index,
-        "regime": definition.regime,
+        "window_end": _date_label(definition.window_end), "window_start_index": definition.start_index,
+        "window_end_index": definition.end_index, "regime": definition.regime,
         "regime_sequence": definition.regime_sequence,
         "crosses_regime_boundary": definition.crosses_regime_boundary,
         "is_quarterly_window": definition.is_quarterly_window,
@@ -500,10 +404,7 @@ def _base_window_metadata(definition: WindowDefinition) -> dict[str, Any]:
 
 
 def _instability_reasons(
-    previous_cosine: float,
-    anchor_cosine: float,
-    anchor_jaccard: float,
-    local_changed: bool,
+    previous_cosine: float, anchor_cosine: float, anchor_jaccard: float, local_changed: bool,
     condition_number: float,
 ) -> list[str]:
     """Flag changes in loadings, support, and local-factor status."""
@@ -522,27 +423,14 @@ def _instability_reasons(
     return reasons
 
 
-def _aligned_support_flags(
-    loadings: pd.DataFrame,
-    threshold: float,
-) -> np.ndarray:
+def _aligned_support_flags(loadings: pd.DataFrame, threshold: float) -> np.ndarray:
     return np.abs(loadings.to_numpy(dtype=float)) >= threshold
 
 
 def run_rolling_fits(
-    panel: pd.DataFrame,
-    definitions: list[WindowDefinition],
-    *,
-    primary_starts: int = PRIMARY_STARTS,
-    full_sample_reference: pd.DataFrame,
-    base_seed: int = RANDOM_STATE,
-) -> tuple[
-    dict[str, WindowFit],
-    pd.DataFrame,
-    pd.DataFrame,
-    pd.DataFrame,
-    dict[str, dict[str, Any]],
-]:
+    panel: pd.DataFrame, definitions: list[WindowDefinition], *, primary_starts: int = PRIMARY_STARTS,
+    full_sample_reference: pd.DataFrame, base_seed: int = RANDOM_STATE,
+) -> tuple[dict[str, WindowFit], pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, dict[str, Any]]]:
     """Fit all primary windows and build aligned loading/diagnostic records."""
 
     fits: dict[str, WindowFit] = {}
@@ -558,35 +446,34 @@ def run_rolling_fits(
 
     for definition in definitions:
         seed = deterministic_seed(
-            definition.window_sessions,
-            definition.window_start,
-            definition.window_end,
-            primary_starts,
+            definition.window_sessions, definition.window_start, definition.window_end, primary_starts,
             base_seed,
         )
-        fit = fit_window(
-            panel,
-            definition,
-            n_starts=primary_starts,
-            random_seed=seed,
-        )
+        fit = fit_window(panel, definition, n_starts=primary_starts, random_seed=seed)
         fits[definition.window_id] = fit
         past_anchor = anchors[definition.window_sessions].matrix()
         if past_anchor is None:
             past_reference = fit.structural_loadings.copy()
         else:
-            past_reference = pd.DataFrame(
-                past_anchor,
-                index=STOCKS,
-                columns=FACTORS,
-            )
+            past_reference = pd.DataFrame(past_anchor, index=STOCKS, columns=FACTORS)
         past_alignment = _align_fit(fit, past_reference)
         full_alignment = _align_fit(fit, full_sample_reference)
         contexts[definition.window_id] = {
-            "definition": definition,
-            "past_reference": past_reference.copy(),
+            "definition": definition, "past_reference": past_reference.copy(),
             "primary_past_alignment": past_alignment,
         }
+        threshold = fit.small_loading_threshold
+        past_cosines = _same_factor_cosines(past_alignment.structural_loadings, past_reference)
+        full_cosines = full_alignment.cosine_similarity
+        past_jaccards = _jaccard_support(
+            past_alignment.structural_loadings.to_numpy(dtype=float),
+            past_reference.to_numpy(dtype=float), threshold,
+        )
+        full_jaccards = _jaccard_support(
+            full_alignment.structural_loadings.to_numpy(dtype=float),
+            full_sample_reference.to_numpy(dtype=float), threshold,
+        )
+        window_metadata = {**_base_window_metadata(definition), **_factor_metadata(fit)}
 
         for alignment_method, alignment, reference in (
             ("past_only", past_alignment, past_reference),
@@ -594,75 +481,28 @@ def run_rolling_fits(
         ):
             mode_key = (definition.window_sessions, alignment_method)
             previous = previous_aligned.get(mode_key)
-            previous_cosines = _same_factor_cosines(
-                alignment.structural_loadings,
-                previous,
-            )
+            previous_cosines = _same_factor_cosines(alignment.structural_loadings, previous)
             current_values = alignment.structural_loadings.to_numpy(dtype=float)
             reference_values = reference.to_numpy(dtype=float)
-            threshold = fit.small_loading_threshold
-            current_active = _aligned_support_flags(
-                alignment.structural_loadings,
-                threshold,
-            )
+            current_active = _aligned_support_flags(alignment.structural_loadings, threshold)
             reference_active = _aligned_support_flags(reference, threshold)
             small_counts = (~current_active).sum(axis=0).astype(int)
             active_counts = current_active.sum(axis=0).astype(int)
             local_flags = small_counts > fit.gamma_n
             anchor_cosines = alignment.cosine_similarity
-            anchor_jaccards = _jaccard_support(
-                current_values,
-                reference_values,
-                threshold,
-            )
-            past_alignment_values = contexts[definition.window_id][
-                "primary_past_alignment"
-            ].structural_loadings.to_numpy(dtype=float)
-            past_anchor_values = contexts[definition.window_id][
-                "past_reference"
-            ].to_numpy(dtype=float)
-            full_alignment_values = full_alignment.structural_loadings.to_numpy(
-                dtype=float
-            )
-            past_cosines = _same_factor_cosines(
-                past_alignment.structural_loadings,
-                contexts[definition.window_id]["past_reference"],
-            )
-            full_cosines = full_alignment.cosine_similarity
-            past_jaccards = _jaccard_support(
-                past_alignment_values,
-                past_anchor_values,
-                threshold,
-            )
-            full_jaccards = _jaccard_support(
-                full_alignment_values,
-                full_sample_reference.to_numpy(dtype=float),
-                threshold,
-            )
-            anchor_local_flags = (~reference_active).sum(axis=0).astype(
-                int
-            ) > fit.gamma_n
+            anchor_jaccards = _jaccard_support(current_values, reference_values, threshold)
+            anchor_local_flags = (~reference_active).sum(axis=0).astype(int) > fit.gamma_n
 
-            common = {
-                **_base_window_metadata(definition),
-                **_factor_metadata(fit),
-                "alignment_method": alignment_method,
-            }
+            common = {**window_metadata, "alignment_method": alignment_method}
+            instability_count = 0
             for factor_number, factor in enumerate(FACTORS):
-                local_changed = bool(
-                    local_flags[factor_number] != anchor_local_flags[factor_number]
-                )
+                local_changed = bool(local_flags[factor_number] != anchor_local_flags[factor_number])
                 reasons = _instability_reasons(
-                    float(previous_cosines[factor_number]),
-                    float(anchor_cosines[factor_number]),
-                    float(anchor_jaccards[factor_number]),
-                    local_changed,
-                    fit.rotation_condition_number,
+                    float(previous_cosines[factor_number]), float(anchor_cosines[factor_number]),
+                    float(anchor_jaccards[factor_number]), local_changed, fit.rotation_condition_number,
                 )
                 factor_common = {
-                    **common,
-                    "factor": factor,
-                    "source_factor": alignment.source_factors[factor_number],
+                    **common, "factor": factor, "source_factor": alignment.source_factors[factor_number],
                     "cosine_similarity_previous": previous_cosines[factor_number],
                     "cosine_similarity_anchor": anchor_cosines[factor_number],
                     "cosine_similarity_past_only_anchor": past_cosines[factor_number],
@@ -672,117 +512,53 @@ def run_rolling_fits(
                     "support_jaccard_full_sample": full_jaccards[factor_number],
                     "n_small_loadings": int(small_counts[factor_number]),
                     "n_active_loadings": int(active_counts[factor_number]),
-                    "small_loading_threshold": threshold,
-                    "gamma_n": fit.gamma_n,
+                    "small_loading_threshold": threshold, "gamma_n": fit.gamma_n,
                     "is_local_factor": bool(local_flags[factor_number]),
                     "anchor_is_local_factor": bool(anchor_local_flags[factor_number]),
-                    "locality_decision_changed": local_changed,
-                    "l1_norm": fit.l1_norms[factor_number],
+                    "locality_decision_changed": local_changed, "l1_norm": fit.l1_norms[factor_number],
                     "solution_frequency": fit.solution_frequencies[factor_number],
-                    "candidate_source": fit.sources[factor_number],
-                    "instability_flag": bool(reasons),
+                    "candidate_source": fit.sources[factor_number], "instability_flag": bool(reasons),
                     "instability_reasons": ";".join(reasons),
                 }
                 stability_rows.append(factor_common)
+                instability_count += bool(reasons)
 
                 for stock_number, stock in enumerate(STOCKS):
-                    loading_rows.append(
-                        {
-                            **factor_common,
-                            "stock": stock,
-                            "structural_loading": current_values[
-                                stock_number, factor_number
-                            ],
-                            "absolute_structural_loading": abs(
-                                current_values[stock_number, factor_number]
-                            ),
-                            "anchor_structural_loading": reference_values[
-                                stock_number, factor_number
-                            ],
-                            "is_active": bool(
-                                current_active[stock_number, factor_number]
-                            ),
-                            "anchor_is_active": bool(
-                                reference_active[stock_number, factor_number]
-                            ),
-                            "support_match": bool(
-                                current_active[stock_number, factor_number]
-                                == reference_active[stock_number, factor_number]
-                            ),
-                        }
-                    )
-                    score_loading_rows.append(
-                        {
-                            **factor_common,
-                            "stock": stock,
-                            "stock_factor_score_loading": alignment.score_loadings.iloc[
-                                stock_number, factor_number
-                            ],
-                        }
-                    )
-                    support_rows.append(
-                        {
-                            **factor_common,
-                            "stock": stock,
-                            "structural_loading": current_values[
-                                stock_number, factor_number
-                            ],
-                            "is_active": bool(
-                                current_active[stock_number, factor_number]
-                            ),
-                            "anchor_is_active": bool(
-                                reference_active[stock_number, factor_number]
-                            ),
-                            "support_match": bool(
-                                current_active[stock_number, factor_number]
-                                == reference_active[stock_number, factor_number]
-                            ),
-                        }
-                    )
+                    loading = {
+                        **factor_common, "stock": stock,
+                        "structural_loading": current_values[stock_number, factor_number],
+                        "absolute_structural_loading": abs(current_values[stock_number, factor_number]),
+                        "anchor_structural_loading": reference_values[stock_number, factor_number],
+                        "is_active": bool(current_active[stock_number, factor_number]),
+                        "anchor_is_active": bool(reference_active[stock_number, factor_number]),
+                        "support_match": bool(current_active[stock_number, factor_number]
+                            == reference_active[stock_number, factor_number]),
+                    }
+                    loading_rows.append(loading)
+                    support_rows.append({key: value for key, value in loading.items()
+                                         if key not in ("absolute_structural_loading", "anchor_structural_loading")})
+                    score_loading_rows.append({
+                        **factor_common, "stock": stock,
+                        "stock_factor_score_loading": alignment.score_loadings.iloc[stock_number, factor_number],
+                    })
 
                 for other_number, other_factor in enumerate(FACTORS):
                     score_correlation_rows.append(
                         {
-                            **common,
-                            "factor": factor,
-                            "other_factor": other_factor,
-                            "score_correlation": alignment.score_correlation.iloc[
-                                factor_number, other_number
-                            ],
+                            **common, "factor": factor, "other_factor": other_factor,
+                            "score_correlation": alignment.score_correlation.iloc[factor_number, other_number],
                         }
                     )
 
             diagnostics_rows.append(
                 {
-                    **common,
-                    "mean_cosine_similarity_anchor": float(np.nanmean(anchor_cosines)),
-                    "minimum_cosine_similarity_anchor": float(
-                        np.nanmin(anchor_cosines)
-                    ),
+                    **common, "mean_cosine_similarity_anchor": float(np.nanmean(anchor_cosines)),
+                    "minimum_cosine_similarity_anchor": float(np.nanmin(anchor_cosines)),
                     "mean_support_jaccard_anchor": float(np.nanmean(anchor_jaccards)),
                     "minimum_support_jaccard_anchor": float(np.nanmin(anchor_jaccards)),
-                    "n_local_factors": int(local_flags.sum()),
-                    "n_instability_flags": int(
-                        sum(
-                            bool(reasons)
-                            for reasons in [
-                                _instability_reasons(
-                                    float(previous_cosines[index]),
-                                    float(anchor_cosines[index]),
-                                    float(anchor_jaccards[index]),
-                                    bool(
-                                        local_flags[index] != anchor_local_flags[index]
-                                    ),
-                                    fit.rotation_condition_number,
-                                )
-                                for index in range(N_COMPONENTS)
-                            ]
-                        )
-                    ),
-                    "sensitivity_run": False,
-                    "sensitivity_reason": "",
-                    "sensitivity_conclusion_stable": np.nan,
-                    "sensitivity_instability_flag": False,
+                    "n_local_factors": int(local_flags.sum()), "n_instability_flags": instability_count,
+                    "sensitivity_run": False, "sensitivity_reason": "",
+                    "sensitivity_conclusion_stable": np.nan, "sensitivity_instability_flag": False,
                 }
             )
             previous_aligned[mode_key] = alignment.structural_loadings.copy()
@@ -797,8 +573,7 @@ def run_rolling_fits(
         {
             "stability": pd.DataFrame(stability_rows),
             "score_correlations": pd.DataFrame(score_correlation_rows),
-            "diagnostics": pd.DataFrame(diagnostics_rows),
-            "contexts": contexts,
+            "diagnostics": pd.DataFrame(diagnostics_rows), "contexts": contexts,
         },
     )
 
@@ -809,10 +584,7 @@ def _annotate_persistence(stability: pd.DataFrame) -> pd.DataFrame:
     result = stability.copy()
     result["persistent_instability"] = False
     result["regime_candidate"] = False
-    for keys, group in result.groupby(
-        ["window_sessions", "alignment_method", "factor"],
-        sort=False,
-    ):
+    for keys, group in result.groupby(["window_sessions", "alignment_method", "factor"], sort=False):
         ordered = group.sort_values("window_start_index")
         current = ordered["instability_flag"].astype(bool).to_numpy()
         starts = ordered["window_start_index"].to_numpy(dtype=int)
@@ -826,14 +598,9 @@ def _annotate_persistence(stability: pd.DataFrame) -> pd.DataFrame:
 
 
 def run_start_count_sensitivity(
-    panel: pd.DataFrame,
-    definitions_by_id: dict[str, WindowDefinition],
-    fits: dict[str, WindowFit],
-    contexts: dict[str, dict[str, Any]],
-    candidate_ids: Iterable[str],
-    *,
-    sensitivity_starts: int = SENSITIVITY_STARTS,
-    base_seed: int = RANDOM_STATE,
+    panel: pd.DataFrame, definitions_by_id: dict[str, WindowDefinition], fits: dict[str, WindowFit],
+    contexts: dict[str, dict[str, Any]], candidate_ids: Iterable[str], *,
+    sensitivity_starts: int = SENSITIVITY_STARTS, base_seed: int = RANDOM_STATE,
 ) -> pd.DataFrame:
     """Re-fit quarterly or unstable windows with 500 starts."""
 
@@ -842,26 +609,16 @@ def run_start_count_sensitivity(
         definition = definitions_by_id[window_id]
         primary = fits[window_id]
         seed = deterministic_seed(
-            definition.window_sessions,
-            definition.window_start,
-            definition.window_end,
-            sensitivity_starts,
+            definition.window_sessions, definition.window_start, definition.window_end, sensitivity_starts,
             base_seed,
         )
-        sensitivity = fit_window(
-            panel,
-            definition,
-            n_starts=sensitivity_starts,
-            random_seed=seed,
-        )
+        sensitivity = fit_window(panel, definition, n_starts=sensitivity_starts, random_seed=seed)
         anchor = contexts[window_id]["past_reference"]
         aligned_sensitivity = _align_fit(sensitivity, anchor)
         primary_aligned = contexts[window_id]["primary_past_alignment"]
         threshold = primary.small_loading_threshold
         primary_values = primary_aligned.structural_loadings.to_numpy(dtype=float)
-        sensitivity_values = aligned_sensitivity.structural_loadings.to_numpy(
-            dtype=float
-        )
+        sensitivity_values = aligned_sensitivity.structural_loadings.to_numpy(dtype=float)
         primary_small = (np.abs(primary_values) < threshold).sum(axis=0).astype(int)
         sensitivity_small = (
             (np.abs(sensitivity_values) < threshold).sum(axis=0).astype(int)
@@ -871,17 +628,14 @@ def run_start_count_sensitivity(
         supports = np.asarray(
             [
                 _jaccard_support(
-                    sensitivity_values[:, factor : factor + 1],
-                    primary_values[:, factor : factor + 1],
+                    sensitivity_values[:, factor : factor + 1], primary_values[:, factor : factor + 1],
                     threshold,
                 )[0]
                 for factor in range(N_COMPONENTS)
             ]
         )
         stable = (
-            np.all(
-                aligned_sensitivity.cosine_similarity >= COSINE_INSTABILITY_THRESHOLD
-            )
+            np.all(aligned_sensitivity.cosine_similarity >= COSINE_INSTABILITY_THRESHOLD)
             and np.all(supports >= JACCARD_INSTABILITY_THRESHOLD)
             and np.array_equal(primary_local, sensitivity_local)
         )
@@ -895,9 +649,7 @@ def run_start_count_sensitivity(
                     "sensitivity_n_starts": sensitivity.n_starts,
                     "primary_seed": primary.random_seed,
                     "sensitivity_seed": sensitivity.random_seed,
-                    "primary_vs_sensitivity_cosine": aligned_sensitivity.cosine_similarity[
-                        factor_number
-                    ],
+                    "primary_vs_sensitivity_cosine": aligned_sensitivity.cosine_similarity[factor_number],
                     "support_jaccard_primary_vs_sensitivity": supports[factor_number],
                     "primary_small_count": primary_small[factor_number],
                     "sensitivity_small_count": sensitivity_small[factor_number],
@@ -919,10 +671,7 @@ def run_start_count_sensitivity(
     return pd.DataFrame(rows)
 
 
-def _merge_sensitivity_annotations(
-    frame: pd.DataFrame,
-    sensitivity: pd.DataFrame,
-) -> pd.DataFrame:
+def _merge_sensitivity_annotations(frame: pd.DataFrame, sensitivity: pd.DataFrame) -> pd.DataFrame:
     """Attach window-level sensitivity results to stability and diagnostics."""
 
     if sensitivity.empty:
@@ -941,9 +690,7 @@ def _merge_sensitivity_annotations(
         .assign(sensitivity_run=True)
     )
     summary["sensitivity_reason"] = "quarterly_or_primary_instability"
-    result = frame.merge(
-        summary, on="window_id", how="left", suffixes=("", "_sensitivity")
-    )
+    result = frame.merge(summary, on="window_id", how="left", suffixes=("", "_sensitivity"))
     result["sensitivity_run"] = result["sensitivity_run"].eq(True)
     result["sensitivity_reason"] = result["sensitivity_reason"].fillna("")
     result["sensitivity_instability_flag"] = (
@@ -952,18 +699,10 @@ def _merge_sensitivity_annotations(
     return result
 
 
-def build_window_diagnostics(
-    stability: pd.DataFrame,
-) -> pd.DataFrame:
+def build_window_diagnostics(stability: pd.DataFrame) -> pd.DataFrame:
     """Aggregate factor-level diagnostics while retaining alignment method."""
 
-    group_columns = [
-        "window_id",
-        "window_sessions",
-        "window_start",
-        "window_end",
-        "alignment_method",
-    ]
+    group_columns = ["window_id", "window_sessions", "window_start", "window_end", "alignment_method"]
     aggregations = stability.groupby(group_columns, as_index=False).agg(
         window_start_index=("window_start_index", "first"),
         window_end_index=("window_end_index", "first"),
@@ -995,10 +734,7 @@ def build_window_diagnostics(
 def build_regime_summary(stability: pd.DataFrame) -> pd.DataFrame:
     """Summarize factor stability by window size, alignment mode, and regime."""
 
-    return stability.groupby(
-        ["window_sessions", "alignment_method", "regime", "factor"],
-        as_index=False,
-    ).agg(
+    return stability.groupby(["window_sessions", "alignment_method", "regime", "factor"], as_index=False).agg(
         n_windows=("window_id", "nunique"),
         n_mixed_regime_windows=("crosses_regime_boundary", "sum"),
         mean_cosine_similarity_previous=("cosine_similarity_previous", "mean"),
@@ -1012,10 +748,7 @@ def build_regime_summary(stability: pd.DataFrame) -> pd.DataFrame:
         mean_rotation_condition_number=("rotation_condition_number", "mean"),
         mean_pc1_explained_pct=("pc1_explained_pct", "mean"),
         mean_first3_explained_pct=("cumulative_explained_pct_first3", "mean"),
-        mean_benchmark_variance_removed_pct=(
-            "benchmark_variance_removed_pct",
-            "mean",
-        ),
+        mean_benchmark_variance_removed_pct=("benchmark_variance_removed_pct", "mean"),
         n_regime_candidates=("regime_candidate", "sum"),
         n_sensitivity_runs=("sensitivity_run", "sum"),
         n_sensitivity_instabilities=("sensitivity_instability_flag", "sum"),
@@ -1025,23 +758,12 @@ def build_regime_summary(stability: pd.DataFrame) -> pd.DataFrame:
 def build_unstable_windows(stability: pd.DataFrame) -> pd.DataFrame:
     """List descriptive instability candidates; these are not break tests."""
 
-    result = stability[
-        stability["regime_candidate"] | stability["sensitivity_instability_flag"]
-    ].copy()
+    result = stability[stability["regime_candidate"] | stability["sensitivity_instability_flag"]].copy()
     if result.empty:
-        return pd.DataFrame(
-            columns=[
-                *stability.columns,
-                "candidate_type",
-            ]
-        )
+        return pd.DataFrame(columns=[*stability.columns, "candidate_type"])
     result["candidate_type"] = np.where(
         result["regime_candidate"] & result["sensitivity_instability_flag"],
         "persistent_instability_and_sensitivity_disagreement",
-        np.where(
-            result["regime_candidate"],
-            "persistent_instability",
-            "sensitivity_disagreement",
-        ),
+        np.where(result["regime_candidate"], "persistent_instability", "sensitivity_disagreement"),
     )
     return result

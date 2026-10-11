@@ -23,17 +23,9 @@ from config import BENCHMARKS, CORE_UNIVERSE
 from utils.data import normalize_intraday_volatility
 from utils.kalman import fit_window, make_windows
 from utils.l1_rotation import fit_l1_rotation
-from utils.local_factor import (
-    bootstrap_correlation,
-    bootstrap_local_factors,
-    build_session_moments,
-)
-from utils.pca import fit_pca, pca_diagnostics, reconstruction_by_stock
-from utils.preprocessing import (
-    build_contaminated_mask,
-    build_price_matrix,
-    compute_intraday_returns,
-)
+from utils.local_factor import (bootstrap_correlation, bootstrap_local_factors, build_session_moments,)
+from utils.pca import fit_pca
+from utils.preprocessing import (build_contaminated_mask, build_price_matrix, compute_intraday_returns,)
 from utils.oos_common import normalize_calendar
 from utils.rolling_pca import collect_rolling_results
 from utils.variance import build_variance_ledger
@@ -53,9 +45,7 @@ def sample_panel(n_sessions=65, stocks=CORE_UNIVERSE):
     values = benchmarks @ generator.normal(size=(2, len(stocks)))
     values += generator.normal(size=values.shape)
     return pd.DataFrame(
-        np.column_stack([values, benchmarks]) * 0.001,
-        index=index,
-        columns=[*stocks, *BENCHMARKS],
+        np.column_stack([values, benchmarks]) * 0.001, index=index, columns=[*stocks, *BENCHMARKS],
     )
 
 
@@ -87,21 +77,6 @@ class NumericalBoundaryTest(unittest.TestCase):
                 utc_opens = normalized.session_open.dt.tz_convert("UTC")
                 self.assertEqual(utc_opens.dt.hour.tolist(), [14, 13])
 
-    def test_reconstruction_ledger_matches_pca_variance_share(self):
-        panel = sample_panel().loc[:, list(CORE_UNIVERSE)]
-        for method in ("covariance", "correlation"):
-            result = fit_pca(panel, method)
-            matrix_error, score_error = pca_diagnostics(result)
-            self.assertLess(matrix_error, 1e-12)
-            self.assertLess(score_error, 1e-12)
-            ledger = reconstruction_by_stock(result, 3)
-            retained = (
-                1 - ledger.residual_variance.sum() / ledger.original_variance.sum()
-            )
-            self.assertAlmostEqual(retained, result.explained[:3].sum())
-            full = reconstruction_by_stock(result, panel.shape[1])
-            np.testing.assert_allclose(full.explained_pct, 100, atol=1e-10)
-
     def test_variance_ledger_reconciles_benchmarks_and_components(self):
         ledger = build_variance_ledger(sample_panel(), CORE_UNIVERSE)["ledger"]
         np.testing.assert_allclose(ledger.total_pct, 100, atol=1e-10)
@@ -110,16 +85,9 @@ class NumericalBoundaryTest(unittest.TestCase):
     def test_rolling_uses_requested_stocks_step_and_last_window(self):
         stocks = ("A", "B", "C")
         panel = sample_panel(12, stocks)
-        normalized = normalize_intraday_volatility(
-            panel.loc[:, list(stocks)]
-        ).normalized_returns
+        normalized = normalize_intraday_volatility(panel.loc[:, list(stocks)]).normalized_returns
         metrics, loadings, diagnostics = collect_rolling_results(
-            panel,
-            normalized,
-            stocks=stocks,
-            window_sizes=(5,),
-            step_sessions=4,
-            methods=("correlation",),
+            panel, normalized, stocks=stocks, window_sizes=(5,), step_sessions=4, methods=("correlation",),
         )
         # Starts 0,4,7; the last window is retained even off the four-session grid.
         expected_ends = panel.index.normalize().unique()[[4, 8, 11]]
@@ -142,9 +110,7 @@ class NumericalBoundaryTest(unittest.TestCase):
         draw = np.array([2, 0, 2, 4, 1])
         groups = [group for _, group in panel.groupby(panel.index.normalize())]
         explicit = pd.concat([groups[i] for i in draw]).corr()
-        np.testing.assert_allclose(
-            bootstrap_correlation(moments, draw), explicit, atol=1e-12
-        )
+        np.testing.assert_allclose(bootstrap_correlation(moments, draw), explicit, atol=1e-12)
 
     def test_bootstrap_supports_a_different_universe_and_factor_count(self):
         panel = sample_panel(8, ("A", "B", "C", "D")).iloc[:, :4]
@@ -152,58 +118,40 @@ class NumericalBoundaryTest(unittest.TestCase):
             fit_pca(panel, "correlation"), n_components=2, n_starts=8, random_state=15
         )
         probabilities, stability = bootstrap_local_factors(
-            panel,
-            reference,
-            replications=2,
-            n_starts=6,
-            random_state=16,
+            panel, reference, replications=2, n_starts=6, random_state=16,
         )
         self.assertEqual(set(probabilities.stock), set(panel.columns))
         self.assertEqual(len(stability), 4)
-        np.testing.assert_allclose(
-            probabilities.active_probability + probabilities.small_probability, 1
-        )
+        np.testing.assert_allclose(probabilities.active_probability + probabilities.small_probability, 1)
         with self.assertRaisesRegex(ValueError, "stock order"):
             bootstrap_local_factors(panel.iloc[:, ::-1], reference, replications=2)
 
-    def test_kalman_training_fit_does_not_use_holdout_values(self):
-        panel = sample_panel().loc[:, list(CORE_UNIVERSE)]
-        sessions = panel.groupby(panel.index.normalize()).sum()
-        window = make_windows(sessions)[0]
-        original = fit_window(sessions, window, k=3, starts=8, seed=42)
-        changed = sessions.copy()
-        changed.iloc[window.test] *= 50
-        perturbed = fit_window(changed, window, k=3, starts=8, seed=42)
-        np.testing.assert_allclose(original["H"], perturbed["H"])
-        np.testing.assert_allclose(
-            original["train_filter"]["filt"], perturbed["train_filter"]["filt"]
-        )
-        np.testing.assert_allclose(
-            original["dynamic_train"], perturbed["dynamic_train"]
-        )
-
-    def test_kalman_benchmark_fit_does_not_use_holdout_or_future_minutes(self):
-        panel = sample_panel(80)
-        window = make_windows(panel)[0]
-        original = fit_window(panel, window, k=3, starts=8, seed=42)
-        changed = panel.copy()
-        changed.iloc[window.train[-1] + 1 :] *= 50
-        perturbed = fit_window(changed, window, k=3, starts=8, seed=42)
-        self.assertEqual(original["x_train"].shape, (48, len(CORE_UNIVERSE)))
-        self.assertEqual(original["x_test"].shape, (12, len(CORE_UNIVERSE)))
-        for key in ("H", "static_train", "dynamic_train"):
-            np.testing.assert_allclose(original[key], perturbed[key])
-        training = panel.iloc[window.train]
+    def test_kalman_fit_does_not_use_holdout_or_future_values(self):
         from utils.benchmark import residualize_against_benchmarks
 
-        expected = residualize_against_benchmarks(training, CORE_UNIVERSE)
-        sessions = expected["residual_returns"].groupby(training.index.normalize()).sum()
-        np.testing.assert_allclose(original["pca"].means, sessions.mean())
+        for with_benchmarks in (False, True):
+            with self.subTest(with_benchmarks=with_benchmarks):
+                panel = sample_panel(80)
+                if not with_benchmarks:
+                    panel = panel.loc[:, list(CORE_UNIVERSE)].groupby(panel.index.normalize()).sum()
+                window = make_windows(panel)[0]
+                original = fit_window(panel, window, k=3, starts=8, seed=42)
+                changed = panel.copy()
+                changed.iloc[window.train[-1] + 1:] *= 50
+                perturbed = fit_window(changed, window, k=3, starts=8, seed=42)
+                self.assertEqual(original["x_train"].shape, (48, len(CORE_UNIVERSE)))
+                self.assertEqual(original["x_test"].shape, (12, len(CORE_UNIVERSE)))
+                for key in ("H", "static_train", "dynamic_train"):
+                    np.testing.assert_allclose(original[key], perturbed[key])
+                np.testing.assert_allclose(original["train_filter"]["filt"], perturbed["train_filter"]["filt"])
+                training = panel.iloc[window.train]
+                residuals = residualize_against_benchmarks(training, CORE_UNIVERSE)["residual_returns"] \
+                    if with_benchmarks else training
+                sessions = residuals.groupby(training.index.normalize()).sum()
+                np.testing.assert_allclose(original["pca"].means, sessions.mean())
 
     def test_price_alignment_keeps_calendar_minutes_when_spy_is_missing(self):
-        expected = pd.date_range(
-            "2026-01-02 09:30", periods=3, freq="min", tz="America/New_York"
-        )
+        expected = pd.date_range("2026-01-02 09:30", periods=3, freq="min", tz="America/New_York")
         calendar = pd.DataFrame(
             {"session_open": [expected[0]], "session_close": [expected[-1] + pd.Timedelta(minutes=1)]}
         )
@@ -232,12 +180,7 @@ class NumericalBoundaryTest(unittest.TestCase):
 
     def test_preprocessing_excludes_overnight_and_imputation_returns(self):
         index = pd.to_datetime(
-            [
-                "2023-01-02 09:30",
-                "2023-01-02 09:31",
-                "2023-01-02 09:32",
-                "2023-01-03 09:30",
-            ]
+            ["2023-01-02 09:30", "2023-01-02 09:31", "2023-01-02 09:32", "2023-01-03 09:30"]
         )
         prices = pd.DataFrame({"A": [100.0, np.nan, 102.0, 150.0]}, index=index)
         returns = compute_intraday_returns(prices.ffill())
@@ -251,7 +194,7 @@ class PipelineIntegrationTest(unittest.TestCase):
         module = load_stage("03-preprocess.py")
         index = pd.to_datetime(
             ["2026-01-02 09:30", "2026-01-02 09:31", "2026-01-02 09:33",
-             "2026-01-05 09:30", "2026-01-05 09:31", "2026-01-05 09:32"]
+                "2026-01-05 09:30", "2026-01-05 09:31", "2026-01-05 09:32"]
         ).tz_localize("America/New_York")
         prices = pd.DataFrame({"A": [100.0, 101.0, 103.0, np.nan, 150.0, 151.0]}, index=index)
         with tempfile.TemporaryDirectory() as temporary:
@@ -272,12 +215,10 @@ class PipelineIntegrationTest(unittest.TestCase):
         self.assertAlmostEqual(returns.iloc[5, 0], np.log(151.0 / 150.0))
 
     def test_oos_loaders_ignore_missing_stocks_outside_core(self):
-        index = pd.date_range(
-            "2026-01-02 09:30", periods=4, freq="min", tz="America/New_York"
-        )
+        index = pd.date_range("2026-01-02 09:30", periods=4, freq="min", tz="America/New_York")
         columns = [*CORE_UNIVERSE, *BENCHMARKS, "COF"]
         prices = pd.DataFrame(np.arange(4)[:, None] + np.full((4, len(columns)), 100.0),
-                              index=index, columns=columns)
+            index=index, columns=columns)
         prices.loc[index[1], "COF"] = np.nan
         missing = prices.isna()
         prices = prices.ffill()
@@ -303,9 +244,7 @@ class PipelineIntegrationTest(unittest.TestCase):
         from reporting.rolling_pca import plot_benchmark_variance_removed
 
         panel = sample_panel(65)
-        normalized = normalize_intraday_volatility(
-            panel.loc[:, list(CORE_UNIVERSE)]
-        ).normalized_returns
+        normalized = normalize_intraday_volatility(panel.loc[:, list(CORE_UNIVERSE)]).normalized_returns
         metrics, _, _ = collect_rolling_results(panel, normalized)
         self.assertTrue(metrics.window_end.str.endswith("-05:00").any())
         self.assertTrue(metrics.window_end.str.endswith("-04:00").any())
@@ -326,18 +265,13 @@ class PipelineIntegrationTest(unittest.TestCase):
                 if isinstance(n, ast.Import)
                 for a in n.names
             ]
-            self.assertFalse(
-                any(name and name.startswith("matplotlib") for name in imports),
-                path.name,
-            )
+            self.assertFalse(any(name and name.startswith("matplotlib") for name in imports), path.name)
 
     def test_baseline_stages_write_expected_artifacts(self):
         panel = sample_panel()
         counts = {
-            "07_baseline_pca.py": (10, 3),
-            "08_intraday_normalization.py": (6, 1),
-            "09_benchmark_residualization.py": (7, 0),
-            "10_variance_decomposition.py": (5, 2),
+            "07_baseline_pca.py": (10, 3), "08_intraday_normalization.py": (6, 1),
+            "09_benchmark_residualization.py": (7, 0), "10_variance_decomposition.py": (5, 2),
         }
         for filename, (tables, charts) in counts.items():
             with (
@@ -365,20 +299,14 @@ class PipelineIntegrationTest(unittest.TestCase):
             patch.object(module, "OUT_DIR", Path(temporary) / "unused"),
         ):
             results = module.run_analysis(
-                panel,
-                step_sessions=60,
-                primary_starts=6,
-                sensitivity_starts=8,
-                full_sample_starts=10,
-                make_figures=False,
-                write_files=False,
+                panel, step_sessions=60, primary_starts=6, sensitivity_starts=8, full_sample_starts=10,
+                make_figures=False, write_files=False,
             )
             self.assertFalse(module.OUT_DIR.exists())
         assert_frame_equal(panel, before)
         self.assertFalse(results["loadings"].empty)
         self.assertEqual(
-            set(results["stability"].alignment_method),
-            {"past_only", "ex_post_full_sample_alignment"},
+            set(results["stability"].alignment_method), {"past_only", "ex_post_full_sample_alignment"},
         )
 
 

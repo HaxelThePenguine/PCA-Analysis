@@ -12,71 +12,36 @@ from reporting.markdown import markdown_table
 
 def _report_table(frame: pd.DataFrame) -> str:
     return markdown_table(
-        frame, max_rows=25, float_digits=6,
-        empty="No observations were available.", missing="unavailable",
+        frame, max_rows=25, float_digits=6, empty="No observations were available.", missing="unavailable",
     )
 
 
 def write_results_markdown(
-    path: Path,
-    *,
-    manifest: Mapping[str, object],
-    model_summary: pd.DataFrame,
-    stock_summary: pd.DataFrame,
-    comparison: pd.DataFrame,
-    hac: pd.DataFrame,
-    bootstrap: pd.DataFrame,
-    edge_stability: pd.DataFrame,
+    path: Path, *, manifest: Mapping[str, object], model_summary: pd.DataFrame, stock_summary: pd.DataFrame,
+    comparison: pd.DataFrame, hac: pd.DataFrame, bootstrap: pd.DataFrame, edge_stability: pd.DataFrame,
     forecast_status: str,
 ) -> None:
     """Save Stage 16 model results and evaluation notes."""
 
     status = str(manifest.get("status", forecast_status))
     lines = [
-        "# Stage 16 OOS Results",
-        "",
-        f"Protocol: `{manifest.get('protocol_version', 'unknown')}`.",
+        "# Stage 16 OOS Results", "", f"Protocol: `{manifest.get('protocol_version', 'unknown')}`.",
         f"Run mode: `{manifest.get('mode', 'unknown')}`.  Status: **{status}**.",
         f"Freeze timestamp: `{manifest.get('freeze_timestamp_utc', 'unknown')}`.  Last data examined: `{manifest.get('last_data_examined', 'unknown')}`.",
-        "",
-        "## Evaluation sample",
-        "",
+        "", "## Evaluation sample", "",
         "The historical walk-forward sample is pseudo-OOS because it informed model development. Prospective forecasts are saved at issuance and scored once their outcomes are observed.",
         "",
         f"Forecast status: `{forecast_status}`. Prospective evaluation requires 252 exchange sessions after the freeze. Missing future outcomes remain pending.",
-        "",
-        "## Forecast comparisons",
-        "",
-        _report_table(comparison),
-        "",
+        "", "## Forecast comparisons", "", _report_table(comparison), "",
         "The primary comparison averages Network-HAR minus Own-HAR QLIKE across stocks within each date. Negative differences favor Network HAR. Loss levels across factor windows are not directly comparable because the residual targets differ.",
-        "",
-        "### Model summaries",
-        "",
-        _report_table(model_summary),
-        "",
-        "### Per-stock summaries",
-        "",
-        _report_table(stock_summary),
-        "",
-        "## Uncertainty",
-        "",
+        "", "### Model summaries", "", _report_table(model_summary), "", "### Per-stock summaries", "",
+        _report_table(stock_summary), "", "## Uncertainty", "",
         "Bartlett-HAC tests use date-level loss differences. The moving-block bootstrap resamples the same dates for all stocks. Its percentile interval describes the observed loss series; it does not include all uncertainty from factor estimation, tuning, or model discovery.",
-        "",
-        _report_table(hac),
-        "",
-        _report_table(bootstrap),
-        "",
+        "", _report_table(hac), "", _report_table(bootstrap), "",
         "Per-stock tests are secondary, with Benjamini–Hochberg and Holm adjustments where available. The one-SE penalty rule uses three chronological folds to choose a model; it is not a confidence interval.",
-        "",
-        "## Network diagnostics",
-        "",
-        _report_table(edge_stability),
-        "",
+        "", "## Network diagnostics", "", _report_table(edge_stability), "",
         "Edge persistence and bootstrap selection rates measure stability, separately from forecast gains. The edge bootstrap holds factor features and the observed penalty fixed. Directed edges describe conditional predictability and do not establish causality or trading profitability.",
-        "",
-        "## Target and method",
-        "",
+        "", "## Target and method", "",
         "The target is factor-adjusted realized variance from complete, non-overlapping five-minute bins. HAR uses log variance; QLIKE uses raw positive variance. Forecasts use information through session d's close to predict session d+1.",
         "",
         "Daily, weekly, and monthly predictors follow Corsi (2009), using means of log variance. Patton (2011) motivates QLIKE for noisy volatility proxies. The nested, expanding, penalized models require caution when interpreting predictive tests; see Giacomini and White (2006).",
@@ -89,11 +54,7 @@ def write_results_markdown(
 
 
 def write_figures(
-    scored: pd.DataFrame,
-    comparison: pd.DataFrame,
-    bootstrap: pd.DataFrame,
-    edge_stability: pd.DataFrame,
-    *,
+    scored: pd.DataFrame, comparison: pd.DataFrame, bootstrap: pd.DataFrame, edge_stability: pd.DataFrame, *,
     out_dir: Path,
 ) -> None:
     """Save forecast-loss and network figures if plotting is available."""

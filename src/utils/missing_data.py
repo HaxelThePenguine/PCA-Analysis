@@ -24,18 +24,11 @@ def build_expected_index(calendar: pd.DataFrame) -> pd.DatetimeIndex:
         market_open = normalize_ny_timestamp(row.session_open)
         market_close = normalize_ny_timestamp(row.session_close)
         session_minutes.append(
-            pd.date_range(
-                start=market_open,
-                end=market_close - pd.Timedelta(minutes=1),
-                freq="1min",
-            )
+            pd.date_range(start=market_open, end=market_close - pd.Timedelta(minutes=1), freq="1min")
         )
 
     expected = session_minutes[0].append(session_minutes[1:])
-    return pd.DatetimeIndex(
-        pd.to_datetime(expected, utc=True),
-        name="ny_time",
-    ).tz_convert(NY_TZ)
+    return pd.DatetimeIndex(pd.to_datetime(expected, utc=True), name="ny_time").tz_convert(NY_TZ)
 
 
 def load_observed_index(symbol: str) -> pd.DatetimeIndex:
@@ -74,8 +67,7 @@ def daily_missing_summary(missing: pd.DataFrame) -> pd.DataFrame:
     """Aggregate missing observations by session."""
 
     return (
-        missing["n_missing"]
-        .groupby(missing.index.date)
+        missing["n_missing"] .groupby(missing.index.date)
         .agg(max_symbols_missing="max", total_missing_cells="sum")
         .sort_values("total_missing_cells", ascending=False)
     )

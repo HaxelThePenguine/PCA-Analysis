@@ -143,7 +143,7 @@ Aggregate-Factor HAR reduces historical pooled QLIKE by 2.916–3.784% relative 
 
 ## Architecture and execution
 
-Numbered scripts in `src/` run each stage. Calculations live in `src/utils/`, reporting in `src/reporting/`, and shared OOS helpers in `src/utils/oos_common.py`. Every stage exposes `main()` and can be imported without running the pipeline.
+Numbered scripts in `src/` run each stage. Calculations live in `src/utils/` and reporting in `src/reporting/`. Shared OOS helpers are in `src/utils/oos_common.py`; HAR ledger builders are in `src/utils/har_records.py`. Every stage exposes `main()` and can be imported without running the pipeline.
 
 | Layer | Role |
 | --- | --- |

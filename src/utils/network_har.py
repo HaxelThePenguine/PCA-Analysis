@@ -11,6 +11,8 @@ import pandas as pd
 from scipy.stats import norm
 
 from utils.data import validate_panel
+from utils.har_records import coefficient_records, edge_records
+from utils.oos_common import safe_positive_variance, training_bounds
 
 
 HORIZONS = ("D", "W", "M")
@@ -232,30 +234,19 @@ def build_har_features(log_variance: pd.DataFrame) -> HARDesign:
         feature_rows.append(row)
         response_rows.append(values[origin_position + 1])
     features = pd.DataFrame(
-        feature_rows,
-        index=pd.DatetimeIndex(origins, name="forecast_origin"),
+        feature_rows, index=pd.DatetimeIndex(origins, name="forecast_origin"),
         columns=pd.MultiIndex.from_tuples(columns, names=["stock", "horizon"]),
     )
-    response = pd.DataFrame(
-        response_rows,
-        index=features.index,
-        columns=log_variance.columns,
-    )
+    response = pd.DataFrame(response_rows, index=features.index, columns=log_variance.columns)
     return HARDesign(
-        origins=features.index,
-        targets=pd.DatetimeIndex(targets, name="target_date"),
-        response=response,
+        origins=features.index, targets=pd.DatetimeIndex(targets, name="target_date"), response=response,
         features=features,
     )
 
 
 def partial_out(
-    y: np.ndarray | Sequence[float],
-    own: np.ndarray,
-    cross: np.ndarray,
-    *,
-    eval_y: np.ndarray | Sequence[float] | None = None,
-    eval_own: np.ndarray | None = None,
+    y: np.ndarray | Sequence[float], own: np.ndarray, cross: np.ndarray, *,
+    eval_y: np.ndarray | Sequence[float] | None = None, eval_own: np.ndarray | None = None,
     eval_cross: np.ndarray | None = None,
 ) -> PartialOutResult:
     """Project y and cross predictors on the intercept and own HAR terms."""
@@ -289,11 +280,8 @@ def partial_out(
         eval_response_residual = y_eval - z_eval @ own_projection
         eval_cross_residual = cross_eval - z_eval @ cross_projection
     return PartialOutResult(
-        response_residual=response_residual,
-        cross_residual=cross_residual,
-        own_projection=own_projection,
-        cross_projection=cross_projection,
-        eval_response_residual=eval_response_residual,
+        response_residual=response_residual, cross_residual=cross_residual, own_projection=own_projection,
+        cross_projection=cross_projection, eval_response_residual=eval_response_residual,
         eval_cross_residual=eval_cross_residual,
     )
 
@@ -313,9 +301,7 @@ def _cross_scales(cross_residual: np.ndarray) -> np.ndarray:
 
 
 def _alpha_max_from_partial(
-    partial: PartialOutResult,
-    n_observations: int,
-    scales: np.ndarray | None = None,
+    partial: PartialOutResult, n_observations: int, scales: np.ndarray | None = None,
 ) -> float:
     """Compute the zero-solution threshold on the solver's standardized scale."""
 
@@ -323,42 +309,27 @@ def _alpha_max_from_partial(
         return 0.0
     scales = _cross_scales(partial.cross_residual) if scales is None else np.asarray(scales, dtype=float)
     standardized = partial.cross_residual / scales
-    return float(
-        np.max(np.abs(standardized.T @ partial.response_residual)) / n_observations
-    )
+    return float(np.max(np.abs(standardized.T @ partial.response_residual)) / n_observations)
 
 
 def _soft_threshold(value: float, penalty: float) -> float:
     return float(np.sign(value) * max(abs(value) - penalty, 0.0))
 
 
-def _lasso_kkt_violation(
-    x: np.ndarray,
-    y: np.ndarray,
-    coefficients: np.ndarray,
-    alpha: float,
-) -> float:
+def _lasso_kkt_violation(x: np.ndarray, y: np.ndarray, coefficients: np.ndarray, alpha: float) -> float:
     """Return the maximum KKT violation for the no-intercept lasso."""
 
     gradient = (x.T @ (x @ coefficients - y)) / len(x)
     nonzero = np.abs(coefficients) > 1e-10
     violations = np.where(
-        nonzero,
-        np.abs(gradient + alpha * np.sign(coefficients)),
-        np.maximum(np.abs(gradient) - alpha, 0.0),
+        nonzero, np.abs(gradient + alpha * np.sign(coefficients)), np.maximum(np.abs(gradient) - alpha, 0.0),
     )
     return float(np.max(violations)) if len(violations) else 0.0
 
 
 def _fit_lasso_result(
-    x: np.ndarray,
-    y: np.ndarray,
-    alpha: float,
-    *,
-    max_iterations: int,
-    tolerance: float,
-    initial: np.ndarray | None = None,
-    gram: np.ndarray | None = None,
+    x: np.ndarray, y: np.ndarray, alpha: float, *, max_iterations: int, tolerance: float,
+    initial: np.ndarray | None = None, gram: np.ndarray | None = None,
     cross_product: np.ndarray | None = None,
 ) -> LassoSolveResult:
     """Solve the no-intercept lasso and report convergence/KKT diagnostics."""
@@ -378,10 +349,7 @@ def _fit_lasso_result(
     # At alpha_max, force exact zeros so rounding does not select an edge.
     if alpha >= score_max - 1e-12 * max(1.0, score_max):
         return LassoSolveResult(
-            np.zeros(x.shape[1]),
-            True,
-            0,
-            _lasso_kkt_violation(x, y, np.zeros(x.shape[1]), alpha),
+            np.zeros(x.shape[1]), True, 0, _lasso_kkt_violation(x, y, np.zeros(x.shape[1]), alpha),
         )
     converged = False
     iterations = 0
@@ -398,17 +366,13 @@ def _fit_lasso_result(
             converged = True
             break
     return LassoSolveResult(
-        coefficients=coefficients,
-        converged=converged,
-        iterations=iterations,
+        coefficients=coefficients, converged=converged, iterations=iterations,
         kkt_max_violation=_lasso_kkt_violation(x, y, coefficients, alpha),
     )
 
 
 def _prepare_partialling_out(
-    y_train: np.ndarray,
-    own_train: np.ndarray,
-    cross_train: np.ndarray,
+    y_train: np.ndarray, own_train: np.ndarray, cross_train: np.ndarray,
 ) -> tuple[PartialOutResult, np.ndarray, np.ndarray]:
     """Compute the projection and standardized cross design once per sample."""
 
@@ -423,18 +387,9 @@ def _prepare_partialling_out(
 
 
 def _fit_prepared_partialling_out(
-    y_train: np.ndarray,
-    own_train: np.ndarray,
-    cross_train: np.ndarray,
-    partial: PartialOutResult,
-    scales: np.ndarray,
-    cross_standardized: np.ndarray,
-    *,
-    alpha: float,
-    cross_feature_names: Sequence[str],
-    config: HARConfig,
-    initial: np.ndarray | None = None,
-    lasso_gram: np.ndarray | None = None,
+    y_train: np.ndarray, own_train: np.ndarray, cross_train: np.ndarray, partial: PartialOutResult,
+    scales: np.ndarray, cross_standardized: np.ndarray, *, alpha: float, cross_feature_names: Sequence[str],
+    config: HARConfig, initial: np.ndarray | None = None, lasso_gram: np.ndarray | None = None,
     lasso_cross_product: np.ndarray | None = None,
 ) -> HARFit:
     """Fit one penalty value after the projection has already been computed."""
@@ -444,27 +399,15 @@ def _fit_prepared_partialling_out(
     lasso_kkt_max_violation = 0.0
     if cross_train.shape[1]:
         if alpha <= 1e-14:
-            network_standardized = np.linalg.lstsq(
-                cross_standardized,
-                partial.response_residual,
-                rcond=None,
-            )[0]
+            network_standardized = np.linalg.lstsq(cross_standardized, partial.response_residual, rcond=None)[0]
             lasso_kkt_max_violation = _lasso_kkt_violation(
-                cross_standardized,
-                partial.response_residual,
-                network_standardized,
-                0.0,
+                cross_standardized, partial.response_residual, network_standardized, 0.0,
             )
         else:
             lasso_result = _fit_lasso_result(
-                cross_standardized,
-                partial.response_residual,
-                float(alpha),
-                max_iterations=config.lasso_max_iter,
-                tolerance=config.lasso_tolerance,
-                initial=initial,
-                gram=lasso_gram,
-                cross_product=lasso_cross_product,
+                cross_standardized, partial.response_residual, float(alpha),
+                max_iterations=config.lasso_max_iter, tolerance=config.lasso_tolerance, initial=initial,
+                gram=lasso_gram, cross_product=lasso_cross_product,
             )
             network_standardized = lasso_result.coefficients
             lasso_converged = lasso_result.converged
@@ -475,11 +418,7 @@ def _fit_prepared_partialling_out(
         network_standardized = np.empty(0)
         network_original = np.empty(0)
     z_train = np.column_stack([np.ones(len(y_train)), own_train])
-    own_conditional = np.linalg.lstsq(
-        z_train,
-        y_train - cross_train @ network_original,
-        rcond=None,
-    )[0]
+    own_conditional = np.linalg.lstsq(z_train, y_train - cross_train @ network_original, rcond=None)[0]
     predictions = z_train @ own_conditional + cross_train @ network_original
     residuals = y_train - predictions
     clipped_residuals = np.clip(residuals, -30.0, 30.0)
@@ -489,33 +428,21 @@ def _fit_prepared_partialling_out(
     column_norm_ratio = float(column_norms.max() / max(column_norms.min(), 1e-12))
     condition_number = float(np.linalg.cond(design))
     return HARFit(
-        intercept=float(own_conditional[0]),
-        own_coefficients=own_conditional[1:],
+        intercept=float(own_conditional[0]), own_coefficients=own_conditional[1:],
         network_coefficients_original=network_original,
-        network_coefficients_standardized=network_standardized,
-        network_scales=scales,
-        cross_feature_names=tuple(cross_feature_names),
-        train_predictions=predictions,
-        train_residuals=residuals,
-        smearing_factor=max(smearing, 1e-12),
-        selected_penalty=float(alpha),
-        condition_number=condition_number,
-        column_norm_ratio=column_norm_ratio,
-        lasso_converged=lasso_converged,
-        lasso_iterations=lasso_iterations,
+        network_coefficients_standardized=network_standardized, network_scales=scales,
+        cross_feature_names=tuple(cross_feature_names), train_predictions=predictions,
+        train_residuals=residuals, smearing_factor=max(smearing, 1e-12), selected_penalty=float(alpha),
+        condition_number=condition_number, column_norm_ratio=column_norm_ratio,
+        lasso_converged=lasso_converged, lasso_iterations=lasso_iterations,
         lasso_kkt_max_violation=lasso_kkt_max_violation,
         smearing_clipped_observations=int(np.sum(clipped_residuals != residuals)),
     )
 
 
 def fit_partialling_out(
-    y: np.ndarray | Sequence[float],
-    own: np.ndarray,
-    cross: np.ndarray,
-    *,
-    alpha: float = 0.0,
-    cross_feature_names: Sequence[str] = (),
-    config: HARConfig = HARConfig(),
+    y: np.ndarray | Sequence[float], own: np.ndarray, cross: np.ndarray, *, alpha: float = 0.0,
+    cross_feature_names: Sequence[str] = (), config: HARConfig = HARConfig(),
 ) -> HARFit:
     """Fit lasso only on cross-stock terms and recover conditional own HAR terms."""
 
@@ -526,9 +453,7 @@ def fit_partialling_out(
         raise ValueError("Invalid partialling-out training sample.")
     if cross_train.shape[1] != len(tuple(cross_feature_names)):
         raise ValueError("cross_feature_names does not match the design.")
-    partial, scales, cross_standardized = _prepare_partialling_out(
-        y_train, own_train, cross_train
-    )
+    partial, scales, cross_standardized = _prepare_partialling_out(y_train, own_train, cross_train)
     lasso_gram = (
         (cross_standardized.T @ cross_standardized) / len(y_train)
         if cross_standardized.shape[1]
@@ -540,29 +465,15 @@ def fit_partialling_out(
         else None
     )
     return _fit_prepared_partialling_out(
-        y_train,
-        own_train,
-        cross_train,
-        partial,
-        scales,
-        cross_standardized,
-        alpha=alpha,
-        cross_feature_names=cross_feature_names,
-        config=config,
-        lasso_gram=lasso_gram,
+        y_train, own_train, cross_train, partial, scales, cross_standardized, alpha=alpha,
+        cross_feature_names=cross_feature_names, config=config, lasso_gram=lasso_gram,
         lasso_cross_product=lasso_cross_product,
     )
 
 
 def fit_network_pair(
-    y: np.ndarray | Sequence[float],
-    own: np.ndarray,
-    cross: np.ndarray,
-    *,
-    one_se_alpha: float,
-    min_alpha: float,
-    cross_feature_names: Sequence[str] = (),
-    config: HARConfig = HARConfig(),
+    y: np.ndarray | Sequence[float], own: np.ndarray, cross: np.ndarray, *, one_se_alpha: float,
+    min_alpha: float, cross_feature_names: Sequence[str] = (), config: HARConfig = HARConfig(),
 ) -> tuple[HARFit, HARFit, HARFit]:
     """Fit the two network penalties and own HAR while reusing one projection."""
 
@@ -574,9 +485,7 @@ def fit_network_pair(
         raise ValueError("Invalid partialling-out training sample.")
     if cross_train.shape[1] != len(names):
         raise ValueError("cross_feature_names does not match the design.")
-    partial, scales, cross_standardized = _prepare_partialling_out(
-        y_train, own_train, cross_train
-    )
+    partial, scales, cross_standardized = _prepare_partialling_out(y_train, own_train, cross_train)
     lasso_gram = (
         (cross_standardized.T @ cross_standardized) / len(y_train)
         if cross_standardized.shape[1]
@@ -592,17 +501,8 @@ def fit_network_pair(
     warm_start: np.ndarray | None = None
     for label, alpha in sorted(requested.items(), key=lambda item: item[1], reverse=True):
         fitted[label] = _fit_prepared_partialling_out(
-            y_train,
-            own_train,
-            cross_train,
-            partial,
-            scales,
-            cross_standardized,
-            alpha=alpha,
-            cross_feature_names=names,
-            config=config,
-            initial=warm_start,
-            lasso_gram=lasso_gram,
+            y_train, own_train, cross_train, partial, scales, cross_standardized, alpha=alpha,
+            cross_feature_names=names, config=config, initial=warm_start, lasso_gram=lasso_gram,
             lasso_cross_product=lasso_cross_product,
         )
         warm_start = fitted[label].network_coefficients_standardized
@@ -639,11 +539,7 @@ def _chronological_splits(n: int, n_splits: int, min_train: int) -> list[tuple[i
 
 
 def tune_network_penalty(
-    y: np.ndarray,
-    own: np.ndarray,
-    cross: np.ndarray,
-    *,
-    config: HARConfig = HARConfig(),
+    y: np.ndarray, own: np.ndarray, cross: np.ndarray, *, config: HARConfig = HARConfig(),
     cross_feature_names: Sequence[str] = (),
 ) -> PenaltyTuning:
     """Select lasso strength by expanding chronological validation and 1-SE."""
@@ -656,17 +552,13 @@ def tune_network_penalty(
     fractions = tuple(sorted(float(value) for value in config.alpha_fractions if value >= 0))
     if not fractions:
         raise ValueError("alpha_fractions must contain a non-negative value.")
-    splits = _chronological_splits(
-        len(y_values), config.cv_splits, max(20, own_values.shape[1] + 5)
-    )
+    splits = _chronological_splits(len(y_values), config.cv_splits, max(20, own_values.shape[1] + 5))
     prepared_splits = []
     for train_end, validation_end in splits:
         y_train = y_values[:train_end]
         own_train = own_values[:train_end]
         cross_train = cross_values[:train_end]
-        partial, scales, cross_standardized = _prepare_partialling_out(
-            y_train, own_train, cross_train
-        )
+        partial, scales, cross_standardized = _prepare_partialling_out(y_train, own_train, cross_train)
         lasso_gram = (
             (cross_standardized.T @ cross_standardized) / train_end
             if cross_standardized.shape[1]
@@ -679,55 +571,27 @@ def tune_network_penalty(
         )
         prepared_splits.append(
             (
-                train_end,
-                validation_end,
-                y_train,
-                own_train,
-                cross_train,
-                partial,
-                scales,
-                cross_standardized,
-                lasso_gram,
-                lasso_cross_product,
+                train_end, validation_end, y_train, own_train, cross_train, partial, scales,
+                cross_standardized, lasso_gram, lasso_cross_product,
                 _alpha_max_from_partial(partial, train_end, scales),
             )
         )
     rows: list[dict[str, float | int]] = []
     fold_results = {fraction: ([], []) for fraction in fractions}
     for (
-        train_end,
-        validation_end,
-        y_train,
-        own_train,
-        cross_train,
-        partial,
-        scales,
-        cross_standardized,
-        lasso_gram,
-        lasso_cross_product,
-        alpha_max,
+        train_end, validation_end, y_train, own_train, cross_train, partial, scales, cross_standardized,
+        lasso_gram, lasso_cross_product, alpha_max,
     ) in prepared_splits:
         warm_start = None
         for fraction in reversed(fractions):
             alpha = float(fraction * alpha_max)
             fit = _fit_prepared_partialling_out(
-                y_train,
-                own_train,
-                cross_train,
-                partial,
-                scales,
-                cross_standardized,
-                alpha=alpha,
-                cross_feature_names=cross_feature_names,
-                config=config,
-                initial=warm_start,
-                lasso_gram=lasso_gram,
-                lasso_cross_product=lasso_cross_product,
+                y_train, own_train, cross_train, partial, scales, cross_standardized, alpha=alpha,
+                cross_feature_names=cross_feature_names, config=config, initial=warm_start,
+                lasso_gram=lasso_gram, lasso_cross_product=lasso_cross_product,
             )
             predicted = _predict_fit(
-                fit,
-                own_values[train_end:validation_end],
-                cross_values[train_end:validation_end],
+                fit, own_values[train_end:validation_end], cross_values[train_end:validation_end],
             )
             fold_results[fraction][0].append(
                 float(np.mean(np.square(y_values[train_end:validation_end] - predicted)))
@@ -746,21 +610,14 @@ def tune_network_penalty(
             standard_error = np.nan
         rows.append(
             {
-                "fraction": fraction,
-                "mean_validation_log_mse": mean_loss,
-                "sd_validation_log_mse": sd_loss,
-                "se_validation_log_mse": standard_error,
-                "n_folds": len(fold_losses),
+                "fraction": fraction, "mean_validation_log_mse": mean_loss, "sd_validation_log_mse": sd_loss,
+                "se_validation_log_mse": standard_error, "n_folds": len(fold_losses),
                 "mean_fold_alpha": float(np.mean(fold_alphas)) if fold_alphas else np.nan,
             }
         )
     cv_scores = pd.DataFrame(rows)
-    full_partial, full_scales, _ = _prepare_partialling_out(
-        y_values, own_values, cross_values
-    )
-    full_alpha_max = _alpha_max_from_partial(
-        full_partial, len(y_values), full_scales
-    )
+    full_partial, full_scales, _ = _prepare_partialling_out(y_values, own_values, cross_values)
+    full_alpha_max = _alpha_max_from_partial(full_partial, len(y_values), full_scales)
     finite = cv_scores.dropna(subset=["mean_validation_log_mse"])
     requested_folds = max(int(config.cv_splits), 0)
     n_valid_folds = len(prepared_splits)
@@ -781,23 +638,15 @@ def tune_network_penalty(
     else:
         min_loss = float(finite["mean_validation_log_mse"].min())
         min_fraction = float(finite.loc[finite["mean_validation_log_mse"].idxmin(), "fraction"])
-        min_se = float(
-            finite.loc[finite["mean_validation_log_mse"].idxmin(), "se_validation_log_mse"]
-        )
+        min_se = float(finite.loc[finite["mean_validation_log_mse"].idxmin(), "se_validation_log_mse"])
         if not np.isfinite(min_se):
             min_se = 0.0
         eligible = finite[finite["mean_validation_log_mse"] <= min_loss + min_se]
         one_se_fraction = float(eligible["fraction"].max()) if not eligible.empty else min_fraction
     return PenaltyTuning(
-        alpha_max=full_alpha_max,
-        min_fraction=min_fraction,
-        one_se_fraction=one_se_fraction,
-        min_alpha=float(min_fraction * full_alpha_max),
-        one_se_alpha=float(one_se_fraction * full_alpha_max),
-        cv_scores=cv_scores,
-        status=status,
-        n_valid_folds=n_valid_folds,
-        requested_folds=requested_folds,
+        alpha_max=full_alpha_max, min_fraction=min_fraction, one_se_fraction=one_se_fraction,
+        min_alpha=float(min_fraction * full_alpha_max), one_se_alpha=float(one_se_fraction * full_alpha_max),
+        cv_scores=cv_scores, status=status, n_valid_folds=n_valid_folds, requested_folds=requested_folds,
         fallback_reason=fallback_reason,
     )
 
@@ -819,240 +668,85 @@ def fit_own_har(y: np.ndarray, own: np.ndarray, *, config: HARConfig = HARConfig
     column_norm_ratio = float(column_norms.max() / max(column_norms.min(), 1e-12))
     condition_number = float(np.linalg.cond(z_train))
     return HARFit(
-        intercept=float(coefficients[0]),
-        own_coefficients=coefficients[1:],
-        network_coefficients_original=np.empty(0),
-        network_coefficients_standardized=np.empty(0),
-        network_scales=np.empty(0),
-        cross_feature_names=(),
-        train_predictions=predictions,
-        train_residuals=residuals,
-        smearing_factor=max(smearing, 1e-12),
-        selected_penalty=0.0,
-        condition_number=condition_number,
-        column_norm_ratio=column_norm_ratio,
-        lasso_converged=True,
-        lasso_iterations=0,
-        lasso_kkt_max_violation=0.0,
+        intercept=float(coefficients[0]), own_coefficients=coefficients[1:],
+        network_coefficients_original=np.empty(0), network_coefficients_standardized=np.empty(0),
+        network_scales=np.empty(0), cross_feature_names=(), train_predictions=predictions,
+        train_residuals=residuals, smearing_factor=max(smearing, 1e-12), selected_penalty=0.0,
+        condition_number=condition_number, column_norm_ratio=column_norm_ratio, lasso_converged=True,
+        lasso_iterations=0, lasso_kkt_max_violation=0.0,
         smearing_clipped_observations=int(np.sum(clipped_residuals != residuals)),
     )
 
 
 def _walk_forward_target_task(task: _TargetTask) -> _TargetWalkResult:
-    """Fit one target over the entire walk-forward history in one worker."""
-
+    """Fit one target through the walk-forward history."""
     config = task.config
     if int(config.n_jobs) < 1:
         raise ValueError("n_jobs must be at least one.")
-    forecast_rows: list[dict[str, object]] = []
-    coefficient_rows: list[dict[str, object]] = []
-    edge_rows: list[dict[str, object]] = []
-    tuning_rows: list[dict[str, object]] = []
-    tuning: PenaltyTuning | None = None
-    last_tuned = -10**9
+    forecasts, coefficients, edges, tuning_rows = [], [], [], []
+    tuning, last_tuned = None, -10**9
     last_row = len(task.origins) - 1
-    first_row = max(config.min_training_observations, 1)
-    for row_number in range(first_row, len(task.origins)):
-        if task.har_window == "expanding":
-            train_start = 0
-        else:
-            train_length = int(task.har_window)
-            if train_length <= 0:
-                raise ValueError("har_window must be positive or 'expanding'.")
-            train_start = max(0, row_number - train_length)
-        train_end = row_number
-        origin_date = task.origins[row_number]
-        target_date = task.targets[row_number]
-        y_train = task.y_all[train_start:train_end]
-        own_train = task.own_all[train_start:train_end]
-        cross_train = task.cross_all[train_start:train_end]
+    for row_number in range(max(config.min_training_observations, 1), len(task.origins)):
+        train_start, train_end = training_bounds(row_number, task.har_window)
+        origin, target = task.origins[row_number], task.targets[row_number]
+        y = task.y_all[train_start:train_end]
+        own, cross = task.own_all[train_start:train_end], task.cross_all[train_start:train_end]
         needs_tuning = tuning is None or row_number - last_tuned >= config.tuning_frequency
         if needs_tuning:
-            tuning = tune_network_penalty(
-                y_train,
-                own_train,
-                cross_train,
-                config=config,
-                cross_feature_names=task.feature_names,
-            )
+            tuning = tune_network_penalty(y, own, cross, config=config,
+                cross_feature_names=task.feature_names)
             last_tuned = row_number
             cv = tuning.cv_scores.copy()
             cv.insert(0, "stock", task.target)
             cv.insert(0, "spec_name", task.spec_name)
-            cv.insert(2, "forecast_origin", origin_date)
-            cv["factor_window_sessions"] = task.factor_window_sessions
-            cv["har_window"] = task.har_window
-            cv["training_start"] = task.origins[train_start]
-            cv["training_end"] = task.origins[train_end - 1]
-            cv["selected_one_se_fraction"] = tuning.one_se_fraction
-            cv["selected_min_loss_fraction"] = tuning.min_fraction
+            cv.insert(2, "forecast_origin", origin)
+            cv["factor_window_sessions"], cv["har_window"] = task.factor_window_sessions, task.har_window
+            cv["training_start"], cv["training_end"] = task.origins[train_start], task.origins[train_end - 1]
+            cv["selected_one_se_fraction"], cv["selected_min_loss_fraction"] = tuning.one_se_fraction, tuning.min_fraction
             tuning_rows.extend(cv.to_dict("records"))
-        if tuning is None:
-            raise RuntimeError("Penalty tuning did not produce a result.")
-        fit_one_se, fit_min, fit_own = fit_network_pair(
-            y_train,
-            own_train,
-            cross_train,
-            one_se_alpha=tuning.one_se_alpha,
-            min_alpha=tuning.min_alpha,
-            cross_feature_names=task.feature_names,
-            config=config,
+        one_se, minimum, own_fit = fit_network_pair(
+            y, own, cross, one_se_alpha=tuning.one_se_alpha, min_alpha=tuning.min_alpha,
+            cross_feature_names=task.feature_names, config=config,
         )
-        own_current = task.own_all[row_number : row_number + 1]
-        cross_current = task.cross_all[row_number : row_number + 1]
-        actual_log = float(task.y_all[row_number])
-        origin_log = float(task.origin_logs[row_number])
-        actual_variance = max(
-            float(np.exp(np.clip(actual_log, -40.0, 40.0))),
-            config.variance_floor,
-        )
-        for model_name, fit in (
-            ("own_har", fit_own),
-            ("network_har_l1_1se", fit_one_se),
-            ("network_har_l1_min_loss", fit_min),
-        ):
-            prediction_cross = (
-                cross_current
-                if len(fit.network_coefficients_original)
-                else np.empty((1, 0))
-            )
-            predicted_log = float(_predict_fit(fit, own_current, prediction_cross)[0])
-            predicted_variance = max(
-                float(np.exp(np.clip(predicted_log, -40.0, 40.0)) * fit.smearing_factor),
-                config.variance_floor,
-            )
-            forecast_rows.append(
-                {
-                    "spec_name": task.spec_name,
-                    "factor_window_sessions": task.factor_window_sessions,
-                    "har_window": task.har_window,
-                    "forecast_origin": origin_date,
-                    "target_date": target_date,
-                    "stock": task.target,
-                    "model": model_name,
-                    "actual_log_variance": actual_log,
-                    "predicted_log_variance": predicted_log,
-                    "actual_variance": actual_variance,
-                    "predicted_variance": predicted_variance,
-                    "qlike": _qlike(actual_variance, predicted_variance, config.variance_floor),
-                    "log_mse": float((actual_log - predicted_log) ** 2),
-                    "log_mae": float(abs(actual_log - predicted_log)),
-                    "directional_hit": _directional_hit(actual_log, predicted_log, origin_log),
-                    "selected_penalty": fit.selected_penalty,
-                    "smearing_factor": fit.smearing_factor,
-                    "design_condition_number": fit.condition_number,
-                    "n_train_observations": len(y_train),
-                    "training_start": task.origins[train_start],
-                    "training_end": task.origins[train_end - 1],
-                }
-            )
-        persistence_variance = max(
-            float(np.exp(np.clip(origin_log, -40.0, 40.0))),
-            config.variance_floor,
-        )
-        forecast_rows.append(
-            {
-                "spec_name": task.spec_name,
-                "factor_window_sessions": task.factor_window_sessions,
-                "har_window": task.har_window,
-                "forecast_origin": origin_date,
-                "target_date": target_date,
-                "stock": task.target,
-                "model": "persistence",
-                "actual_log_variance": actual_log,
-                "predicted_log_variance": origin_log,
-                "actual_variance": actual_variance,
-                "predicted_variance": persistence_variance,
-                "qlike": _qlike(actual_variance, persistence_variance, config.variance_floor),
-                "log_mse": float((actual_log - origin_log) ** 2),
-                "log_mae": float(abs(actual_log - origin_log)),
-                "directional_hit": np.nan,
-                "selected_penalty": np.nan,
-                "smearing_factor": 1.0,
-                "design_condition_number": np.nan,
-                "n_train_observations": len(y_train),
-                "training_start": task.origins[train_start],
-                "training_end": task.origins[train_end - 1],
-            }
-        )
-        for model_name, fit in (
-            ("network_har_l1_1se", fit_one_se),
-            ("network_har_l1_min_loss", fit_min),
-        ):
-            for coefficient, standardized, (source, horizon) in zip(
-                fit.network_coefficients_original,
-                fit.network_coefficients_standardized,
-                task.cross_pairs,
-            ):
-                edge_rows.append(
-                    {
-                        "spec_name": task.spec_name,
-                        "factor_window_sessions": task.factor_window_sessions,
-                        "har_window": task.har_window,
-                        "forecast_origin": origin_date,
-                        "training_start": task.origins[train_start],
-                        "training_end": task.origins[train_end - 1],
-                        "source": source,
-                        "target": task.target,
-                        "edge_id": f"{source}->{task.target}",
-                        "model": model_name,
-                        "horizon": horizon,
-                        "coefficient_original": float(coefficient),
-                        "coefficient_standardized": float(standardized),
-                        "selected": bool(abs(coefficient) > config.coefficient_tolerance),
-                        "sign": int(np.sign(coefficient)),
-                        "n_train_observations": len(y_train),
-                    }
-                )
+        own_current = task.own_all[row_number:row_number + 1]
+        cross_current = task.cross_all[row_number:row_number + 1]
+        actual, origin_log = float(task.y_all[row_number]), float(task.origin_logs[row_number])
+        actual_variance = max(float(np.exp(np.clip(actual, -40.0, 40.0))), config.variance_floor)
+        common = {"spec_name": task.spec_name, "factor_window_sessions": task.factor_window_sessions,
+            "har_window": task.har_window, "forecast_origin": origin,
+            "target_date": target, "stock": task.target}
+        training = {"n_train_observations": len(y), "training_start": task.origins[train_start],
+            "training_end": task.origins[train_end - 1]}
+        models = (("own_har", own_fit), ("network_har_l1_1se", one_se), ("network_har_l1_min_loss", minimum))
+        for model, fit in (*models, ("persistence", None)):
+            prediction_cross = cross_current if fit and len(fit.network_coefficients_original) else np.empty((1, 0))
+            predicted = float(_predict_fit(fit, own_current, prediction_cross)[0]) if fit else origin_log
+            smearing = fit.smearing_factor if fit else 1.0
+            variance, _ = safe_positive_variance(predicted, smearing, config.variance_floor)
+            forecasts.append({
+                **common, "model": model, "actual_log_variance": actual, "predicted_log_variance": predicted,
+                "actual_variance": actual_variance, "predicted_variance": variance,
+                "qlike": _qlike(actual_variance, variance, config.variance_floor),
+                "log_mse": float((actual - predicted) ** 2), "log_mae": float(abs(actual - predicted)),
+                "directional_hit": _directional_hit(actual, predicted, origin_log) if fit else np.nan,
+                "selected_penalty": fit.selected_penalty if fit else np.nan, "smearing_factor": smearing,
+                "design_condition_number": fit.condition_number if fit else np.nan, **training,
+            })
+        edge_common = {key: common[key] for key in
+            ("spec_name", "factor_window_sessions", "har_window", "forecast_origin")}
+        edge_common.update(training_start=training["training_start"], training_end=training["training_end"])
+        for model, fit in models[1:]:
+            rows = edge_records(fit, edge_common, model, task.target, task.cross_pairs,
+                config.coefficient_tolerance, signs=True, model_first=False)
+            for row in rows:
+                row["n_train_observations"] = len(y)
+            edges.extend(rows)
         if needs_tuning or row_number == last_row:
-            for model_name, fit in (
-                ("own_har", fit_own),
-                ("network_har_l1_1se", fit_one_se),
-                ("network_har_l1_min_loss", fit_min),
-            ):
-                coefficient_rows.append(
-                    {
-                        "spec_name": task.spec_name,
-                        "factor_window_sessions": task.factor_window_sessions,
-                        "har_window": task.har_window,
-                        "forecast_origin": origin_date,
-                        "training_start": task.origins[train_start],
-                        "training_end": task.origins[train_end - 1],
-                        "stock": task.target,
-                        "model": model_name,
-                        "predictor_stock": task.target,
-                        "horizon": "Intercept",
-                        "coefficient_original": fit.intercept,
-                        "coefficient_standardized": np.nan,
-                        "selected": True,
-                        "selected_penalty": fit.selected_penalty,
-                    }
-                )
-                for horizon, coefficient in zip(HORIZONS, fit.own_coefficients):
-                    coefficient_rows.append(
-                        {
-                            "spec_name": task.spec_name,
-                            "factor_window_sessions": task.factor_window_sessions,
-                            "har_window": task.har_window,
-                            "forecast_origin": origin_date,
-                            "training_start": task.origins[train_start],
-                            "training_end": task.origins[train_end - 1],
-                            "stock": task.target,
-                            "model": model_name,
-                            "predictor_stock": task.target,
-                            "horizon": horizon,
-                            "coefficient_original": float(coefficient),
-                            "coefficient_standardized": np.nan,
-                            "selected": True,
-                            "selected_penalty": fit.selected_penalty,
-                        }
-                    )
-    return _TargetWalkResult(
-        forecasts=forecast_rows,
-        coefficients=coefficient_rows,
-        edges=edge_rows,
-        tuning=tuning_rows,
-    )
+            coefficient_common = {**edge_common, "stock": task.target}
+            for model, fit in models:
+                coefficients.extend(coefficient_records(fit, coefficient_common, model, HORIZONS,
+                    stock=task.target, penalty=True))
+    return _TargetWalkResult(forecasts, coefficients, edges, tuning_rows)
 
 
 def _descriptive_target_task(task: _DescriptiveTask) -> _DescriptiveResult:
@@ -1061,76 +755,45 @@ def _descriptive_target_task(task: _DescriptiveTask) -> _DescriptiveResult:
     rows: list[dict[str, object]] = []
     tuning_rows: list[dict[str, object]] = []
     for row_number in task.checkpoints:
-        train_start = (
-            0
-            if task.har_window == "expanding"
-            else max(0, row_number - int(task.har_window))
-        )
+        train_start, _ = training_bounds(row_number, task.har_window)
         y = task.y_all[train_start:row_number]
         own = task.own_all[train_start:row_number]
         cross = task.cross_all[train_start:row_number]
         tuning = tune_network_penalty(
-            y,
-            own,
-            cross,
-            config=task.config,
-            cross_feature_names=task.feature_names,
+            y, own, cross, config=task.config, cross_feature_names=task.feature_names,
         )
         fit = fit_partialling_out(
-            y,
-            own,
-            cross,
-            alpha=tuning.one_se_alpha,
-            cross_feature_names=task.feature_names,
+            y, own, cross, alpha=tuning.one_se_alpha, cross_feature_names=task.feature_names,
             config=task.config,
         )
         for fraction_row in tuning.cv_scores.to_dict("records"):
             tuning_rows.append(
                 {
-                    **fraction_row,
-                    "spec_name": task.spec_name,
-                    "factor_window_sessions": task.factor_window_sessions,
-                    "har_window": task.har_window,
+                    **fraction_row, "spec_name": task.spec_name,
+                    "factor_window_sessions": task.factor_window_sessions, "har_window": task.har_window,
                     "checkpoint_date": task.origins[row_number - 1],
-                    "training_start": task.origins[train_start],
-                    "training_end": task.origins[row_number - 1],
-                    "stock": task.target,
-                    "selected_one_se_fraction": tuning.one_se_fraction,
+                    "training_start": task.origins[train_start], "training_end": task.origins[row_number - 1],
+                    "stock": task.target, "selected_one_se_fraction": tuning.one_se_fraction,
                     "selected_min_loss_fraction": tuning.min_fraction,
                 }
             )
-        for coefficient, standardized, (source, horizon) in zip(
-            fit.network_coefficients_original,
-            fit.network_coefficients_standardized,
-            task.cross_pairs,
-        ):
-            rows.append(
-                {
-                    "spec_name": task.spec_name,
-                    "factor_window_sessions": task.factor_window_sessions,
-                    "har_window": task.har_window,
-                    "forecast_origin": task.origins[row_number - 1],
-                    "training_start": task.origins[train_start],
-                    "training_end": task.origins[row_number - 1],
-                    "source": source,
-                    "target": task.target,
-                    "edge_id": f"{source}->{task.target}",
-                    "model": "descriptive_network",
-                    "horizon": horizon,
-                    "coefficient_original": float(coefficient),
-                    "coefficient_standardized": float(standardized),
-                    "selected": bool(abs(coefficient) > task.config.coefficient_tolerance),
-                    "sign": int(np.sign(coefficient)),
-                    "n_train_observations": len(y),
-                }
-            )
+        common = {
+            "spec_name": task.spec_name, "factor_window_sessions": task.factor_window_sessions,
+            "har_window": task.har_window, "forecast_origin": task.origins[row_number - 1],
+            "training_start": task.origins[train_start], "training_end": task.origins[row_number - 1],
+        }
+        checkpoint_edges = edge_records(
+            fit, common, "descriptive_network", task.target, task.cross_pairs,
+            task.config.coefficient_tolerance, signs=True, model_first=False,
+        )
+        for row in checkpoint_edges:
+            row["n_train_observations"] = len(y)
+        rows.extend(checkpoint_edges)
     return _DescriptiveResult(edges=rows, tuning=tuning_rows)
 
 
 def _feature_matrix(
-    design: HARDesign,
-    target: str,
-    stocks: Sequence[str],
+    design: HARDesign, target: str, stocks: Sequence[str],
 ) -> tuple[np.ndarray, np.ndarray, tuple[str, ...], list[tuple[str, str]]]:
     own = design.features.loc[:, [(target, horizon) for horizon in HORIZONS]].to_numpy(dtype=float)
     cross_pairs = [
@@ -1160,12 +823,8 @@ def _directional_hit(actual_log: float, predicted_log: float, origin_log: float)
 
 
 def walk_forward_forecasts(
-    log_variance: pd.DataFrame,
-    *,
-    spec_name: str,
-    factor_window_sessions: int,
-    har_window: str | int = "expanding",
-    config: HARConfig = HARConfig(),
+    log_variance: pd.DataFrame, *, spec_name: str, factor_window_sessions: int,
+    har_window: str | int = "expanding", config: HARConfig = HARConfig(),
 ) -> WalkForwardResult:
     """Estimate forecasts with one persistent worker per target equation."""
 
@@ -1178,19 +837,11 @@ def walk_forward_forecasts(
         own, cross, feature_names, cross_pairs = _feature_matrix(design, target, stocks)
         tasks.append(
             _TargetTask(
-                target=target,
-                y_all=design.response[target].to_numpy(dtype=float),
-                own_all=own,
-                cross_all=cross,
-                origin_logs=log_variance.loc[design.origins, target].to_numpy(dtype=float),
-                feature_names=feature_names,
-                cross_pairs=cross_pairs,
-                origins=design.origins,
-                targets=design.targets,
-                spec_name=spec_name,
-                factor_window_sessions=factor_window_sessions,
-                har_window=har_window,
-                config=config,
+                target=target, y_all=design.response[target].to_numpy(dtype=float), own_all=own,
+                cross_all=cross, origin_logs=log_variance.loc[design.origins, target].to_numpy(dtype=float),
+                feature_names=feature_names, cross_pairs=cross_pairs, origins=design.origins,
+                targets=design.targets, spec_name=spec_name, factor_window_sessions=factor_window_sessions,
+                har_window=har_window, config=config,
             )
         )
     executor = (
@@ -1219,8 +870,7 @@ def walk_forward_forecasts(
 
 
 def summarize_forecasts(
-    forecasts: pd.DataFrame,
-    dimensions: Sequence[str] = ("spec_name", "model"),
+    forecasts: pd.DataFrame, dimensions: Sequence[str] = ("spec_name", "model"),
 ) -> pd.DataFrame:
     """Return pooled, stock, and period performance summaries."""
 
@@ -1292,22 +942,13 @@ def build_hac_tests(forecasts: pd.DataFrame, *, max_lag: int = 5) -> pd.DataFram
             return "positive favors own HAR"
         return "zero loss difference"
 
-    keys = [
-        "spec_name",
-        "factor_window_sessions",
-        "har_window",
-        "forecast_origin",
-        "target_date",
-        "stock",
-    ]
+    keys = ["spec_name", "factor_window_sessions", "har_window", "forecast_origin", "target_date", "stock"]
     own = (
-        forecasts[forecasts["model"] == "own_har"]
-        .loc[:, keys + ["qlike"]]
+        forecasts[forecasts["model"] == "own_har"] .loc[:, keys + ["qlike"]]
         .rename(columns={"qlike": "own_qlike"})
     )
     network = (
-        forecasts[forecasts["model"] == "network_har_l1_1se"]
-        .loc[:, keys + ["qlike"]]
+        forecasts[forecasts["model"] == "network_har_l1_1se"] .loc[:, keys + ["qlike"]]
         .rename(columns={"qlike": "network_qlike"})
     )
     joined = own.merge(network, on=keys, how="inner")
@@ -1320,12 +961,8 @@ def build_hac_tests(forecasts: pd.DataFrame, *, max_lag: int = 5) -> pd.DataFram
         result = hac_mean_test(pooled["loss_difference"], max_lag=max_lag)
         rows.append(
             {
-                "spec_name": spec_name,
-                "factor_window_sessions": factor_window,
-                "har_window": har_window,
-                "level": "pooled",
-                "stock": "ALL",
-                **result,
+                "spec_name": spec_name, "factor_window_sessions": factor_window, "har_window": har_window,
+                "level": "pooled", "stock": "ALL", **result,
                 "interpretation": interpretation(result["mean_difference"]),
             }
         )
@@ -1334,12 +971,8 @@ def build_hac_tests(forecasts: pd.DataFrame, *, max_lag: int = 5) -> pd.DataFram
             result = hac_mean_test(stock_group["loss_difference"], max_lag=max_lag)
             stock_rows.append(
                 {
-                    "spec_name": spec_name,
-                    "factor_window_sessions": factor_window,
-                    "har_window": har_window,
-                    "level": "stock",
-                    "stock": stock,
-                    **result,
+                    "spec_name": spec_name, "factor_window_sessions": factor_window, "har_window": har_window,
+                    "level": "stock", "stock": stock, **result,
                     "interpretation": interpretation(result["mean_difference"]),
                 }
             )
@@ -1354,14 +987,8 @@ def _edge_origin_table(edge_history: pd.DataFrame) -> pd.DataFrame:
     return (
         edge_history.groupby(
             [
-                "spec_name",
-                "factor_window_sessions",
-                "har_window",
-                "model",
-                "forecast_origin",
-                "source",
-                "target",
-                "edge_id",
+                "spec_name", "factor_window_sessions", "har_window", "model", "forecast_origin", "source",
+                "target", "edge_id",
             ],
             dropna=False,
         )
@@ -1375,10 +1002,7 @@ def _edge_origin_table(edge_history: pd.DataFrame) -> pd.DataFrame:
 
 
 def edge_stability(
-    edge_history: pd.DataFrame,
-    *,
-    threshold: float = 0.70,
-    model: str = "network_har_l1_1se",
+    edge_history: pd.DataFrame, *, threshold: float = 0.70, model: str = "network_har_l1_1se",
 ) -> pd.DataFrame:
     """Summarize directed edge selection, signs, support stability, and strength."""
 
@@ -1414,8 +1038,7 @@ def edge_stability(
         selection_dates = group.loc[group["selected"], "forecast_origin"]
         rows.append(
             {
-                **dict(zip(group_columns, keys)),
-                "n_origin_periods": int(len(edge_origin)),
+                **dict(zip(group_columns, keys)), "n_origin_periods": int(len(edge_origin)),
                 "selection_probability": float(edge_origin["selected_any"].mean()),
                 "sign_consistency": float(max(positive, negative) / len(signs)) if len(signs) else np.nan,
                 "median_coefficient": float(selected_coefficients.median()) if len(selected_coefficients) else 0.0,
@@ -1441,15 +1064,7 @@ def network_density(edge_history: pd.DataFrame, *, threshold: float = 0.70) -> p
     n_stocks = len(set(origin["source"]) | set(origin["target"]))
     possible = max(n_stocks * (n_stocks - 1), 1)
     density = (
-        origin.groupby(
-            [
-                "spec_name",
-                "factor_window_sessions",
-                "har_window",
-                "model",
-                "forecast_origin",
-            ]
-        )["selected_any"]
+        origin.groupby(["spec_name", "factor_window_sessions", "har_window", "model", "forecast_origin"])["selected_any"]
         .sum()
         .div(possible)
         .rename("edge_density")
@@ -1460,10 +1075,7 @@ def network_density(edge_history: pd.DataFrame, *, threshold: float = 0.70) -> p
         for model_name in edge_history["model"].dropna().unique()
     ]
     stable = (
-        pd.concat(
-            [table for table in stable_tables if not table.empty],
-            ignore_index=True,
-        )
+        pd.concat([table for table in stable_tables if not table.empty], ignore_index=True)
         if any(not table.empty for table in stable_tables)
         else pd.DataFrame()
     )
@@ -1479,17 +1091,13 @@ def network_density(edge_history: pd.DataFrame, *, threshold: float = 0.70) -> p
     )
     if not stable.empty:
         stable_count = (
-            stable.groupby(
-                ["spec_name", "factor_window_sessions", "har_window", "model"]
-            )["stable_edge"]
+            stable.groupby(["spec_name", "factor_window_sessions", "har_window", "model"])["stable_edge"]
             .sum()
             .rename("n_stable_edges")
             .reset_index()
         )
         result = result.merge(
-            stable_count,
-            how="left",
-            on=["spec_name", "factor_window_sessions", "har_window", "model"],
+            stable_count, how="left", on=["spec_name", "factor_window_sessions", "har_window", "model"],
         )
         result["stable_edge_density"] = result["n_stable_edges"] / possible
     else:
@@ -1530,8 +1138,7 @@ def network_centrality(edge_stability_table: pd.DataFrame) -> pd.DataFrame:
 
 
 def group_connectivity(
-    edge_stability_table: pd.DataFrame,
-    groups: Mapping[str, Sequence[str]],
+    edge_stability_table: pd.DataFrame, groups: Mapping[str, Sequence[str]],
 ) -> pd.DataFrame:
     """Summarize within- and between-group directed connectivity."""
 
@@ -1574,19 +1181,13 @@ def group_connectivity(
                     }
                 )
     result = pd.DataFrame(rows)
-    result["stable_edge_density"] = result["stable_edges"] / result[
-        "possible_directed_edges"
-    ].replace(0, np.nan)
+    result["stable_edge_density"] = result["stable_edges"] / result["possible_directed_edges"].replace(0, np.nan)
     return result
 
 
 def descriptive_network_edges(
-    log_variance: pd.DataFrame,
-    *,
-    spec_name: str,
-    factor_window_sessions: int,
-    har_window: str | int = "expanding",
-    config: HARConfig = HARConfig(),
+    log_variance: pd.DataFrame, *, spec_name: str, factor_window_sessions: int,
+    har_window: str | int = "expanding", config: HARConfig = HARConfig(),
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Fit checkpointed descriptive networks with one worker per target."""
 
@@ -1604,18 +1205,10 @@ def descriptive_network_edges(
         own, cross, feature_names, cross_pairs = _feature_matrix(design, target, stocks)
         tasks.append(
             _DescriptiveTask(
-                target=target,
-                y_all=design.response[target].to_numpy(dtype=float),
-                own_all=own,
-                cross_all=cross,
-                feature_names=feature_names,
-                cross_pairs=cross_pairs,
-                origins=design.origins,
-                checkpoints=checkpoints,
-                spec_name=spec_name,
-                factor_window_sessions=factor_window_sessions,
-                har_window=har_window,
-                config=config,
+                target=target, y_all=design.response[target].to_numpy(dtype=float), own_all=own,
+                cross_all=cross, feature_names=feature_names, cross_pairs=cross_pairs, origins=design.origins,
+                checkpoints=checkpoints, spec_name=spec_name, factor_window_sessions=factor_window_sessions,
+                har_window=har_window, config=config,
             )
         )
     executor = (
@@ -1662,27 +1255,18 @@ def _bootstrap_target_task(task: _BootstrapTask) -> list[dict[str, object]]:
         own = task.own_all[train_start:checkpoint]
         cross = task.cross_all[train_start:checkpoint]
         tuning = tune_network_penalty(
-            y,
-            own,
-            cross,
-            config=task.config,
-            cross_feature_names=task.feature_names,
+            y, own, cross, config=task.config, cross_feature_names=task.feature_names,
         )
         for block_length in task.config.bootstrap_block_lengths:
             selections: dict[tuple[str, str, str], list[bool]] = {}
             signs: dict[tuple[str, str, str], list[int]] = {}
             for sample in task.samples[checkpoint][int(block_length)]:
                 fit = fit_partialling_out(
-                    y[sample],
-                    own[sample],
-                    cross[sample],
-                    alpha=tuning.one_se_alpha,
-                    cross_feature_names=task.feature_names,
-                    config=task.config,
+                    y[sample], own[sample], cross[sample], alpha=tuning.one_se_alpha,
+                    cross_feature_names=task.feature_names, config=task.config,
                 )
                 for coefficient, (source, horizon) in zip(
-                    fit.network_coefficients_original,
-                    task.cross_pairs,
+                    fit.network_coefficients_original, task.cross_pairs,
                 ):
                     key = (source, task.target, horizon)
                     selections.setdefault(key, []).append(
@@ -1719,12 +1303,8 @@ def _bootstrap_target_task(task: _BootstrapTask) -> list[dict[str, object]]:
 
 
 def bootstrap_edge_selection(
-    log_variance: pd.DataFrame,
-    *,
-    spec_name: str,
-    factor_window_sessions: int,
-    har_window: str | int = "expanding",
-    config: HARConfig = HARConfig(),
+    log_variance: pd.DataFrame, *, spec_name: str, factor_window_sessions: int,
+    har_window: str | int = "expanding", config: HARConfig = HARConfig(),
 ) -> pd.DataFrame:
     """Bootstrap edge persistence with one persistent worker per target."""
 
@@ -1768,19 +1348,10 @@ def bootstrap_edge_selection(
         own, cross, feature_names, cross_pairs = target_designs[target]
         tasks.append(
             _BootstrapTask(
-                target=target,
-                y_all=design.response[target].to_numpy(dtype=float),
-                own_all=own,
-                cross_all=cross,
-                feature_names=feature_names,
-                cross_pairs=cross_pairs,
-                origins=design.origins,
-                checkpoints=checkpoints,
-                samples=samples[target],
-                spec_name=spec_name,
-                factor_window_sessions=factor_window_sessions,
-                har_window=har_window,
-                config=config,
+                target=target, y_all=design.response[target].to_numpy(dtype=float), own_all=own,
+                cross_all=cross, feature_names=feature_names, cross_pairs=cross_pairs, origins=design.origins,
+                checkpoints=checkpoints, samples=samples[target], spec_name=spec_name,
+                factor_window_sessions=factor_window_sessions, har_window=har_window, config=config,
             )
         )
     executor = (

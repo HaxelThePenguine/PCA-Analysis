@@ -5,11 +5,7 @@ from __future__ import annotations
 import pandas as pd
 
 from config import (
-    CORE_UNIVERSE,
-    FULL_UNIVERSE,
-    RETURN_CORE_FILE,
-    RETURN_FULL_FILE,
-    RETURN_MATRIX_CLEAN_FILE,
+    CORE_UNIVERSE, FULL_UNIVERSE, RETURN_CORE_FILE, RETURN_FULL_FILE, RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
 from reporting.preprocessing import print_universe_summary

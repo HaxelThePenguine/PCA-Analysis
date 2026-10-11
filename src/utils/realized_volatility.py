@@ -45,11 +45,7 @@ def _calendar_rules(calendar: pd.DataFrame | None) -> dict[pd.Timestamp, tuple[i
         date = pd.Timestamp(row.date)
         date = date.tz_localize(None) if date.tzinfo is not None else date
         date = date.normalize()
-        rules[date] = (
-            int(row.open_minute),
-            int(row.close_minute),
-            int(row.expected_bars),
-        )
+        rules[date] = (int(row.open_minute), int(row.close_minute), int(row.expected_bars))
     return rules
 
 
@@ -72,9 +68,7 @@ def _validate_controls(controls: Mapping[str, pd.DataFrame]) -> tuple[pd.Datetim
 
 
 def _valid_interval_groups(
-    index: pd.DatetimeIndex,
-    calendar_rules: dict[pd.Timestamp, tuple[int, int, int]],
-    interval_minutes: int,
+    index: pd.DatetimeIndex, calendar_rules: dict[pd.Timestamp, tuple[int, int, int]], interval_minutes: int,
 ) -> tuple[list[tuple[pd.Timestamp, int, np.ndarray]], pd.DataFrame]:
     """Find complete, non-overlapping clock-time intervals within sessions.
 
@@ -140,8 +134,7 @@ def _valid_interval_groups(
 
 
 def aggregate_realized_variance(
-    controls: Mapping[str, pd.DataFrame],
-    calendar: pd.DataFrame | None = None,
+    controls: Mapping[str, pd.DataFrame], calendar: pd.DataFrame | None = None,
     config: RealizedVarianceConfig = RealizedVarianceConfig(),
 ) -> RealizedVarianceResult:
     """Aggregate aligned minute-return controls into daily five-minute IVAR.
@@ -153,23 +146,14 @@ def aggregate_realized_variance(
 
     index, columns = _validate_controls(controls)
     rules = _calendar_rules(calendar)
-    groups, interval_diagnostics = _valid_interval_groups(
-        index,
-        rules,
-        config.interval_minutes,
-    )
+    groups, interval_diagnostics = _valid_interval_groups(index, rules, config.interval_minutes)
     interval_returns: dict[str, list[np.ndarray]] = {name: [] for name in controls}
     interval_index: list[tuple[pd.Timestamp, int]] = []
     for session, interval_number, positions in groups:
         interval_index.append((session, interval_number))
         for name, frame in controls.items():
-            interval_returns[name].append(
-                frame.iloc[positions].sum(axis=0).to_numpy(dtype=float)
-            )
-    multi_index = pd.MultiIndex.from_tuples(
-        interval_index,
-        names=["session_date", "interval_number"],
-    )
+            interval_returns[name].append(frame.iloc[positions].sum(axis=0).to_numpy(dtype=float))
+    multi_index = pd.MultiIndex.from_tuples(interval_index, names=["session_date", "interval_number"])
     interval_frames = {
         name: pd.DataFrame(values, index=multi_index, columns=columns)
         for name, values in interval_returns.items()
@@ -191,11 +175,8 @@ def aggregate_realized_variance(
             ivar = frame[stock].to_numpy(dtype=float)
             floor_rows.append(
                 {
-                    "control": name,
-                    "stock": stock,
-                    "variance_floor": config.variance_floor,
-                    "material_floor_threshold": material_threshold,
-                    "n_days": int(len(ivar)),
+                    "control": name, "stock": stock, "variance_floor": config.variance_floor,
+                    "material_floor_threshold": material_threshold, "n_days": int(len(ivar)),
                     "n_floor_applied": int(np.sum(ivar <= config.variance_floor)),
                     "n_material_floor_observations": int(np.sum(ivar <= material_threshold)),
                     "min_ivar": float(np.min(ivar)) if len(ivar) else np.nan,
@@ -205,17 +186,13 @@ def aggregate_realized_variance(
             )
     floor_diagnostics = pd.DataFrame(floor_rows)
     return RealizedVarianceResult(
-        interval_returns=interval_frames,
-        daily_ivar=daily_ivar,
-        log_daily_ivar=log_daily_ivar,
-        interval_diagnostics=interval_diagnostics,
-        floor_diagnostics=floor_diagnostics,
+        interval_returns=interval_frames, daily_ivar=daily_ivar, log_daily_ivar=log_daily_ivar,
+        interval_diagnostics=interval_diagnostics, floor_diagnostics=floor_diagnostics,
     )
 
 
 def log_realized_variance(
-    daily_ivar: pd.DataFrame,
-    config: RealizedVarianceConfig = RealizedVarianceConfig(),
+    daily_ivar: pd.DataFrame, config: RealizedVarianceConfig = RealizedVarianceConfig(),
 ) -> pd.DataFrame:
     """Apply the fixed documented floor and return log IVAR."""
 

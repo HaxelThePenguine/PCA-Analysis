@@ -40,8 +40,7 @@ class CredentialTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with patch.dict(os.environ, {
-                "ALPACA_API_KEY": "environment-key",
-                "ALPACA_SECRET_KEY": "environment-secret",
+                "ALPACA_API_KEY": "environment-key", "ALPACA_SECRET_KEY": "environment-secret",
             }, clear=True), patch("utils.acquisition.PROJECT_ROOT", root):
                 self.assertEqual(read_credentials(), ("environment-key", "environment-secret"))
 

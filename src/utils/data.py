@@ -33,17 +33,12 @@ class IntradayNormalization:
 
     def unit_volatility_error(self) -> float:
         """Maximum deviation from unit volatility at each minute of day."""
-        profile = self.normalized_returns.groupby(
-            minute_from_open(self.normalized_returns.index)
-        ).std(ddof=1)
+        profile = self.normalized_returns.groupby(minute_from_open(self.normalized_returns.index)).std(ddof=1)
         return float(np.max(np.abs(profile.to_numpy() - 1)))
 
 
 def require_columns(
-    frame: pd.DataFrame,
-    columns: Sequence[str],
-    *,
-    context: str = "Data frame",
+    frame: pd.DataFrame, columns: Sequence[str], *, context: str = "Data frame",
 ) -> list[str]:
     """Validate and return an ordered column list."""
 
@@ -54,12 +49,7 @@ def require_columns(
     return ordered
 
 
-def validate_panel(
-    panel: pd.DataFrame,
-    *,
-    context: str,
-    require_complete: bool = True,
-) -> None:
+def validate_panel(panel: pd.DataFrame, *, context: str, require_complete: bool = True) -> None:
     """Check panel timestamps, columns, and missing values."""
 
     if panel.empty:
@@ -75,11 +65,7 @@ def validate_panel(
 
 
 def load_panel(
-    path: Path,
-    columns: Sequence[str],
-    *,
-    context: str,
-    drop_incomplete: bool = False,
+    path: Path, columns: Sequence[str], *, context: str, drop_incomplete: bool = False,
     require_complete: bool = True,
 ) -> pd.DataFrame:
     """Load selected columns from Parquet and enforce panel invariants."""
@@ -96,11 +82,7 @@ def load_panel(
 def minute_from_open(index: pd.DatetimeIndex) -> pd.Series:
     """Return the zero-based regular-session minute for every timestamp."""
 
-    return pd.Series(
-        index.hour * 60 + index.minute - (9 * 60 + 30),
-        index=index,
-        name="minute_from_open",
-    )
+    return pd.Series(index.hour * 60 + index.minute - (9 * 60 + 30), index=index, name="minute_from_open")
 
 
 def normalize_intraday_volatility(returns: pd.DataFrame) -> IntradayNormalization:
@@ -120,9 +102,7 @@ def normalize_intraday_volatility(returns: pd.DataFrame) -> IntradayNormalizatio
         raise ValueError("Intraday-normalized returns contain non-finite values.")
 
     return IntradayNormalization(
-        normalized_returns=normalized,
-        volatility_by_symbol=volatility,
-        observations_by_minute=observations,
+        normalized_returns=normalized, volatility_by_symbol=volatility, observations_by_minute=observations,
     )
 
 
@@ -138,8 +118,6 @@ def load_benchmark_panel() -> pd.DataFrame:
     from config import BENCHMARKS, CORE_UNIVERSE, RETURN_MATRIX_CLEAN_FILE
 
     return load_panel(
-        RETURN_MATRIX_CLEAN_FILE,
-        [*CORE_UNIVERSE, *BENCHMARKS],
-        context="Complete benchmark panel",
+        RETURN_MATRIX_CLEAN_FILE, [*CORE_UNIVERSE, *BENCHMARKS], context="Complete benchmark panel",
         drop_incomplete=True,
     )

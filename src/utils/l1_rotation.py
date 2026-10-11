@@ -115,24 +115,14 @@ def _l1_objective(angles: np.ndarray, loadings: np.ndarray) -> float:
     return float(np.abs(loadings @ spherical_to_cartesian(angles)).sum())
 
 
-def _optimize_l1_start(
-    payload: tuple[np.ndarray, np.ndarray, int],
-) -> tuple[float, np.ndarray, bool]:
+def _optimize_l1_start(payload: tuple[np.ndarray, np.ndarray, int]) -> tuple[float, np.ndarray, bool]:
     """Optimize one independent L1 direction in a worker process."""
 
     loadings, initial_direction, iterations = payload
     initial_angles = cartesian_to_spherical(initial_direction)
     result = minimize(
-        _l1_objective,
-        initial_angles,
-        args=(loadings,),
-        method="Nelder-Mead",
-        options={
-            "maxiter": iterations,
-            "xatol": 1e-7,
-            "fatol": 1e-7,
-            "disp": False,
-        },
+        _l1_objective, initial_angles, args=(loadings,), method="Nelder-Mead",
+        options={"maxiter": iterations, "xatol": 1e-7, "fatol": 1e-7, "disp": False},
     )
     direction = _canonical_direction(spherical_to_cartesian(result.x))
     objective = float(np.abs(loadings @ direction).sum())
@@ -154,10 +144,7 @@ def _grid_size(n_factors: int) -> int:
 
 
 def local_factor_test(
-    loadings: pd.DataFrame | np.ndarray,
-    *,
-    alpha: float = 0.05,
-    gamma_0: float = 0.03,
+    loadings: pd.DataFrame | np.ndarray, *, alpha: float = 0.05, gamma_0: float = 0.03,
 ) -> LocalFactorTest:
     """Test whether at least one column contains unusually many small loadings.
 
@@ -190,17 +177,12 @@ def local_factor_test(
     )
     count_series = pd.Series(counts, index=labels, name="n_small", dtype=int)
     return LocalFactorTest(
-        h_n=h_n,
-        gamma_n=gamma_n,
-        small_counts=count_series,
-        has_local_factors=bool(counts.max() > gamma_n),
+        h_n=h_n, gamma_n=gamma_n, small_counts=count_series, has_local_factors=bool(counts.max() > gamma_n),
     )
 
 
 def _select_independent_directions(
-    initial_loadings: np.ndarray,
-    representatives: list[dict[str, object]],
-    n_factors: int,
+    initial_loadings: np.ndarray, representatives: list[dict[str, object]], n_factors: int,
     eigenvalues: np.ndarray | None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, tuple[str, ...]]:
     """Greedily keep sparse local minima that form a well-conditioned basis."""
@@ -210,8 +192,7 @@ def _select_independent_directions(
     ordered = sorted(
         representatives,
         key=lambda item: (
-            -int(np.sum(np.abs(initial_loadings @ item["direction"]) < h_n)),
-            float(item["objective"]),
+            -int(np.sum(np.abs(initial_loadings @ item["direction"]) < h_n)), float(item["objective"]),
             -int(item["frequency"]),
         ),
     )
@@ -229,11 +210,7 @@ def _select_independent_directions(
         )
         minimum_eigenvalue = float(np.linalg.eigvalsh(candidate.T @ candidate).min())
         previous_minimum = (
-            float(
-                np.linalg.eigvalsh(
-                    np.column_stack(chosen).T @ np.column_stack(chosen)
-                ).min()
-            )
+            float(np.linalg.eigvalsh(np.column_stack(chosen).T @ np.column_stack(chosen)).min())
             if chosen
             else 1.0
         )
@@ -262,9 +239,7 @@ def _select_independent_directions(
             candidate = (
                 np.column_stack([*chosen, direction]) if chosen else direction[:, None]
             )
-            minimum_eigenvalue = float(
-                np.linalg.eigvalsh(candidate.T @ candidate).min()
-            )
+            minimum_eigenvalue = float(np.linalg.eigvalsh(candidate.T @ candidate).min())
             score = minimum_eigenvalue * strengths[index]
             if score > best_score:
                 best_index = index
@@ -285,25 +260,13 @@ def _select_independent_directions(
             rotated[:, factor] *= -1
             rotation[:, factor] *= -1
 
-    return (
-        rotation,
-        np.asarray(l1_norms),
-        np.asarray(frequencies, dtype=int),
-        tuple(sources),
-    )
+    return (rotation, np.asarray(l1_norms), np.asarray(frequencies, dtype=int), tuple(sources))
 
 
 def l1_rotate_basis(
-    initial_loadings: pd.DataFrame | np.ndarray,
-    *,
-    n_starts: int | None = None,
-    random_state: int = 916,
-    max_iterations: int | None = None,
-    cluster_tolerance: float = 0.05,
-    minimum_frequency: float = 0.005,
-    eigenvalues: np.ndarray | None = None,
-    n_jobs: int = 1,
-    executor: Executor | None = None,
+    initial_loadings: pd.DataFrame | np.ndarray, *, n_starts: int | None = None, random_state: int = 916,
+    max_iterations: int | None = None, cluster_tolerance: float = 0.05, minimum_frequency: float = 0.005,
+    eigenvalues: np.ndarray | None = None, n_jobs: int = 1, executor: Executor | None = None,
 ) -> L1BasisRotation:
     """Find a sparse, nonsingular rotation of an orthonormal loading basis."""
 
@@ -349,20 +312,13 @@ def l1_rotate_basis(
     for objective, direction, success in sorted(solutions, key=lambda item: item[0]):
         matched = None
         for cluster in clusters:
-            distance = np.linalg.norm(direction - cluster["direction"]) / sqrt(
-                n_factors
-            )
+            distance = np.linalg.norm(direction - cluster["direction"]) / sqrt(n_factors)
             if distance < cluster_tolerance:
                 matched = cluster
                 break
         if matched is None:
             clusters.append(
-                {
-                    "objective": objective,
-                    "direction": direction,
-                    "frequency": 1,
-                    "successes": int(success),
-                }
+                {"objective": objective, "direction": direction, "frequency": 1, "successes": int(success)}
             )
         else:
             matched["frequency"] = int(matched["frequency"]) + 1
@@ -376,33 +332,20 @@ def l1_rotate_basis(
         representatives = [clusters[0]]
 
     rotation, l1_norms, frequencies, sources = _select_independent_directions(
-        loadings,
-        representatives,
-        n_factors,
-        eigenvalues,
+        loadings, representatives, n_factors, eigenvalues,
     )
     rotated = loadings @ rotation
     test = local_factor_test(rotated)
     return L1BasisRotation(
-        initial_loadings=loadings,
-        rotated_loadings=rotated,
-        rotation=rotation,
-        l1_norms=l1_norms,
-        small_counts=test.small_counts.to_numpy(),
-        solution_frequencies=frequencies,
-        sources=sources,
+        initial_loadings=loadings, rotated_loadings=rotated, rotation=rotation, l1_norms=l1_norms,
+        small_counts=test.small_counts.to_numpy(), solution_frequencies=frequencies, sources=sources,
         optimizer_success_rate=successes / len(solutions),
     )
 
 
 def fit_l1_rotation(
-    pca_result: PCAResult,
-    *,
-    n_components: int = 3,
-    n_starts: int | None = None,
-    random_state: int = 916,
-    n_jobs: int = 1,
-    executor: Executor | None = None,
+    pca_result: PCAResult, *, n_components: int = 3, n_starts: int | None = None, random_state: int = 916,
+    n_jobs: int = 1, executor: Executor | None = None,
 ) -> L1RotationResult:
     """Rotate a PCA loading space and compute observationally equivalent scores."""
 
@@ -411,44 +354,26 @@ def fit_l1_rotation(
     n_variables = pca_result.eigenvectors.shape[0]
     initial = sqrt(n_variables) * pca_result.eigenvectors[:, :n_components]
     basis_result = l1_rotate_basis(
-        initial,
-        n_starts=n_starts,
-        random_state=random_state,
-        eigenvalues=pca_result.eigenvalues[:n_components],
-        n_jobs=n_jobs,
-        executor=executor,
+        initial, n_starts=n_starts, random_state=random_state,
+        eigenvalues=pca_result.eigenvalues[:n_components], n_jobs=n_jobs, executor=executor,
     )
 
     labels = [f"LF{i}" for i in range(1, n_components + 1)]
     pc_labels = [f"PC{i}" for i in range(1, n_components + 1)]
     rotated_frame = pd.DataFrame(
-        basis_result.rotated_loadings,
-        index=pca_result.weights.index,
-        columns=labels,
+        basis_result.rotated_loadings, index=pca_result.weights.index, columns=labels,
     )
-    initial_frame = pd.DataFrame(
-        initial,
-        index=pca_result.weights.index,
-        columns=pc_labels,
-    )
-    rotation_frame = pd.DataFrame(
-        basis_result.rotation,
-        index=pc_labels,
-        columns=labels,
-    )
+    initial_frame = pd.DataFrame(initial, index=pca_result.weights.index, columns=pc_labels)
+    rotation_frame = pd.DataFrame(basis_result.rotation, index=pc_labels, columns=labels)
 
     x = pca_result.analysis_data.to_numpy(dtype=float)
     loadings = basis_result.rotated_loadings
     score_values = x @ loadings @ np.linalg.inv(loadings.T @ loadings)
-    scores = pd.DataFrame(
-        score_values, index=pca_result.analysis_data.index, columns=labels
-    )
+    scores = pd.DataFrame(score_values, index=pca_result.analysis_data.index, columns=labels)
     covariance = x.T @ score_values / (len(x) - 1)
     score_std = score_values.std(axis=0, ddof=1)
     score_loadings = pd.DataFrame(
-        covariance / score_std[None, :],
-        index=pca_result.weights.index,
-        columns=labels,
+        covariance / score_std[None, :], index=pca_result.weights.index, columns=labels,
     )
 
     reconstructed = score_values @ loadings.T
@@ -471,9 +396,7 @@ def fit_l1_rotation(
         score_loadings=score_loadings,
         l1_norms=pd.Series(basis_result.l1_norms, index=labels, name="l1_norm"),
         solution_frequencies=pd.Series(
-            basis_result.solution_frequencies,
-            index=labels,
-            name="solution_frequency",
+            basis_result.solution_frequencies, index=labels, name="solution_frequency",
         ),
         sources=pd.Series(basis_result.sources, index=labels, name="source"),
         local_factor_test=diagnostic,
@@ -485,23 +408,16 @@ def fit_l1_rotation(
 
 
 def align_loading_columns(
-    reference: pd.DataFrame | np.ndarray,
-    estimate: pd.DataFrame | np.ndarray,
+    reference: pd.DataFrame | np.ndarray, estimate: pd.DataFrame | np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Align an estimated loading matrix to a reference by permutation and sign."""
 
     reference_values = np.asarray(reference, dtype=float)
     estimate_values = np.asarray(estimate, dtype=float)
     if reference_values.shape != estimate_values.shape:
-        raise ValueError(
-            "Reference and estimate loading matrices must have equal shape."
-        )
-    reference_norm = reference_values / np.linalg.norm(
-        reference_values, axis=0, keepdims=True
-    )
-    estimate_norm = estimate_values / np.linalg.norm(
-        estimate_values, axis=0, keepdims=True
-    )
+        raise ValueError("Reference and estimate loading matrices must have equal shape.")
+    reference_norm = reference_values / np.linalg.norm(reference_values, axis=0, keepdims=True)
+    estimate_norm = estimate_values / np.linalg.norm(estimate_values, axis=0, keepdims=True)
     similarity = reference_norm.T @ estimate_norm
     reference_index, estimate_index = linear_sum_assignment(-np.abs(similarity))
     order = estimate_index[np.argsort(reference_index)]

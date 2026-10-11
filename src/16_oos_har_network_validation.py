@@ -20,52 +20,23 @@ import numpy as np
 import pandas as pd
 
 from config import (
-    BENCHMARKS,
-    CALENDAR_FILE,
-    CLOSE_MATRIX_FILE,
-    CONTAMINATED_MASK_FILE,
-    CORE_UNIVERSE,
-    MISSING_MASK_FILE,
-    REPORTS_DIR,
-    ensure_project_directories,
+    BENCHMARKS, CALENDAR_FILE, CLOSE_MATRIX_FILE, CONTAMINATED_MASK_FILE, CORE_UNIVERSE, MISSING_MASK_FILE,
+    REPORTS_DIR, ensure_project_directories,
 )
 from reporting.oos_validation import write_figures, write_results_markdown
 from utils.data import load_panel
 from utils.network_har import (
-    HAR_LOOKBACK,
-    edge_stability,
-    group_connectivity,
-    network_centrality,
-    network_density,
+    HAR_LOOKBACK, edge_stability, group_connectivity, network_centrality, network_density,
 )
 from utils.oos_common import (
-    dataframe_hash,
-    file_prefix_fingerprint,
-    file_sha256,
-    normalize_calendar,
-    stable_hash,
-    strict_clean_return_panel,
-    utc_now_iso,
-    write_json,
+    dataframe_hash, file_prefix_fingerprint, file_sha256, normalize_calendar, stable_hash,
+    strict_clean_return_panel, utc_now_iso, write_json,
 )
 from utils.oos_har_network import (
-    GROUPS,
-    PRIMARY_SPEC_NAME,
-    OOSConfig,
-    FactorVintageRun,
-    ForecastRunResult,
-    build_factor_vintage_run,
-    build_hac_inference,
-    build_protocol_manifest,
-    bootstrap_loss_series,
-    conditional_edge_bootstrap,
-    deserialize_config,
-    forecast_checkpoint_specification,
-    issue_target_free_forecasts,
-    paired_loss_differentials,
-    score_forecasts,
-    serialize_config,
-    summarize_scored_forecasts,
+    GROUPS, PRIMARY_SPEC_NAME, OOSConfig, FactorVintageRun, ForecastRunResult, build_factor_vintage_run,
+    build_hac_inference, build_protocol_manifest, bootstrap_loss_series, conditional_edge_bootstrap,
+    deserialize_config, forecast_checkpoint_specification, issue_target_free_forecasts,
+    paired_loss_differentials, score_forecasts, serialize_config, summarize_scored_forecasts,
     validate_forecast_ledger,
 )
 
@@ -82,9 +53,7 @@ def _load_strict_complete_panel() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFr
     """Load the processed price/missingness artifacts and rebuild strict returns."""
 
     prices = load_panel(
-        CLOSE_MATRIX_FILE,
-        [*CORE_UNIVERSE, *BENCHMARKS],
-        context="CORE benchmark prices",
+        CLOSE_MATRIX_FILE, [*CORE_UNIVERSE, *BENCHMARKS], context="CORE benchmark prices",
         require_complete=False,
     )
     missing = pd.read_parquet(MISSING_MASK_FILE)
@@ -105,10 +74,10 @@ def _code_provenance() -> dict[str, object]:
     """Hash the tracked implementation files that define the OOS protocol."""
 
     files = (
-        Path(__file__),
-        Path(__file__).parent / "utils" / "oos_common.py",
+        Path(__file__), Path(__file__).parent / "utils" / "oos_common.py",
         Path(__file__).parent / "utils" / "oos_har_network.py",
         Path(__file__).parent / "utils" / "network_har.py",
+        Path(__file__).parent / "utils" / "har_records.py",
         Path(__file__).parent / "utils" / "factor_adjusted_residuals.py",
         Path(__file__).parent / "utils" / "preprocessing.py",
         Path(__file__).parent / "utils" / "realized_volatility.py",
@@ -142,58 +111,20 @@ def _write_indexed_table(directory: Path, filename: str, frame: pd.DataFrame) ->
 
 
 CHECKPOINT_TABLE_STEMS = (
-    "forecast_ledger",
-    "har_coefficients",
-    "edge_history",
-    "tuning_history",
-    "forecast_diagnostics",
+    "forecast_ledger", "har_coefficients", "edge_history", "tuning_history", "forecast_diagnostics",
 )
 CHECKPOINT_KEY_COLUMNS = {
-    "forecast_ledger": (
-        "spec_name",
-        "model",
-        "stock",
-        "forecast_origin",
-        "target_date",
-    ),
+    "forecast_ledger": ("spec_name", "model", "stock", "forecast_origin", "target_date"),
     "har_coefficients": (
-        "spec_name",
-        "model",
-        "stock",
-        "forecast_origin",
-        "target_date",
-        "predictor_stock",
-        "horizon",
+        "spec_name", "model", "stock", "forecast_origin", "target_date", "predictor_stock", "horizon",
     ),
-    "edge_history": (
-        "spec_name",
-        "model",
-        "forecast_origin",
-        "target_date",
-        "source",
-        "target",
-        "horizon",
-    ),
-    "tuning_history": (
-        "spec_name",
-        "stock",
-        "forecast_origin",
-        "fraction",
-    ),
-    "forecast_diagnostics": (
-        "spec_name",
-        "forecast_origin",
-        "target_date",
-        "stock",
-    ),
+    "edge_history": ("spec_name", "model", "forecast_origin", "target_date", "source", "target", "horizon"),
+    "tuning_history": ("spec_name", "stock", "forecast_origin", "fraction"),
+    "forecast_diagnostics": ("spec_name", "forecast_origin", "target_date", "stock"),
 }
 FACTOR_TABLE_NAMES = (
-    "factor_fit_metadata",
-    "rv_vintage_metadata",
-    "factor_diagnostics",
-    "factor_loadings",
-    "benchmark_coefficients",
-    "factor_metrics",
+    "factor_fit_metadata", "rv_vintage_metadata", "factor_diagnostics",
+    "factor_loadings", "benchmark_coefficients", "factor_metrics",
 )
 
 
@@ -220,9 +151,7 @@ def _canonicalize_checkpoint_table(stem: str, frame: pd.DataFrame) -> tuple[pd.D
     value = frame.copy()
     for column in ("forecast_origin", "target_date"):
         if column in value.columns:
-            value[column] = pd.to_datetime(
-                value[column], format="mixed", errors="raise"
-            ).dt.normalize()
+            value[column] = pd.to_datetime(value[column], format="mixed", errors="raise").dt.normalize()
     if "har_window" in value.columns:
         value["har_window"] = value["har_window"].astype("string")
     key = list(CHECKPOINT_KEY_COLUMNS[stem])
@@ -238,11 +167,8 @@ def _canonicalize_checkpoint_table(stem: str, frame: pd.DataFrame) -> tuple[pd.D
             )
             bounds = numeric.groupby(key, dropna=False)["_numeric_value"].agg(["min", "max"])
             equivalent = np.isclose(
-                bounds["min"].to_numpy(dtype=float),
-                bounds["max"].to_numpy(dtype=float),
-                rtol=1e-9,
-                atol=1e-12,
-                equal_nan=True,
+                bounds["min"].to_numpy(dtype=float), bounds["max"].to_numpy(dtype=float),
+                rtol=1e-9, atol=1e-12, equal_nan=True,
             )
             if not equivalent.all():
                 raise ValueError(
@@ -261,9 +187,7 @@ def _read_indexed_table(path: Path) -> pd.DataFrame:
     value = pd.read_csv(path)
     if "session_date" not in value.columns:
         raise ValueError(f"Persisted panel has no session_date column: {path}")
-    value["session_date"] = pd.to_datetime(
-        value["session_date"], format="mixed", errors="raise"
-    ).dt.normalize()
+    value["session_date"] = pd.to_datetime(value["session_date"], format="mixed", errors="raise").dt.normalize()
     return value.set_index("session_date")
 
 
@@ -284,18 +208,9 @@ def _write_factor_tables(run_dir: Path, factor_tables: list[dict[str, pd.DataFra
 
 
 def _load_completed_historical_resume(
-    run_dir: Path,
-    *,
-    specs: list[tuple[int, str, str]],
-    calendar: pd.DataFrame,
-    config: OOSConfig,
+    run_dir: Path, *, specs: list[tuple[int, str, str]], calendar: pd.DataFrame, config: OOSConfig,
     run_id: str,
-) -> tuple[
-    ForecastRunResult,
-    dict[str, pd.DataFrame],
-    dict[str, pd.DataFrame],
-    dict[str, int],
-] | None:
+) -> tuple[ForecastRunResult, dict[str, pd.DataFrame], dict[str, pd.DataFrame], dict[str, int]] | None:
     """Load completed forecasts without rebuilding factors.
 
     Incomplete checkpoints or missing outcomes fall back to normal resume.
@@ -305,9 +220,7 @@ def _load_completed_historical_resume(
     expected_origins = len(calendar_value) - max(HAR_LOOKBACK.values())
     if expected_origins <= 0:
         return None
-    expected_last_origin = pd.Timestamp(
-        calendar_value["session_date"].iloc[-2]
-    ).normalize()
+    expected_last_origin = pd.Timestamp(calendar_value["session_date"].iloc[-2]).normalize()
     states: dict[str, tuple[Path, dict[str, object]]] = {}
     for _, har_window, spec_name in specs:
         checkpoint_dir = run_dir / "checkpoints" / spec_name
@@ -324,10 +237,7 @@ def _load_completed_historical_resume(
         stored_specification_hash = state.get("forecast_specification_hash")
         expected_specification_hash = stable_hash(
             forecast_checkpoint_specification(
-                config,
-                har_window=har_window,
-                mode="historical_pseudo_oos",
-                freeze_timestamp=None,
+                config, har_window=har_window, mode="historical_pseudo_oos", freeze_timestamp=None,
             )
         )
         if (
@@ -337,9 +247,7 @@ def _load_completed_historical_resume(
             raise ValueError(f"Completed checkpoint specification is incompatible: {spec_name}")
         if int(state.get("next_row", -1)) != expected_origins:
             return None
-        last_origin = pd.to_datetime(
-            [state.get("last_completed_origin")], format="mixed", errors="raise"
-        )[0].normalize()
+        last_origin = pd.to_datetime([state.get("last_completed_origin")], format="mixed", errors="raise")[0].normalize()
         if last_origin != expected_last_origin:
             raise ValueError(f"Completed checkpoint calendar is incompatible: {spec_name}")
         states[spec_name] = (checkpoint_dir, state)
@@ -353,27 +261,21 @@ def _load_completed_historical_resume(
     metadata: dict[str, pd.DataFrame] = {}
     duplicates_removed: dict[str, int] = {}
     destinations = {
-        "forecast_ledger": forecasts,
-        "har_coefficients": coefficients,
-        "edge_history": edges,
-        "tuning_history": tuning,
-        "forecast_diagnostics": diagnostics,
+        "forecast_ledger": forecasts, "har_coefficients": coefficients, "edge_history": edges,
+        "tuning_history": tuning, "forecast_diagnostics": diagnostics,
     }
     for _, _, spec_name in specs:
         checkpoint_dir, state = states[spec_name]
         table_format = str(state.get("table_format") or "csv")
         for stem in CHECKPOINT_TABLE_STEMS:
             frame, removed = _canonicalize_checkpoint_table(
-                stem,
-                _read_checkpoint_table(checkpoint_dir, stem, table_format),
+                stem, _read_checkpoint_table(checkpoint_dir, stem, table_format),
             )
             destinations[stem].append(frame)
             if removed:
                 duplicates_removed[f"{spec_name}:{stem}"] = removed
         validate_forecast_ledger(forecasts[-1])
-        realized[spec_name] = _read_indexed_table(
-            run_dir / f"realized_variance_{spec_name}.csv"
-        )
+        realized[spec_name] = _read_indexed_table(run_dir / f"realized_variance_{spec_name}.csv")
         metadata[spec_name] = pd.read_csv(run_dir / f"rv_metadata_{spec_name}.csv")
 
     return (
@@ -382,8 +284,7 @@ def _load_completed_historical_resume(
             coefficients=pd.concat(coefficients, ignore_index=True),
             edge_history=pd.concat(edges, ignore_index=True),
             tuning_history=pd.concat(tuning, ignore_index=True),
-            origin_diagnostics=pd.concat(diagnostics, ignore_index=True),
-            status="complete",
+            origin_diagnostics=pd.concat(diagnostics, ignore_index=True), status="complete",
         ),
         realized,
         metadata,
@@ -397,8 +298,7 @@ def _long_controls(vintage: FactorVintageRun) -> pd.DataFrame:
         if frame.empty:
             continue
         long = (
-            frame.rename_axis("session_date")
-            .reset_index()
+            frame.rename_axis("session_date") .reset_index()
             .melt(id_vars=["session_date"], var_name="stock", value_name="realized_variance")
         )
         long.insert(0, "spec_name", vintage.spec_name)
@@ -412,11 +312,7 @@ def _historical_specs(config: OOSConfig) -> list[tuple[int, str, str]]:
     primary_window = int(config.factor_window_primary)
     specs = [(primary_window, str(config.har_window_primary), f"factor_adjusted_{primary_window}_expanding")]
     specs.append(
-        (
-            primary_window,
-            str(config.har_window_robustness),
-            f"factor_adjusted_{primary_window}_rolling252",
-        )
+        (primary_window, str(config.har_window_robustness), f"factor_adjusted_{primary_window}_rolling252")
     )
     for window in config.factor_windows:
         if int(window) == primary_window:
@@ -426,15 +322,11 @@ def _historical_specs(config: OOSConfig) -> list[tuple[int, str, str]]:
 
 
 def _factor_result_tables(
-    vintage: FactorVintageRun,
-    *,
-    protocol_version: str,
-    run_id: str,
+    vintage: FactorVintageRun, *, protocol_version: str, run_id: str,
 ) -> dict[str, pd.DataFrame]:
     tables: dict[str, pd.DataFrame] = {}
     for name, frame in (
-        ("factor_fit_metadata", vintage.factor_metadata),
-        ("rv_vintage_metadata", vintage.rv_metadata),
+        ("factor_fit_metadata", vintage.factor_metadata), ("rv_vintage_metadata", vintage.rv_metadata),
         ("factor_diagnostics", vintage.factor_result.diagnostics),
         ("factor_loadings", vintage.factor_result.factor_loadings),
         ("benchmark_coefficients", vintage.factor_result.benchmark_coefficients),
@@ -443,8 +335,7 @@ def _factor_result_tables(
         value = frame.copy()
         for position, (column, content) in enumerate(
             (
-                ("protocol_version", protocol_version),
-                ("run_id", run_id),
+                ("protocol_version", protocol_version), ("run_id", run_id),
                 ("factor_window_sessions", vintage.factor_window_sessions),
             )
         ):
@@ -467,10 +358,7 @@ def _period_summary(scored: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     dates = pd.to_datetime(value["target_date"])
     value["calendar_period"] = dates.dt.to_period("Q").astype(str)
-    return summarize_scored_forecasts(
-        value,
-        ("spec_name", "calendar_period", "model"),
-    )
+    return summarize_scored_forecasts(value, ("spec_name", "calendar_period", "model"))
 
 
 def _comparison_summary(scored: pd.DataFrame) -> pd.DataFrame:
@@ -481,8 +369,7 @@ def _comparison_summary(scored: pd.DataFrame) -> pd.DataFrame:
     for spec_name, group in differences.groupby("spec_name", dropna=False):
         rows.append(
             {
-                "spec_name": spec_name,
-                "n_dates": int(group["target_date"].nunique()),
+                "spec_name": spec_name, "n_dates": int(group["target_date"].nunique()),
                 "n_stock_date": int(len(group)),
                 "network_qlike_minus_own": float(group["qlike_difference"].mean()),
                 "network_log_mse_minus_own": float(group["log_mse_difference"].mean()),
@@ -512,17 +399,9 @@ def _comparison_summary(scored: pd.DataFrame) -> pd.DataFrame:
 
 
 def _write_run_results(
-    run_dir: Path,
-    *,
-    manifest: dict[str, object],
-    forecast_result: ForecastRunResult,
-    scored: pd.DataFrame,
-    factor_tables: list[dict[str, pd.DataFrame]],
-    config: OOSConfig,
-    run_id: str,
-    edge_bootstrap: pd.DataFrame | None = None,
-    make_figures: bool = True,
-    write_forecast_ledger: bool = True,
+    run_dir: Path, *, manifest: dict[str, object], forecast_result: ForecastRunResult, scored: pd.DataFrame,
+    factor_tables: list[dict[str, pd.DataFrame]], config: OOSConfig, run_id: str,
+    edge_bootstrap: pd.DataFrame | None = None, make_figures: bool = True, write_forecast_ledger: bool = True,
 ) -> dict[str, pd.DataFrame]:
     """Persist all inspectable tables and return the headline summaries."""
 
@@ -549,9 +428,7 @@ def _write_run_results(
         for offset, block_length in enumerate(config.loss_bootstrap_block_lengths):
             bootstraps.append(
                 bootstrap_loss_series(
-                    scored,
-                    repetitions=config.loss_bootstrap_repetitions,
-                    block_length=int(block_length),
+                    scored, repetitions=config.loss_bootstrap_repetitions, block_length=int(block_length),
                     seed=config.factor_seed + offset,
                 )
             )
@@ -565,49 +442,25 @@ def _write_run_results(
     centrality = network_centrality(edge_stability_table)
     groups = group_connectivity(edge_stability_table, GROUPS)
     for filename, frame in (
-        ("model_summary.csv", model_summary),
-        ("stock_summary.csv", stock_summary),
-        ("period_summary.csv", period_summary),
-        ("comparison_summary.csv", comparison),
-        ("hac_inference.csv", hac),
-        ("bootstrap_inference.csv", bootstrap),
-        ("edge_stability.csv", edge_stability_table),
-        ("network_density.csv", density),
-        ("network_centrality.csv", centrality),
-        ("group_connectivity.csv", groups),
+        ("model_summary.csv", model_summary), ("stock_summary.csv", stock_summary),
+        ("period_summary.csv", period_summary), ("comparison_summary.csv", comparison),
+        ("hac_inference.csv", hac), ("bootstrap_inference.csv", bootstrap),
+        ("edge_stability.csv", edge_stability_table), ("network_density.csv", density),
+        ("network_centrality.csv", centrality), ("group_connectivity.csv", groups),
         ("conditional_edge_bootstrap.csv", edge_bootstrap if edge_bootstrap is not None else pd.DataFrame()),
     ):
         _write_table(run_dir, filename, frame)
     if make_figures:
-        write_figures(
-            scored,
-            comparison,
-            bootstrap,
-            edge_stability_table,
-            out_dir=run_dir,
-        )
+        write_figures(scored, comparison, bootstrap, edge_stability_table, out_dir=run_dir)
     write_results_markdown(
-        run_dir / "OOS_RESULTS.md",
-        manifest=manifest,
-        model_summary=model_summary,
-        stock_summary=stock_summary,
-        comparison=comparison,
-        hac=hac,
-        bootstrap=bootstrap,
-        edge_stability=edge_stability_table,
-        forecast_status=forecast_result.status,
+        run_dir / "OOS_RESULTS.md", manifest=manifest, model_summary=model_summary,
+        stock_summary=stock_summary, comparison=comparison, hac=hac, bootstrap=bootstrap,
+        edge_stability=edge_stability_table, forecast_status=forecast_result.status,
     )
     return {
-        "model_summary": model_summary,
-        "stock_summary": stock_summary,
-        "period_summary": period_summary,
-        "comparison": comparison,
-        "hac": hac,
-        "bootstrap": bootstrap,
-        "edge_stability": edge_stability_table,
-        "density": density,
-        "centrality": centrality,
-        "groups": groups,
+        "model_summary": model_summary, "stock_summary": stock_summary, "period_summary": period_summary,
+        "comparison": comparison, "hac": hac, "bootstrap": bootstrap, "edge_stability": edge_stability_table,
+        "density": density, "centrality": centrality, "groups": groups,
     }
 
 
@@ -617,35 +470,18 @@ def _effective_config(base: OOSConfig, *, smoke: bool, n_jobs: int) -> OOSConfig
     if not smoke:
         return value
     smoke_har = replace(
-        har,
-        min_training_observations=40,
-        cv_splits=2,
-        tuning_frequency=10,
-        lasso_max_iter=500,
-        hac_lag=5,
+        har, min_training_observations=40, cv_splits=2, tuning_frequency=10, lasso_max_iter=500, hac_lag=5,
     )
     return replace(
-        value,
-        factor_windows=(60,),
-        factor_window_primary=60,
-        factor_l1_starts=8,
-        min_valid_training_observations=40,
-        loss_bootstrap_repetitions=50,
-        loss_bootstrap_block_lengths=(5,),
-        edge_bootstrap_repetitions=10,
-        edge_bootstrap_checkpoint_step=30,
-        har=smoke_har,
+        value, factor_windows=(60,), factor_window_primary=60, factor_l1_starts=8,
+        min_valid_training_observations=40, loss_bootstrap_repetitions=50, loss_bootstrap_block_lengths=(5,),
+        edge_bootstrap_repetitions=10, edge_bootstrap_checkpoint_step=30, har=smoke_har,
     )
 
 
 def run_historical(
-    *,
-    config: OOSConfig,
-    run_id: str | None = None,
-    smoke: bool = False,
-    make_figures: bool = True,
-    run_edge_bootstrap: bool = False,
-    resume: bool = False,
+    *, config: OOSConfig, run_id: str | None = None, smoke: bool = False, make_figures: bool = True,
+    run_edge_bootstrap: bool = False, resume: bool = False,
 ) -> tuple[Path, dict[str, pd.DataFrame]]:
     """Replay the historical sample using the frozen OOS settings."""
 
@@ -672,13 +508,9 @@ def run_historical(
         raise TypeError("Strict complete returns require a DatetimeIndex.")
     latest_data = str(prices.index.max()) if len(prices.index) else None
     manifest = build_protocol_manifest(
-        config,
-        freeze_timestamp=utc_now_iso(),
-        last_data_examined=latest_data,
-        data_provenance=_data_provenance(),
-        code_provenance=_code_provenance(),
-        mode="historical_pseudo_oos",
-        status="historical_pseudo_oos",
+        config, freeze_timestamp=utc_now_iso(), last_data_examined=latest_data,
+        data_provenance=_data_provenance(), code_provenance=_code_provenance(),
+        mode="historical_pseudo_oos", status="historical_pseudo_oos",
     )
     manifest["run_id"] = run_id
     manifest["strict_return_rows"] = int(cleaned.notna().sum().sum())
@@ -692,11 +524,7 @@ def run_historical(
     factor_tables: list[dict[str, pd.DataFrame]] = []
     recovered = (
         _load_completed_historical_resume(
-            run_dir,
-            specs=specs,
-            calendar=calendar,
-            config=config,
-            run_id=run_id,
+            run_dir, specs=specs, calendar=calendar, config=config, run_id=run_id,
         )
         if resume and not run_edge_bootstrap
         else None
@@ -720,19 +548,12 @@ def run_historical(
         for window in sorted(set(int(item[0]) for item in specs)):
             print(f"[stage16] causal factor/RV vintages: {window} sessions", flush=True)
             vintage = build_factor_vintage_run(
-                complete,
-                calendar,
-                factor_window_sessions=window,
-                config=config,
+                complete, calendar, factor_window_sessions=window, config=config,
                 spec_name=f"factor_adjusted_{window}",
             )
             factor_runs[window] = vintage
             factor_tables.append(
-                _factor_result_tables(
-                    vintage,
-                    protocol_version=config.protocol_version,
-                    run_id=run_id,
-                )
+                _factor_result_tables(vintage, protocol_version=config.protocol_version, run_id=run_id)
             )
             _write_table(run_dir, f"control_vintages_{window}.csv", _long_controls(vintage))
         # Save factor diagnostics before the longer HAR and scoring steps.
@@ -754,16 +575,9 @@ def run_historical(
             checkpoint_dir = run_dir / "checkpoints" / spec_name
             resume_spec = resume and (checkpoint_dir / "forecast_state.json").exists()
             result = issue_target_free_forecasts(
-                vintage.daily_log_variance,
-                calendar,
-                spec_name=spec_name,
-                config=config,
-                run_id=run_id,
-                factor_metadata=vintage.factor_metadata,
-                har_window=har_window,
-                mode="historical_pseudo_oos",
-                checkpoint_dir=checkpoint_dir,
-                resume=resume_spec,
+                vintage.daily_log_variance, calendar, spec_name=spec_name, config=config,
+                run_id=run_id, factor_metadata=vintage.factor_metadata, har_window=har_window,
+                mode="historical_pseudo_oos", checkpoint_dir=checkpoint_dir, resume=resume_spec,
             )
             statuses.append(result.status)
             all_forecasts.append(result.forecasts)
@@ -773,11 +587,7 @@ def run_historical(
             all_diagnostics.append(result.origin_diagnostics)
             realized[spec_name] = vintage.daily_variance
             metadata[spec_name] = vintage.rv_metadata.assign(spec_name=spec_name)
-            _write_indexed_table(
-                run_dir,
-                f"realized_variance_{spec_name}.csv",
-                vintage.daily_variance,
-            )
+            _write_indexed_table(run_dir, f"realized_variance_{spec_name}.csv", vintage.daily_variance)
             _write_table(run_dir, f"rv_metadata_{spec_name}.csv", metadata[spec_name])
         forecast_result = ForecastRunResult(
             forecasts=pd.concat(all_forecasts, ignore_index=True) if all_forecasts else pd.DataFrame(),
@@ -791,19 +601,12 @@ def run_historical(
                 else "checkpointed_partial"
             ),
         )
-    scored = score_forecasts(
-        forecast_result.forecasts,
-        realized,
-        metadata,
-        config=config,
-    )
+    scored = score_forecasts(forecast_result.forecasts, realized, metadata, config=config)
     edge_bootstrap = None
     if run_edge_bootstrap and PRIMARY_SPEC_NAME in realized:
         edge_bootstrap = conditional_edge_bootstrap(
-            factor_runs[config.factor_window_primary].daily_log_variance,
-            calendar,
-            spec_name=PRIMARY_SPEC_NAME,
-            config=config,
+            factor_runs[config.factor_window_primary].daily_log_variance, calendar,
+            spec_name=PRIMARY_SPEC_NAME, config=config,
         )
     manifest["origin_calendar"] = sorted(
         str(value)
@@ -814,14 +617,8 @@ def run_historical(
     manifest["edge_bootstrap_status"] = "executed" if run_edge_bootstrap else "not_run_optional"
     write_json(run_dir / "manifest.json", manifest)
     summaries = _write_run_results(
-        run_dir,
-        manifest=manifest,
-        forecast_result=forecast_result,
-        scored=scored,
-        factor_tables=factor_tables,
-        config=config,
-        run_id=run_id,
-        edge_bootstrap=edge_bootstrap,
+        run_dir, manifest=manifest, forecast_result=forecast_result, scored=scored,
+        factor_tables=factor_tables, config=config, run_id=run_id, edge_bootstrap=edge_bootstrap,
         make_figures=make_figures,
     )
     print(f"[stage16] completed in {time.perf_counter() - started:.1f}s: {run_dir}", flush=True)
@@ -838,13 +635,8 @@ def run_freeze(*, config: OOSConfig) -> Path:
         latest_data = str(pd.read_parquet(CLOSE_MATRIX_FILE).index.max())
     freeze = utc_now_iso()
     manifest = build_protocol_manifest(
-        config,
-        freeze_timestamp=freeze,
-        last_data_examined=latest_data,
-        data_provenance=_data_provenance(),
-        code_provenance=_code_provenance(),
-        mode="protocol_freeze",
-        status="ready / awaiting_future_data",
+        config, freeze_timestamp=freeze, last_data_examined=latest_data, data_provenance=_data_provenance(),
+        code_provenance=_code_provenance(), mode="protocol_freeze", status="ready / awaiting_future_data",
     )
     manifest["run_id"] = run_id
     manifest["prospective_rule"] = "only target sessions whose open is after freeze_timestamp_utc"
@@ -871,10 +663,7 @@ def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, m
     if frozen.get("code_provenance") != _code_provenance():
         raise ValueError("Protocol code changed after freeze; run freeze again before issuance.")
     # Keep frozen model settings; only the worker count can change here.
-    config = replace(
-        frozen_config,
-        har=replace(frozen_config.har, n_jobs=config.har.n_jobs),
-    )
+    config = replace(frozen_config, har=replace(frozen_config.har, n_jobs=config.har.n_jobs))
     issuance_timestamp = utc_now_iso()
     run_id = _run_id("prospective", config)
     run_dir = _run_directory(run_id)
@@ -884,22 +673,15 @@ def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, m
     factor_tables: list[dict[str, pd.DataFrame]] = []
     for window in sorted(set(int(item[0]) for item in _historical_specs(config))):
         vintage = build_factor_vintage_run(
-            complete,
-            calendar,
-            factor_window_sessions=window,
-            config=config,
+            complete, calendar, factor_window_sessions=window, config=config,
             spec_name=f"factor_adjusted_{window}",
         )
         factor_runs[window] = vintage
         factor_tables.append(_factor_result_tables(vintage, protocol_version=config.protocol_version, run_id=run_id))
         _write_table(run_dir, f"control_vintages_{window}.csv", _long_controls(vintage))
     for name in (
-        "factor_fit_metadata",
-        "rv_vintage_metadata",
-        "factor_diagnostics",
-        "factor_loadings",
-        "benchmark_coefficients",
-        "factor_metrics",
+        "factor_fit_metadata", "rv_vintage_metadata", "factor_diagnostics", "factor_loadings",
+        "benchmark_coefficients", "factor_metrics",
     ):
         _write_table(run_dir, f"{name}.csv", _combine_factor_table(factor_tables, name))
     forecasts: list[pd.DataFrame] = []
@@ -910,16 +692,9 @@ def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, m
     for window, har_window, spec_name in _historical_specs(config):
         vintage = factor_runs[window]
         result = issue_target_free_forecasts(
-            vintage.daily_log_variance,
-            calendar,
-            spec_name=spec_name,
-            config=config,
-            run_id=run_id,
-            factor_metadata=vintage.factor_metadata,
-            har_window=har_window,
-            mode="prospective",
-            freeze_timestamp=frozen["freeze_timestamp_utc"],
-            issuance_timestamp=issuance_timestamp,
+            vintage.daily_log_variance, calendar, spec_name=spec_name, config=config, run_id=run_id,
+            factor_metadata=vintage.factor_metadata, har_window=har_window, mode="prospective",
+            freeze_timestamp=frozen["freeze_timestamp_utc"], issuance_timestamp=issuance_timestamp,
         )
         forecasts.append(result.forecasts)
         coefficients.append(result.coefficients)
@@ -929,9 +704,7 @@ def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, m
         _write_indexed_table(run_dir, f"realized_variance_{spec_name}.csv", vintage.daily_variance)
         _write_indexed_table(run_dir, f"realized_log_variance_{spec_name}.csv", vintage.daily_log_variance)
         _write_table(
-            run_dir,
-            f"rv_metadata_{spec_name}.csv",
-            vintage.rv_metadata.assign(spec_name=spec_name),
+            run_dir, f"rv_metadata_{spec_name}.csv", vintage.rv_metadata.assign(spec_name=spec_name),
         )
     forecast_result = ForecastRunResult(
         forecasts=pd.concat(forecasts, ignore_index=True) if forecasts else pd.DataFrame(),
@@ -950,22 +723,10 @@ def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, m
             forecast_result,
             forecasts=pd.DataFrame(
                 columns=[
-                    "protocol_version",
-                    "run_id",
-                    "spec_name",
-                    "model",
-                    "stock",
-                    "forecast_origin",
-                    "as_of",
-                    "target_date",
-                    "target_open",
-                    "target_outcome_available_at",
-                    "training_label_cutoff",
-                    "training_label_available_at",
-                    "factor_fit_id",
-                    "target_data_present_at_issue",
-                    "predicted_log_variance",
-                    "predicted_variance",
+                    "protocol_version", "run_id", "spec_name", "model", "stock", "forecast_origin",
+                    "as_of", "target_date", "target_open", "target_outcome_available_at",
+                    "training_label_cutoff", "training_label_available_at", "factor_fit_id",
+                    "target_data_present_at_issue", "predicted_log_variance", "predicted_variance",
                 ]
             ),
         )
@@ -974,11 +735,8 @@ def run_prospective(*, config: OOSConfig, freeze_manifest: Path | None = None, m
     latest = dict(frozen)
     latest.update(
         {
-            "run_id": run_id,
-            "mode": "prospective",
-            "status": forecast_result.status,
-            "forecast_ledger_immutable_before_scoring": True,
-            "issued_at_utc": issuance_timestamp,
+            "run_id": run_id, "mode": "prospective", "status": forecast_result.status,
+            "forecast_ledger_immutable_before_scoring": True, "issued_at_utc": issuance_timestamp,
             "n_forecast_rows": int(len(forecast_result.forecasts)),
         }
     )
@@ -1018,14 +776,8 @@ def run_report(*, run_id: str | None = None) -> Path:
         scored = pd.DataFrame()
         model_summary = stock_summary = comparison = hac = bootstrap = edge = pd.DataFrame()
     write_results_markdown(
-        run_dir / "OOS_RESULTS.md",
-        manifest=manifest,
-        model_summary=model_summary,
-        stock_summary=stock_summary,
-        comparison=comparison,
-        hac=hac,
-        bootstrap=bootstrap,
-        edge_stability=edge,
+        run_dir / "OOS_RESULTS.md", manifest=manifest, model_summary=model_summary,
+        stock_summary=stock_summary, comparison=comparison, hac=hac, bootstrap=bootstrap, edge_stability=edge,
         forecast_status=manifest.get("status", "unknown"),
     )
     print(f"[stage16] report regenerated: {run_dir / 'OOS_RESULTS.md'}", flush=True)
@@ -1071,21 +823,14 @@ def run_score(*, run_id: str | None = None, n_jobs: int = 1) -> Path:
         factor_runs: dict[int, FactorVintageRun] = {}
         for window in sorted({spec_windows[name] for name in specs}):
             factor_runs[window] = build_factor_vintage_run(
-                complete,
-                calendar,
-                factor_window_sessions=window,
-                config=config,
+                complete, calendar, factor_window_sessions=window, config=config,
                 spec_name=f"factor_adjusted_{window}",
             )
         for spec_name in specs:
             vintage = factor_runs[spec_windows[spec_name]]
             realized[spec_name] = vintage.daily_variance
             metadata[spec_name] = vintage.rv_metadata.assign(spec_name=spec_name)
-            _write_indexed_table(
-                run_dir,
-                f"realized_variance_{spec_name}.csv",
-                vintage.daily_variance,
-            )
+            _write_indexed_table(run_dir, f"realized_variance_{spec_name}.csv", vintage.daily_variance)
             _write_table(run_dir, f"rv_metadata_{spec_name}.csv", metadata[spec_name])
     scored = score_forecasts(forecast, realized, metadata, config=config)
     _write_table(run_dir, "score_ledger.csv", scored)
@@ -1097,15 +842,9 @@ def run_score(*, run_id: str | None = None, n_jobs: int = 1) -> Path:
     write_json(run_dir / "manifest.json", manifest)
     if forecast.empty:
         write_results_markdown(
-            run_dir / "OOS_RESULTS.md",
-            manifest=manifest,
-            model_summary=pd.DataFrame(),
-            stock_summary=pd.DataFrame(),
-            comparison=pd.DataFrame(),
-            hac=pd.DataFrame(),
-            bootstrap=pd.DataFrame(),
-            edge_stability=pd.DataFrame(),
-            forecast_status=manifest["status"],
+            run_dir / "OOS_RESULTS.md", manifest=manifest, model_summary=pd.DataFrame(),
+            stock_summary=pd.DataFrame(), comparison=pd.DataFrame(), hac=pd.DataFrame(),
+            bootstrap=pd.DataFrame(), edge_stability=pd.DataFrame(), forecast_status=manifest["status"],
         )
         return run_dir / "OOS_RESULTS.md"
     forecast_result = ForecastRunResult(
@@ -1134,12 +873,8 @@ def run_score(*, run_id: str | None = None, n_jobs: int = 1) -> Path:
     )
     factor_tables = []
     for name in (
-        "factor_fit_metadata",
-        "rv_vintage_metadata",
-        "factor_diagnostics",
-        "factor_loadings",
-        "benchmark_coefficients",
-        "factor_metrics",
+        "factor_fit_metadata", "rv_vintage_metadata", "factor_diagnostics", "factor_loadings",
+        "benchmark_coefficients", "factor_metrics",
     ):
         path = run_dir / f"{name}.csv"
         if path.exists():
@@ -1147,16 +882,9 @@ def run_score(*, run_id: str | None = None, n_jobs: int = 1) -> Path:
     edge_bootstrap_path = run_dir / "conditional_edge_bootstrap.csv"
     edge_bootstrap = pd.read_csv(edge_bootstrap_path) if edge_bootstrap_path.exists() else None
     _write_run_results(
-        run_dir,
-        manifest=manifest,
-        forecast_result=forecast_result,
-        scored=scored,
-        factor_tables=factor_tables,
-        config=config,
-        run_id=str(manifest.get("run_id", run_dir.name)),
-        edge_bootstrap=edge_bootstrap,
-        make_figures=False,
-        write_forecast_ledger=False,
+        run_dir, manifest=manifest, forecast_result=forecast_result, scored=scored,
+        factor_tables=factor_tables, config=config, run_id=str(manifest.get("run_id", run_dir.name)),
+        edge_bootstrap=edge_bootstrap, make_figures=False, write_forecast_ledger=False,
     )
     print(f"[stage16] outcomes scored: {n_scored} rows; {run_dir}", flush=True)
     return run_dir / "OOS_RESULTS.md"
@@ -1165,37 +893,19 @@ def run_score(*, run_id: str | None = None, n_jobs: int = 1) -> Path:
 def main(argv: Iterable[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--mode",
-        choices=("audit", "smoke", "freeze", "prospective", "score", "report"),
-        required=True,
+        "--mode", choices=("audit", "smoke", "freeze", "prospective", "score", "report"), required=True,
         help="Stage 16 operation to run.",
     )
+    parser.add_argument("--run-id", default=None, help="Existing run id for resume/report operations.")
     parser.add_argument(
-        "--run-id",
-        default=None,
-        help="Existing run id for resume/report operations.",
+        "--n-jobs", type=int, default=1, help="Parallel target workers for factor/Lasso routines.",
     )
     parser.add_argument(
-        "--n-jobs",
-        type=int,
-        default=1,
-        help="Parallel target workers for factor/Lasso routines.",
-    )
-    parser.add_argument(
-        "--edge-bootstrap",
-        action="store_true",
+        "--edge-bootstrap", action="store_true",
         help="Run the optional 200-replication conditional edge bootstrap.",
     )
-    parser.add_argument(
-        "--no-figures",
-        action="store_true",
-        help="Skip report figures.",
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Resume compatible forecast checkpoints.",
-    )
+    parser.add_argument("--no-figures", action="store_true", help="Skip report figures.")
+    parser.add_argument("--resume", action="store_true", help="Resume compatible forecast checkpoints.")
     args = parser.parse_args(argv)
     if args.n_jobs < 1:
         parser.error("--n-jobs must be at least one")
@@ -1212,12 +922,8 @@ def main(argv: Iterable[str] | None = None) -> None:
         run_report(run_id=args.run_id)
     else:
         run_historical(
-            config=config,
-            run_id=args.run_id,
-            smoke=args.mode == "smoke",
-            make_figures=not args.no_figures,
-            run_edge_bootstrap=args.edge_bootstrap,
-            resume=args.resume,
+            config=config, run_id=args.run_id, smoke=args.mode == "smoke", make_figures=not args.no_figures,
+            run_edge_bootstrap=args.edge_bootstrap, resume=args.resume,
         )
 
 

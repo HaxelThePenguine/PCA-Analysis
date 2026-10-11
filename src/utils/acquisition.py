@@ -19,29 +19,11 @@ from alpaca.trading.requests import GetCalendarRequest
 from dotenv import load_dotenv
 
 from config import (
-    CHUNKS_DIR,
-    END_DATE,
-    MAX_RETRIES,
-    NY_TZ,
-    PROJECT_ROOT,
-    RAW_SYMBOL_DIR,
-    START_DATE,
-    SYMBOLS,
-    UTC_TZ,
+    CHUNKS_DIR, END_DATE, MAX_RETRIES, NY_TZ, PROJECT_ROOT, RAW_SYMBOL_DIR, START_DATE, SYMBOLS, UTC_TZ,
 )
 
 BAR_COLUMNS = [
-    "symbol",
-    "timestamp",
-    "ny_time",
-    "date",
-    "open",
-    "high",
-    "low",
-    "close",
-    "volume",
-    "trade_count",
-    "vwap",
+    "symbol", "timestamp", "ny_time", "date", "open", "high", "low", "close", "volume", "trade_count", "vwap",
 ]
 
 
@@ -60,10 +42,7 @@ def create_clients() -> tuple[StockHistoricalDataClient, TradingClient]:
     """Create authenticated historical-data and paper-trading clients."""
 
     api_key, secret_key = read_credentials()
-    return (
-        StockHistoricalDataClient(api_key, secret_key),
-        TradingClient(api_key, secret_key, paper=True),
-    )
+    return (StockHistoricalDataClient(api_key, secret_key), TradingClient(api_key, secret_key, paper=True))
 
 
 def to_ny_timestamp(value: object) -> pd.Timestamp:
@@ -75,10 +54,7 @@ def to_ny_timestamp(value: object) -> pd.Timestamp:
     return timestamp.tz_convert(NY_TZ)
 
 
-def month_chunks(
-    start_date: date,
-    end_date: date,
-) -> Iterator[tuple[str, date, date]]:
+def month_chunks(start_date: date, end_date: date) -> Iterator[tuple[str, date, date]]:
     """Yield labeled monthly half-open intervals covering the date range."""
 
     current = date(start_date.year, start_date.month, 1)
@@ -90,9 +66,7 @@ def month_chunks(
             else date(current.year, current.month + 1, 1)
         )
         yield (
-            f"{current.year}-{current.month:02d}",
-            max(current, start_date),
-            min(next_month, final_exclusive),
+            f"{current.year}-{current.month:02d}", max(current, start_date), min(next_month, final_exclusive),
         )
         current = next_month
 
@@ -106,9 +80,7 @@ def date_to_utc(local_date: date) -> datetime:
 
 
 def build_market_calendar(
-    trading_client: TradingClient,
-    start_date: date = START_DATE,
-    end_date: date = END_DATE,
+    trading_client: TradingClient, start_date: date = START_DATE, end_date: date = END_DATE,
 ) -> pd.DataFrame:
     """Fetch and structure the market calendar used by every download filter."""
 
@@ -121,21 +93,15 @@ def build_market_calendar(
         close_minute = session_close.hour * 60 + session_close.minute
         rows.append(
             {
-                "date": session.date,
-                "session_open": session_open,
-                "session_close": session_close,
-                "open_minute": open_minute,
-                "close_minute": close_minute,
+                "date": session.date, "session_open": session_open, "session_close": session_close,
+                "open_minute": open_minute, "close_minute": close_minute,
                 "expected_bars": close_minute - open_minute,
             }
         )
     return pd.DataFrame(rows)
 
 
-def request_bars_with_retry(
-    data_client: StockHistoricalDataClient,
-    request: StockBarsRequest,
-) -> Any:
+def request_bars_with_retry(data_client: StockHistoricalDataClient, request: StockBarsRequest) -> Any:
     """Fetch one chunk with bounded exponential backoff."""
 
     for attempt in range(1, MAX_RETRIES + 1):
@@ -151,10 +117,7 @@ def request_bars_with_retry(
     raise RuntimeError("Unreachable retry state.")
 
 
-def regular_session_bars(
-    bars: pd.DataFrame,
-    calendar_filter: pd.DataFrame,
-) -> pd.DataFrame:
+def regular_session_bars(bars: pd.DataFrame, calendar_filter: pd.DataFrame) -> pd.DataFrame:
     """Normalize timestamps and retain unique regular-session minute bars."""
 
     frame = bars.reset_index().copy()
@@ -167,17 +130,12 @@ def regular_session_bars(
         frame["minute_of_day"] < frame["close_minute"]
     )
     return (
-        frame.loc[in_session, BAR_COLUMNS]
-        .drop_duplicates(subset=["symbol", "timestamp"])
+        frame.loc[in_session, BAR_COLUMNS] .drop_duplicates(subset=["symbol", "timestamp"])
         .sort_values(["symbol", "timestamp"])
     )
 
 
-def save_chunk_by_symbol(
-    bars: pd.DataFrame,
-    chunk_dir: Path,
-    symbols: Sequence[str] = SYMBOLS,
-) -> None:
+def save_chunk_by_symbol(bars: pd.DataFrame, chunk_dir: Path, symbols: Sequence[str] = SYMBOLS) -> None:
     """Save monthly bars per symbol; reject completion if a symbol is missing."""
 
     print(f"  RTH bars: {len(bars):,}")
@@ -188,11 +146,7 @@ def save_chunk_by_symbol(
             print(f"  WARNING: {symbol} 0 bars")
             missing_symbols.append(symbol)
             continue
-        symbol_bars.to_parquet(
-            chunk_dir / f"{symbol}.parquet",
-            index=False,
-            compression="zstd",
-        )
+        symbol_bars.to_parquet(chunk_dir / f"{symbol}.parquet", index=False, compression="zstd")
         print(f"  {symbol:<5} {len(symbol_bars):>7,}")
 
     if missing_symbols:
@@ -202,15 +156,10 @@ def save_chunk_by_symbol(
         )
 
 
-def download_chunks(
-    data_client: StockHistoricalDataClient,
-    calendar: pd.DataFrame,
-) -> None:
+def download_chunks(data_client: StockHistoricalDataClient, calendar: pd.DataFrame) -> None:
     """Download every incomplete monthly chunk and mark complete chunks."""
 
-    calendar_filter = calendar[
-        ["date", "open_minute", "close_minute", "expected_bars"]
-    ].copy()
+    calendar_filter = calendar[["date", "open_minute", "close_minute", "expected_bars"]].copy()
     print("\n=== DOWNLOAD ===")
 
     for label, chunk_start, chunk_end in month_chunks(START_DATE, END_DATE):
@@ -224,12 +173,8 @@ def download_chunks(
         print(f"\n[DOWNLOAD] {label}")
         print(f"  {chunk_start} -> {chunk_end}")
         request = StockBarsRequest(
-            symbol_or_symbols=list(SYMBOLS),
-            timeframe=TimeFrame.Minute,
-            start=date_to_utc(chunk_start),
-            end=date_to_utc(chunk_end),
-            feed=DataFeed.SIP,
-            adjustment=Adjustment.RAW,
+            symbol_or_symbols=list(SYMBOLS), timeframe=TimeFrame.Minute, start=date_to_utc(chunk_start),
+            end=date_to_utc(chunk_end), feed=DataFeed.SIP, adjustment=Adjustment.RAW,
         )
         response = request_bars_with_retry(data_client, request)
         if response.df.empty:
@@ -252,15 +197,10 @@ def consolidate_symbol(symbol: str) -> pd.DataFrame | None:
     if not files:
         return None
 
-    frame = pd.concat(
-        [pd.read_parquet(path) for path in files],
-        ignore_index=True,
-    )
+    frame = pd.concat([pd.read_parquet(path) for path in files], ignore_index=True)
     frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
     return (
-        frame.drop_duplicates(subset=["timestamp"])
-        .sort_values("timestamp")
-        .reset_index(drop=True)
+        frame.drop_duplicates(subset=["timestamp"]) .sort_values("timestamp") .reset_index(drop=True)
     )
 
 
@@ -274,18 +214,11 @@ def consolidate_all_symbols(symbols: Sequence[str] = SYMBOLS) -> None:
         if frame is None:
             print("no files found")
             continue
-        frame.to_parquet(
-            RAW_SYMBOL_DIR / f"{symbol}.parquet",
-            index=False,
-            compression="zstd",
-        )
+        frame.to_parquet(RAW_SYMBOL_DIR / f"{symbol}.parquet", index=False, compression="zstd")
         print(f"{len(frame):,} bars")
 
 
-def build_daily_quality(
-    calendar: pd.DataFrame,
-    symbols: Sequence[str] = SYMBOLS,
-) -> pd.DataFrame:
+def build_daily_quality(calendar: pd.DataFrame, symbols: Sequence[str] = SYMBOLS) -> pd.DataFrame:
     """Measure expected versus observed bars for every symbol and session."""
 
     expected = calendar[["date", "expected_bars"]].copy()
@@ -311,9 +244,7 @@ def build_daily_quality(
     return pd.concat(reports, ignore_index=True)
 
 
-def build_liquidity_summary(
-    symbols: Sequence[str] = SYMBOLS,
-) -> pd.DataFrame:
+def build_liquidity_summary(symbols: Sequence[str] = SYMBOLS) -> pd.DataFrame:
     """Aggregate minute-bar volume and trade-count statistics by symbol."""
 
     rows = []
@@ -324,10 +255,8 @@ def build_liquidity_summary(
         data = pd.read_parquet(path, columns=["volume", "trade_count"])
         rows.append(
             {
-                "symbol": symbol,
-                "median_volume": data["volume"].median(),
-                "mean_volume": data["volume"].mean(),
-                "median_trade_count": data["trade_count"].median(),
+                "symbol": symbol, "median_volume": data["volume"].median(),
+                "mean_volume": data["volume"].mean(), "median_trade_count": data["trade_count"].median(),
                 "mean_trade_count": data["trade_count"].mean(),
             }
         )
@@ -348,8 +277,7 @@ def build_quality_summary(daily_quality: pd.DataFrame) -> pd.DataFrame:
     summary["total_coverage"] = summary["observed_bars"] / summary["expected_bars"]
     summary = summary.join(build_liquidity_summary())
     for source, target in (
-        ("total_coverage", "total_coverage_pct"),
-        ("avg_daily_coverage", "avg_daily_coverage_pct"),
+        ("total_coverage", "total_coverage_pct"), ("avg_daily_coverage", "avg_daily_coverage_pct"),
         ("worst_daily_coverage", "worst_daily_coverage_pct"),
     ):
         summary[target] = summary[source] * 100

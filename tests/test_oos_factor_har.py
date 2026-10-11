@@ -29,12 +29,9 @@ def _calendar(n: int = 75) -> pd.DataFrame:
     dates = pd.bdate_range("2025-01-02", periods=n)
     return pd.DataFrame(
         {
-            "date": dates,
-            "session_open": dates.tz_localize(NY_TZ) + pd.Timedelta(hours=9, minutes=30),
-            "session_close": dates.tz_localize(NY_TZ) + pd.Timedelta(hours=16),
-            "open_minute": 570,
-            "close_minute": 960,
-            "expected_bars": 390,
+            "date": dates, "session_open": dates.tz_localize(NY_TZ) + pd.Timedelta(hours=9, minutes=30),
+            "session_close": dates.tz_localize(NY_TZ) + pd.Timedelta(hours=16), "open_minute": 570,
+            "close_minute": 960, "expected_bars": 390,
         }
     )
 
@@ -44,9 +41,7 @@ def _panels(n: int = 75) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.D
     dates = pd.DatetimeIndex(calendar["date"])
     rng = np.random.default_rng(17017)
     common = rng.normal(scale=0.18, size=n)
-    local = np.column_stack(
-        [common + rng.normal(scale=0.08, size=n) for _ in range(3)]
-    )
+    local = np.column_stack([common + rng.normal(scale=0.08, size=n) for _ in range(3)])
     banks = np.column_stack(
         [
             -0.2 + 0.35 * common + rng.normal(scale=0.12, size=n),
@@ -57,26 +52,16 @@ def _panels(n: int = 75) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.D
     return (
         pd.DataFrame(banks, index=dates, columns=["A", "B", "C"]),
         pd.DataFrame(common, index=dates, columns=["COMMON"]),
-        pd.DataFrame(local, index=dates, columns=["LF1", "LF2", "LF3"]),
-        calendar,
+        pd.DataFrame(local, index=dates, columns=["LF1", "LF2", "LF3"]), calendar,
     )
 
 
 def _config() -> OOSConfig:
     har = HARConfig(
-        n_jobs=1,
-        min_training_observations=10,
-        rolling_training_observations=30,
-        tuning_frequency=5,
-        cv_splits=2,
-        alpha_fractions=(0.1, 0.3, 1.0),
-        lasso_max_iter=500,
+        n_jobs=1, min_training_observations=10, rolling_training_observations=30, tuning_frequency=5,
+        cv_splits=2, alpha_fractions=(0.1, 0.3, 1.0), lasso_max_iter=500,
     )
-    return OOSConfig(
-        protocol_version="test-factor-har-v1",
-        min_valid_training_observations=10,
-        har=har,
-    )
+    return OOSConfig(protocol_version="test-factor-har-v1", min_valid_training_observations=10, har=har)
 
 
 class FactorScoreTest(unittest.TestCase):
@@ -87,29 +72,17 @@ class FactorScoreTest(unittest.TestCase):
         stocks = ("A", "B", "C")
         factors = ("LF1", "LF2")
         fit = FactorFit(
-            stocks=stocks,
-            benchmarks=("SPY", "XLF"),
-            coefficients=pd.DataFrame(
-                0.0,
-                index=stocks,
-                columns=["alpha", "beta_SPY", "beta_XLF"],
-            ),
-            residual_means=pd.Series(0.0, index=stocks),
-            residual_scales=pd.Series(1.0, index=stocks),
-            pca_explained=np.array([0.6, 0.3]),
-            pca_eigenvalues=np.array([1.8, 0.9]),
+            stocks=stocks, benchmarks=("SPY", "XLF"),
+            coefficients=pd.DataFrame(0.0, index=stocks, columns=["alpha", "beta_SPY", "beta_XLF"]),
+            residual_means=pd.Series(0.0, index=stocks), residual_scales=pd.Series(1.0, index=stocks),
+            pca_explained=np.array([0.6, 0.3]), pca_eigenvalues=np.array([1.8, 0.9]),
             pca_weights=pd.DataFrame(q, index=stocks, columns=["PC1", "PC2"]),
             factor_projector=pd.DataFrame(q @ q.T, index=stocks, columns=stocks),
-            loadings=pd.DataFrame(loadings, index=stocks, columns=factors),
-            rotation=pd.DataFrame(rotation),
-            rotation_condition_number=float(np.linalg.cond(rotation)),
-            projector_invariance_error=0.0,
-            training_orthogonality_error=0.0,
-            training_factor_variance_removed_pct=0.0,
-            training_benchmark_variance_removed_pct=0.0,
-            training_max_abs_residual_benchmark_corr=0.0,
-            l1_rotation_status="ok",
-            l1_optimizer_success_rate=1.0,
+            loadings=pd.DataFrame(loadings, index=stocks, columns=factors), rotation=pd.DataFrame(rotation),
+            rotation_condition_number=float(np.linalg.cond(rotation)), projector_invariance_error=0.0,
+            training_orthogonality_error=0.0, training_factor_variance_removed_pct=0.0,
+            training_benchmark_variance_removed_pct=0.0, training_max_abs_residual_benchmark_corr=0.0,
+            l1_rotation_status="ok", l1_optimizer_success_rate=1.0,
         )
         values = np.array([[0.2, -0.3, 0.4], [0.8, 0.1, -0.2]])
         panel = pd.DataFrame(
@@ -139,22 +112,10 @@ class FactorHARForecastTest(unittest.TestCase):
         changed = banks.copy()
         changed.loc[target_date, :] += 25.0
         first = issue_factor_har_forecasts(
-            banks,
-            aggregate,
-            local,
-            calendar,
-            spec_name="factor_test",
-            config=_config(),
-            run_id="first",
+            banks, aggregate, local, calendar, spec_name="factor_test", config=_config(), run_id="first",
         ).forecasts
         second = issue_factor_har_forecasts(
-            changed,
-            aggregate,
-            local,
-            calendar,
-            spec_name="factor_test",
-            config=_config(),
-            run_id="second",
+            changed, aggregate, local, calendar, spec_name="factor_test", config=_config(), run_id="second",
         ).forecasts
         first = first[first["target_date"] == target_date].sort_values(["model", "stock"])
         second = second[second["target_date"] == target_date].sort_values(["model", "stock"])
@@ -162,8 +123,7 @@ class FactorHARForecastTest(unittest.TestCase):
         self.assertGreater(len(first), 0)
         np.testing.assert_allclose(
             first["predicted_log_variance"].to_numpy(dtype=float),
-            second["predicted_log_variance"].to_numpy(dtype=float),
-            atol=1e-12,
+            second["predicted_log_variance"].to_numpy(dtype=float), atol=1e-12,
         )
         self.assertTrue((first["target_data_present_at_issue"] == False).all())  # noqa: E712
         self.assertGreater(len(validate_identical_model_keys(first, FACTOR_HAR_MODELS)), 0)
@@ -171,15 +131,8 @@ class FactorHARForecastTest(unittest.TestCase):
     def test_prospective_mode_refuses_historical_backfill(self) -> None:
         banks, aggregate, local, calendar = _panels()
         result = issue_factor_har_forecasts(
-            banks,
-            aggregate,
-            local,
-            calendar,
-            spec_name="factor_test",
-            config=_config(),
-            mode="prospective",
-            freeze_timestamp="2030-01-01T00:00:00Z",
-            issuance_timestamp="2030-01-01T00:00:01Z",
+            banks, aggregate, local, calendar, spec_name="factor_test", config=_config(), mode="prospective",
+            freeze_timestamp="2030-01-01T00:00:00Z", issuance_timestamp="2030-01-01T00:00:01Z",
         )
         self.assertTrue(result.forecasts.empty)
         self.assertEqual(result.status, "awaiting_future_data")

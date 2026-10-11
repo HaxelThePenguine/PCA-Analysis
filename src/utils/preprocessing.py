@@ -21,21 +21,14 @@ def load_close_series(symbol: str) -> pd.Series:
     frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
     frame["ny_time"] = frame["timestamp"].dt.tz_convert(NY_TZ)
     return (
-        frame.drop_duplicates("ny_time")
-        .set_index("ny_time")
-        .sort_index()["close"]
-        .rename(symbol)
+        frame.drop_duplicates("ny_time") .set_index("ny_time") .sort_index()["close"] .rename(symbol)
     )
 
 
 def build_price_matrix() -> pd.DataFrame:
     """Align all symbols to the exchange calendar, preserving missing minutes."""
 
-    prices = pd.concat(
-        {symbol: load_close_series(symbol) for symbol in SYMBOLS},
-        axis=1,
-        sort=False,
-    ).sort_index()
+    prices = pd.concat({symbol: load_close_series(symbol) for symbol in SYMBOLS}, axis=1, sort=False).sort_index()
     calendar = pd.read_csv(CALENDAR_FILE)
     return prices.reindex(build_expected_index(calendar))
 
@@ -52,11 +45,7 @@ def remove_systemic_gap(prices: pd.DataFrame) -> pd.DataFrame:
     return prices.loc[~in_gap].copy()
 
 
-def compute_intraday_returns(
-    prices: pd.DataFrame,
-    *,
-    require_consecutive: bool = False,
-) -> pd.DataFrame:
+def compute_intraday_returns(prices: pd.DataFrame, *, require_consecutive: bool = False) -> pd.DataFrame:
     """Compute within-session log returns.
 
     Pipeline stages require consecutive minutes. Set ``require_consecutive``
@@ -88,10 +77,7 @@ def compute_strict_intraday_returns(prices: pd.DataFrame) -> pd.DataFrame:
     return compute_intraday_returns(prices, require_consecutive=True)
 
 
-def build_contaminated_mask(
-    missing: pd.DataFrame,
-    returns: pd.DataFrame,
-) -> pd.DataFrame:
+def build_contaminated_mask(missing: pd.DataFrame, returns: pd.DataFrame) -> pd.DataFrame:
     """Mark returns at and immediately after every forward-filled candle."""
 
     aligned = missing.reindex(index=returns.index, columns=returns.columns)
@@ -103,8 +89,7 @@ def build_contaminated_mask(
 
 
 def clean_returns(
-    returns: pd.DataFrame,
-    missing: pd.DataFrame,
+    returns: pd.DataFrame, missing: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Apply the configured session and candle-contamination filters."""
 
@@ -123,12 +108,8 @@ def summarize_returns(returns: pd.DataFrame) -> pd.DataFrame:
 
     return pd.DataFrame(
         {
-            "mean": returns.mean(),
-            "std": returns.std(),
-            "min": returns.min(),
-            "max": returns.max(),
-            "p001": returns.quantile(0.001),
-            "p999": returns.quantile(0.999),
+            "mean": returns.mean(), "std": returns.std(), "min": returns.min(), "max": returns.max(),
+            "p001": returns.quantile(0.001), "p999": returns.quantile(0.999),
         }
     )
 
@@ -139,10 +120,7 @@ def largest_absolute_returns(returns: pd.DataFrame, limit: int = 50) -> pd.Serie
     return returns.stack().abs().sort_values(ascending=False).head(limit)
 
 
-def build_complete_universe(
-    returns: pd.DataFrame,
-    symbols: tuple[str, ...],
-) -> pd.DataFrame:
+def build_complete_universe(returns: pd.DataFrame, symbols: tuple[str, ...]) -> pd.DataFrame:
     """Select an ordered universe and retain only complete timestamps."""
 
     columns = require_columns(returns, symbols, context="Clean return matrix")

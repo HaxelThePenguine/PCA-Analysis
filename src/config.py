@@ -17,44 +17,15 @@ REPORTS_DIR = DATASET_DIR / "reports"
 METADATA_DIR = DATASET_DIR / "metadata"
 
 BANKS = (
-    "BAC",
-    "COF",
-    "JPM",
-    "HBAN",
-    "WFC",
-    "USB",
-    "RF",
-    "SCHW",
-    "C",
-    "AXP",
-    "TFC",
-    "FITB",
-    "KEY",
-    "GS",
-    "MS",
-    "FHN",
-    "CFG",
-    "SYF",
+    "BAC", "COF", "JPM", "HBAN", "WFC", "USB", "RF", "SCHW", "C", "AXP", "TFC", "FITB", "KEY", "GS",
+    "MS", "FHN", "CFG", "SYF",
 )
 
 # Beta columns follow the SPY, XLF order.
 BENCHMARKS = ("SPY", "XLF")
 SYMBOLS = BANKS + BENCHMARKS
 
-CORE_UNIVERSE = (
-    "JPM",
-    "BAC",
-    "WFC",
-    "C",
-    "USB",
-    "TFC",
-    "KEY",
-    "RF",
-    "FITB",
-    "CFG",
-    "HBAN",
-    "MS",
-)
+CORE_UNIVERSE = ("JPM", "BAC", "WFC", "C", "USB", "TFC", "KEY", "RF", "FITB", "CFG", "HBAN", "MS")
 FULL_UNIVERSE = BANKS
 
 START_DATE = date(2023, 1, 1)
@@ -86,13 +57,7 @@ COMMON_MISSING_GAPS_FILE = REPORTS_DIR / "common_missing_gaps.csv"
 
 
 PROJECT_DIRECTORIES = (
-    DATASET_DIR,
-    CHUNKS_DIR,
-    RAW_SYMBOL_DIR,
-    INTERMEDIATE_DIR,
-    PROCESSED_DIR,
-    REPORTS_DIR,
-    METADATA_DIR,
+    DATASET_DIR, CHUNKS_DIR, RAW_SYMBOL_DIR, INTERMEDIATE_DIR, PROCESSED_DIR, REPORTS_DIR, METADATA_DIR,
 )
 
 

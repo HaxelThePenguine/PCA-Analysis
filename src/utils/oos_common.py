@@ -39,19 +39,11 @@ def _json_default(value: object) -> object:
 def stable_hash(value: object) -> str:
     """Hash JSON-serializable protocol content deterministically."""
 
-    encoded = json.dumps(
-        value,
-        sort_keys=True,
-        default=_json_default,
-        separators=(",", ":"),
-    )
+    encoded = json.dumps(value, sort_keys=True, default=_json_default, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def file_prefix_fingerprint(
-    path: Path,
-    prefix_bytes: int = 1_048_576,
-) -> dict[str, object]:
+def file_prefix_fingerprint(path: Path, prefix_bytes: int = 1_048_576) -> dict[str, object]:
     """Fingerprint a large file from metadata and a fixed-size prefix."""
 
     path = Path(path)
@@ -62,11 +54,8 @@ def file_prefix_fingerprint(
         digest.update(handle.read(prefix_bytes))
     stat = path.stat()
     return {
-        "path": str(path),
-        "exists": True,
-        "size_bytes": int(stat.st_size),
-        "prefix_bytes_hashed": int(prefix_bytes),
-        "prefix_sha256": digest.hexdigest(),
+        "path": str(path), "exists": True, "size_bytes": int(stat.st_size),
+        "prefix_bytes_hashed": int(prefix_bytes), "prefix_sha256": digest.hexdigest(),
     }
 
 
@@ -89,9 +78,7 @@ def dataframe_hash(frame: pd.DataFrame | pd.Series) -> str:
         "index": [str(item) for item in value.index],
         "dtypes": [str(dtype) for dtype in value.dtypes],
         "values_sha256": hashlib.sha256(
-            pd.util.hash_pandas_object(value, index=True)
-            .to_numpy(dtype=np.uint64)
-            .tobytes()
+            pd.util.hash_pandas_object(value, index=True) .to_numpy(dtype=np.uint64) .tobytes()
         ).hexdigest(),
     }
     return stable_hash(payload)
@@ -117,49 +104,32 @@ def _exchange_timestamps(values: pd.Series) -> pd.Series:
 def normalize_calendar(calendar: pd.DataFrame) -> pd.DataFrame:
     """Validate a market calendar and preserve exchange timestamps."""
 
-    required = {
-        "date",
-        "session_open",
-        "session_close",
-        "open_minute",
-        "close_minute",
-        "expected_bars",
-    }
+    required = {"date", "session_open", "session_close", "open_minute", "close_minute", "expected_bars"}
     missing = required.difference(calendar.columns)
     if missing:
         raise ValueError(f"Market calendar is missing columns: {sorted(missing)}")
     result = calendar.copy()
     result["session_date"] = session_date_index(result["date"])
     result = result[~result["session_date"].isin(pd.DatetimeIndex(BAD_SESSION_DATES))]
-    result = result.sort_values("session_date").drop_duplicates(
-        "session_date",
-        keep="first",
-    )
+    result = result.sort_values("session_date").drop_duplicates("session_date", keep="first")
     result["session_open"] = _exchange_timestamps(result["session_open"])
     result["session_close"] = _exchange_timestamps(result["session_close"])
     return result.reset_index(drop=True)
 
 
 def strict_clean_return_panel(
-    close_matrix: pd.DataFrame,
-    missing_mask: pd.DataFrame,
+    close_matrix: pd.DataFrame, missing_mask: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Build strict one-minute returns and retain contamination masks."""
 
     returns = compute_strict_intraday_returns(close_matrix)
-    aligned_missing = missing_mask.reindex(
-        index=close_matrix.index,
-        columns=close_matrix.columns,
-    )
+    aligned_missing = missing_mask.reindex(index=close_matrix.index, columns=close_matrix.columns)
     if aligned_missing.isna().any().any():
         raise ValueError("The missingness mask does not align with the close matrix.")
     return clean_returns(returns, aligned_missing)
 
 
-def training_bounds(
-    row_number: int,
-    har_window: str | int,
-) -> tuple[int, int]:
+def training_bounds(row_number: int, har_window: str | int) -> tuple[int, int]:
     """Return the causal HAR slice ending immediately before an origin."""
 
     if har_window == "expanding":
@@ -182,9 +152,7 @@ def calendar_time_maps(
 
 
 def safe_positive_variance(
-    predicted_log_variance: float,
-    smearing_factor: float,
-    floor: float,
+    predicted_log_variance: float, smearing_factor: float, floor: float,
 ) -> tuple[float, bool]:
     """Back-transform a log forecast with bounded exponentiation."""
 

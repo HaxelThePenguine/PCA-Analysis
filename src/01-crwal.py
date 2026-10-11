@@ -5,12 +5,8 @@ from __future__ import annotations
 from config import CALENDAR_FILE, REPORTS_DIR, ensure_project_directories
 from reporting.acquisition import print_calendar_summary, print_final_report
 from utils.acquisition import (
-    build_daily_quality,
-    build_market_calendar,
-    build_quality_summary,
-    consolidate_all_symbols,
-    create_clients,
-    download_chunks,
+    build_daily_quality, build_market_calendar, build_quality_summary, consolidate_all_symbols,
+    create_clients, download_chunks,
 )
 
 

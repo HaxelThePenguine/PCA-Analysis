@@ -14,45 +14,26 @@ import pandas as pd
 from utils.plotting import save_figure, style_axis
 from utils.variance import GROUP_COLUMNS
 
-GROUP_LABELS = [
-    "Benchmark SPY/XLF",
-    "Residual PC1",
-    "Residuals PC2-PC3",
-    "Residuals PC4-PC12",
-]
+GROUP_LABELS = ["Benchmark SPY/XLF", "Residual PC1", "Residuals PC2-PC3", "Residuals PC4-PC12"]
 GROUP_COLORS = ["#2f6690", "#d99a2b", "#e07a5f", "#9aa58b"]
 
 
-def plot_stock_decomposition(
-    ledger: pd.DataFrame, complete_panel: pd.DataFrame, *, out_dir: Path
-) -> None:
+def plot_stock_decomposition(ledger: pd.DataFrame, complete_panel: pd.DataFrame, *, out_dir: Path) -> None:
     """Save a 100% stacked bar chart for the twelve stocks."""
     figure, axis = plt.subplots(figsize=(11, 7))
     left = np.zeros(len(ledger))
     for column, label, color in zip(GROUP_COLUMNS, GROUP_LABELS, GROUP_COLORS):
         values = ledger[column].to_numpy()
         axis.barh(
-            ledger.index,
-            values,
-            left=left,
-            label=label,
-            color=color,
-            edgecolor="white",
-            linewidth=0.6,
+            ledger.index, values, left=left, label=label, color=color, edgecolor="white", linewidth=0.6,
         )
         left += values
     start = complete_panel.index[0].strftime("%Y-%m-%d")
     end = complete_panel.index[-1].strftime("%Y-%m-%d")
-    axis.set_title(
-        "Variance decomposition by stock", loc="left", color="#252525", pad=18
-    )
+    axis.set_title("Variance decomposition by stock", loc="left", color="#252525", pad=18)
     axis.text(
-        0,
-        1.015,
-        f"Raw variance share | complete panel {start}-{end} | n={len(complete_panel):,}",
-        transform=axis.transAxes,
-        color="#666666",
-        fontsize=9,
+        0, 1.015, f"Raw variance share | complete panel {start}-{end} | n={len(complete_panel):,}",
+        transform=axis.transAxes, color="#666666", fontsize=9,
     )
     axis.set_xlabel("Percentage of raw variance")
     axis.set_xlim(0, 100)
@@ -70,35 +51,17 @@ def plot_global_decomposition(summary: pd.DataFrame, *, out_dir: Path) -> None:
     for label, color in zip(GROUP_LABELS, GROUP_COLORS):
         value = summary.loc[label, "share_of_raw_pct"]
         axis.barh(
-            ["CORE universe"],
-            [value],
-            left=left,
-            label=label,
-            color=color,
-            edgecolor="white",
-            linewidth=0.8,
+            ["CORE universe"], [value], left=left, label=label, color=color, edgecolor="white", linewidth=0.8,
         )
         if value >= 7:
             axis.text(
-                left + value / 2,
-                0,
-                f"{value:.1f}%",
-                ha="center",
-                va="center",
-                fontsize=9,
-                color="#252525",
+                left + value / 2, 0, f"{value:.1f}%", ha="center", va="center", fontsize=9, color="#252525",
             )
         left += value
-    axis.set_title(
-        "Aggregate variance decomposition", loc="left", color="#252525", pad=18
-    )
+    axis.set_title("Aggregate variance decomposition", loc="left", color="#252525", pad=18)
     axis.text(
-        0,
-        1.08,
-        "Denominator: sum of raw variances across the twelve stocks",
-        transform=axis.transAxes,
-        color="#666666",
-        fontsize=9,
+        0, 1.08, "Denominator: sum of raw variances across the twelve stocks", transform=axis.transAxes,
+        color="#666666", fontsize=9,
     )
     axis.set_xlim(0, 100)
     axis.set_xlabel("Percentage of raw variance")
@@ -109,9 +72,7 @@ def plot_global_decomposition(summary: pd.DataFrame, *, out_dir: Path) -> None:
     save_figure(figure, out_dir / "10_variance_decomposition_global.png")
 
 
-def print_summary(
-    complete_panel, global_summary, ledger, results, *, out_dir: Path
-) -> None:
+def print_summary(complete_panel, global_summary, ledger, results, *, out_dir: Path) -> None:
     print("=== VARIANCE DECOMPOSITION ===")
     print(f"Complete panel: {complete_panel.shape}")
     print(f"Period: {complete_panel.index[0]} -> {complete_panel.index[-1]}")
@@ -124,12 +85,7 @@ def print_summary(
         f"{ledger['variance_identity_error'].max():.3e}",
     )
     residual_component_error = (
-        (results["component_variance"].sum(axis=1) - results["residual_variance"])
-        .abs()
-        .max()
+        (results["component_variance"].sum(axis=1) - results["residual_variance"]) .abs() .max()
     )
-    print(
-        "Maximum error in residual component sum = residual variance:",
-        f"{residual_component_error:.3e}",
-    )
+    print("Maximum error in residual component sum = residual variance:", f"{residual_component_error:.3e}")
     print(f"\nOutputs saved to: {out_dir}")

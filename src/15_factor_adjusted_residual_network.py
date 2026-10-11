@@ -11,40 +11,24 @@ from typing import Any, Iterable
 import pandas as pd
 
 from config import (
-    BENCHMARKS,
-    CALENDAR_FILE,
-    CORE_UNIVERSE,
-    REPORTS_DIR,
-    RETURN_MATRIX_CLEAN_FILE,
+    BENCHMARKS, CALENDAR_FILE, CORE_UNIVERSE, REPORTS_DIR, RETURN_MATRIX_CLEAN_FILE,
     ensure_project_directories,
 )
 from reporting.network import make_figures as render_figures, print_summary
 from utils.data import load_panel, validate_panel
 from utils.factor_adjusted_residuals import FactorConfig, run_factor_adjustment
 from utils.network_har import (
-    HARConfig,
-    bootstrap_edge_selection,
-    build_hac_tests,
-    descriptive_network_edges,
-    edge_stability,
-    group_connectivity,
-    network_centrality,
-    network_density,
-    summarize_forecasts,
-    walk_forward_forecasts,
+    HARConfig, bootstrap_edge_selection, build_hac_tests, descriptive_network_edges, edge_stability,
+    group_connectivity, network_centrality, network_density, summarize_forecasts, walk_forward_forecasts,
 )
-from utils.realized_volatility import (
-    RealizedVarianceConfig,
-    aggregate_realized_variance,
-)
+from utils.realized_volatility import (RealizedVarianceConfig, aggregate_realized_variance,)
 
 
 OUT_DIR = REPORTS_DIR / "factor_adjusted_residual_network"
 PRIMARY_K = 3
 FACTOR_WINDOWS = (120, 60)
 GROUPS = {
-    "MS_C": ("MS", "C"),
-    "large_banks": ("JPM", "BAC", "WFC", "C"),
+    "MS_C": ("MS", "C"), "large_banks": ("JPM", "BAC", "WFC", "C"),
     "regional_banks": ("USB", "TFC", "KEY", "RF", "FITB", "CFG", "HBAN"),
 }
 
@@ -65,10 +49,8 @@ class Stage15Config:
 def _panel(panel: pd.DataFrame | None) -> pd.DataFrame:
     if panel is None:
         return load_panel(
-            RETURN_MATRIX_CLEAN_FILE,
-            [*CORE_UNIVERSE, *BENCHMARKS],
-            context="Factor-adjusted residual network panel",
-            drop_incomplete=True,
+            RETURN_MATRIX_CLEAN_FILE, [*CORE_UNIVERSE, *BENCHMARKS],
+            context="Factor-adjusted residual network panel", drop_incomplete=True,
         )
     required = [*CORE_UNIVERSE, *BENCHMARKS]
     missing = [column for column in required if column not in panel.columns]
@@ -79,10 +61,7 @@ def _panel(panel: pd.DataFrame | None) -> pd.DataFrame:
     return value
 
 
-def _long_variance(
-    variance_panels: dict[int, Any],
-    attribute: str,
-) -> pd.DataFrame:
+def _long_variance(variance_panels: dict[int, Any], attribute: str) -> pd.DataFrame:
     rows: list[pd.DataFrame] = []
     for window, result in variance_panels.items():
         for control, frame in getattr(result, attribute).items():
@@ -130,31 +109,19 @@ def _forecast_comparison(forecast_summary: pd.DataFrame) -> pd.DataFrame:
     keys = ["spec_name", "factor_window_sessions", "har_window"]
     own = forecast_summary[forecast_summary["model"] == "own_har"].rename(
         columns={
-            "qlike": "own_qlike",
-            "log_mse": "own_log_mse",
-            "log_mae": "own_log_mae",
+            "qlike": "own_qlike", "log_mse": "own_log_mse", "log_mae": "own_log_mae",
             "directional_accuracy": "own_directional_accuracy",
         }
     )
     network = forecast_summary[forecast_summary["model"] == "network_har_l1_1se"].rename(
         columns={
-            "qlike": "network_qlike",
-            "log_mse": "network_log_mse",
-            "log_mae": "network_log_mae",
+            "qlike": "network_qlike", "log_mse": "network_log_mse", "log_mae": "network_log_mae",
             "directional_accuracy": "network_directional_accuracy",
         }
     )
-    own_columns = keys + [
-        "own_qlike",
-        "own_log_mse",
-        "own_log_mae",
-        "own_directional_accuracy",
-    ]
+    own_columns = keys + ["own_qlike", "own_log_mse", "own_log_mae", "own_directional_accuracy"]
     network_columns = keys + [
-        "network_qlike",
-        "network_log_mse",
-        "network_log_mae",
-        "network_directional_accuracy",
+        "network_qlike", "network_log_mse", "network_log_mae", "network_directional_accuracy",
     ]
     result = own[own_columns].merge(
         network[network_columns], on=keys, how="inner", suffixes=("", "_duplicate")
@@ -171,14 +138,9 @@ def _write_outputs(tables: dict[str, pd.DataFrame], out_dir: Path) -> None:
 
 
 def run_analysis(
-    panel: pd.DataFrame | None = None,
-    *,
-    calendar: pd.DataFrame | None = None,
-    config: Stage15Config = Stage15Config(),
-    make_figures: bool = True,
-    write_files: bool = True,
-    run_bootstrap: bool = True,
-    out_dir: Path = OUT_DIR,
+    panel: pd.DataFrame | None = None, *, calendar: pd.DataFrame | None = None,
+    config: Stage15Config = Stage15Config(), make_figures: bool = True, write_files: bool = True,
+    run_bootstrap: bool = True, out_dir: Path = OUT_DIR,
 ) -> dict[str, Any]:
     """Run stage 15 and optionally write its separate report directory."""
 
@@ -201,24 +163,16 @@ def run_analysis(
             flush=True,
         )
         factor_config = FactorConfig(
-            n_jobs=config.har.n_jobs,
-            window_sessions=int(window),
-            update_step_sessions=config.factor_update_step,
-            n_components=config.factor_components,
-            l1_starts=config.factor_l1_starts,
-            random_seed=config.factor_seed + int(window),
+            n_jobs=config.har.n_jobs, window_sessions=int(window),
+            update_step_sessions=config.factor_update_step, n_components=config.factor_components,
+            l1_starts=config.factor_l1_starts, random_seed=config.factor_seed + int(window),
         )
         factor_result = run_factor_adjustment(
-            data,
-            CORE_UNIVERSE,
-            BENCHMARKS,
-            factor_config,
-            spec_name=f"factor_adjusted_{window}",
+            data, CORE_UNIVERSE, BENCHMARKS, factor_config, spec_name=f"factor_adjusted_{window}",
         )
         variance_result = aggregate_realized_variance(
             {
-                "raw": factor_result.raw_returns,
-                "benchmark_residual": factor_result.benchmark_residuals,
+                "raw": factor_result.raw_returns, "benchmark_residual": factor_result.benchmark_residuals,
                 "factor_adjusted": factor_result.factor_adjusted_residuals,
             },
             market_calendar,
@@ -229,8 +183,7 @@ def run_analysis(
         for control, frame in variance_result.log_daily_ivar.items():
             daily_logs[(int(window), control)] = frame
         for table, destination in (
-            (factor_result.diagnostics, factor_diagnostics),
-            (factor_result.factor_metrics, factor_metrics),
+            (factor_result.diagnostics, factor_diagnostics), (factor_result.factor_metrics, factor_metrics),
             (factor_result.factor_loadings, factor_loadings),
             (factor_result.benchmark_coefficients, benchmark_coefficients),
         ):
@@ -255,11 +208,8 @@ def run_analysis(
     for spec_name, window, har_window in forecast_specs:
         print(f"[stage15] forecast {spec_name} started", flush=True)
         result = walk_forward_forecasts(
-            daily_logs[(window, "factor_adjusted")],
-            spec_name=spec_name,
-            factor_window_sessions=window,
-            har_window=har_window,
-            config=config.har,
+            daily_logs[(window, "factor_adjusted")], spec_name=spec_name,
+            factor_window_sessions=window, har_window=har_window, config=config.har,
         )
         forecast_results.append(result)
     forecasts = pd.concat([result.forecasts for result in forecast_results], ignore_index=True)
@@ -267,12 +217,10 @@ def run_analysis(
     edge_history = pd.concat([result.edge_history for result in forecast_results], ignore_index=True)
     tuning_history = pd.concat([result.tuning_history for result in forecast_results], ignore_index=True)
     forecast_summary = summarize_forecasts(
-        forecasts,
-        ("spec_name", "factor_window_sessions", "har_window", "model"),
+        forecasts, ("spec_name", "factor_window_sessions", "har_window", "model"),
     )
     stock_summary = summarize_forecasts(
-        forecasts,
-        ("spec_name", "factor_window_sessions", "har_window", "model", "stock"),
+        forecasts, ("spec_name", "factor_window_sessions", "har_window", "model", "stock"),
     )
     period_summary = _calendar_period_summary(forecasts)
     stress_summary = _stress_summary(forecasts)
@@ -289,20 +237,14 @@ def run_analysis(
             spec_name = f"descriptive_{control}_{window}"
             print(f"[stage15] descriptive network {spec_name} started", flush=True)
             edges, tuning = descriptive_network_edges(
-                daily_logs[(int(window), control)],
-                spec_name=spec_name,
-                factor_window_sessions=int(window),
-                har_window="expanding",
-                config=config.har,
+                daily_logs[(int(window), control)], spec_name=spec_name,
+                factor_window_sessions=int(window), har_window="expanding", config=config.har,
             )
             descriptive_edges.append(edges)
             descriptive_tuning.append(tuning)
     descriptive_edge_history = pd.concat(descriptive_edges, ignore_index=True)
     descriptive_tuning_history = pd.concat(descriptive_tuning, ignore_index=True)
-    descriptive_stability = edge_stability(
-        descriptive_edge_history,
-        model="descriptive_network",
-    )
+    descriptive_stability = edge_stability(descriptive_edge_history, model="descriptive_network")
     descriptive_density = network_density(descriptive_edge_history)
     descriptive_groups = group_connectivity(descriptive_stability, GROUPS)
     bootstrap = []
@@ -312,10 +254,8 @@ def run_analysis(
             bootstrap.append(
                 bootstrap_edge_selection(
                     daily_logs[(int(window), "factor_adjusted")],
-                    spec_name=f"factor_adjusted_{window}_expanding",
-                    factor_window_sessions=int(window),
-                    har_window="expanding",
-                    config=config.har,
+                    spec_name=f"factor_adjusted_{window}_expanding", factor_window_sessions=int(window),
+                    har_window="expanding", config=config.har,
                 )
             )
     bootstrap_edges = pd.concat(bootstrap, ignore_index=True) if bootstrap else pd.DataFrame()
@@ -335,77 +275,47 @@ def run_analysis(
         "15_interval_diagnostics.csv": interval_diagnostics_table,
         "15_variance_floor_diagnostics.csv": floor_table,
         "15_factor_model_diagnostics.csv": factor_diagnostics_table,
-        "15_factor_metrics.csv": factor_metrics_table,
-        "15_factor_loadings.csv": factor_loadings_table,
+        "15_factor_metrics.csv": factor_metrics_table, "15_factor_loadings.csv": factor_loadings_table,
         "15_benchmark_coefficients.csv": benchmark_coefficients_table,
-        "15_walk_forward_forecasts.csv": forecasts,
-        "15_forecast_summary.csv": forecast_summary,
-        "15_stock_forecast_summary.csv": stock_summary,
-        "15_calendar_period_summary.csv": period_summary,
-        "15_stress_period_summary.csv": stress_summary,
-        "15_hac_tests.csv": hac_tests,
-        "15_har_coefficients.csv": har_coefficients,
-        "15_edge_history.csv": edge_history,
-        "15_edge_stability.csv": edge_stability_table,
-        "15_network_density.csv": edge_density,
-        "15_network_centrality.csv": centrality,
-        "15_group_connectivity.csv": forecast_groups,
+        "15_walk_forward_forecasts.csv": forecasts, "15_forecast_summary.csv": forecast_summary,
+        "15_stock_forecast_summary.csv": stock_summary, "15_calendar_period_summary.csv": period_summary,
+        "15_stress_period_summary.csv": stress_summary, "15_hac_tests.csv": hac_tests,
+        "15_har_coefficients.csv": har_coefficients, "15_edge_history.csv": edge_history,
+        "15_edge_stability.csv": edge_stability_table, "15_network_density.csv": edge_density,
+        "15_network_centrality.csv": centrality, "15_group_connectivity.csv": forecast_groups,
         "15_descriptive_edge_history.csv": descriptive_edge_history,
         "15_descriptive_tuning_history.csv": descriptive_tuning_history,
         "15_descriptive_edge_stability.csv": descriptive_stability,
         "15_descriptive_network_density.csv": descriptive_density,
         "15_descriptive_group_connectivity.csv": descriptive_groups,
-        "15_bootstrap_edge_selection.csv": bootstrap_edges,
-        "15_tuning_history.csv": tuning_history,
+        "15_bootstrap_edge_selection.csv": bootstrap_edges, "15_tuning_history.csv": tuning_history,
         "15_factor_window_comparison.csv": comparison,
     }
     if write_files:
         _write_outputs(tables, out_dir)
     if make_figures:
         render_figures(
-            forecasts,
-            edge_history,
-            edge_stability_table,
-            pd.concat([forecast_groups, descriptive_groups], ignore_index=True),
-            factor_diagnostics_table,
-            factor_loadings_table,
-            out_dir=out_dir,
+            forecasts, edge_history, edge_stability_table,
+            pd.concat([forecast_groups, descriptive_groups], ignore_index=True), factor_diagnostics_table,
+            factor_loadings_table, out_dir=out_dir,
         )
-    print(
-        f"[stage15] completed in {time.perf_counter() - stage_started:.1f}s",
-        flush=True,
-    )
+    print(f"[stage15] completed in {time.perf_counter() - stage_started:.1f}s", flush=True)
     return {
-        "factor_results": factor_results,
-        "variance_results": variance_results,
-        "factor_diagnostics": factor_diagnostics_table,
-        "factor_metrics": factor_metrics_table,
-        "factor_loadings": factor_loadings_table,
-        "benchmark_coefficients": benchmark_coefficients_table,
-        "daily_variance": daily_variance_table,
-        "daily_log_variance": daily_log_table,
-        "interval_diagnostics": interval_diagnostics_table,
-        "floor_diagnostics": floor_table,
-        "forecasts": forecasts,
-        "forecast_summary": forecast_summary,
-        "stock_summary": stock_summary,
-        "period_summary": period_summary,
-        "stress_summary": stress_summary,
-        "hac_tests": hac_tests,
-        "har_coefficients": har_coefficients,
-        "edge_history": edge_history,
-        "edge_stability": edge_stability_table,
-        "network_density": edge_density,
-        "centrality": centrality,
-        "group_connectivity": forecast_groups,
-        "descriptive_edge_history": descriptive_edge_history,
+        "factor_results": factor_results, "variance_results": variance_results,
+        "factor_diagnostics": factor_diagnostics_table, "factor_metrics": factor_metrics_table,
+        "factor_loadings": factor_loadings_table, "benchmark_coefficients": benchmark_coefficients_table,
+        "daily_variance": daily_variance_table, "daily_log_variance": daily_log_table,
+        "interval_diagnostics": interval_diagnostics_table, "floor_diagnostics": floor_table,
+        "forecasts": forecasts, "forecast_summary": forecast_summary, "stock_summary": stock_summary,
+        "period_summary": period_summary, "stress_summary": stress_summary, "hac_tests": hac_tests,
+        "har_coefficients": har_coefficients, "edge_history": edge_history,
+        "edge_stability": edge_stability_table, "network_density": edge_density, "centrality": centrality,
+        "group_connectivity": forecast_groups, "descriptive_edge_history": descriptive_edge_history,
         "descriptive_tuning_history": descriptive_tuning_history,
         "descriptive_edge_stability": descriptive_stability,
         "descriptive_network_density": descriptive_density,
-        "descriptive_group_connectivity": descriptive_groups,
-        "bootstrap_edges": bootstrap_edges,
-        "tuning_history": tuning_history,
-        "comparison": comparison,
+        "descriptive_group_connectivity": descriptive_groups, "bootstrap_edges": bootstrap_edges,
+        "tuning_history": tuning_history, "comparison": comparison,
     }
 
 
@@ -414,9 +324,7 @@ def main(argv: Iterable[str] | None = None) -> None:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--n-jobs",
-        type=int,
-        default=1,
+        "--n-jobs", type=int, default=1,
         help="Number of worker processes used for parallel HAR target equations.",
     )
     args = parser.parse_args(argv)
@@ -424,16 +332,10 @@ def main(argv: Iterable[str] | None = None) -> None:
         parser.error("--n-jobs must be at least one")
     ensure_project_directories()
     base_config = Stage15Config()
-    config = replace(
-        base_config,
-        har=replace(base_config.har, n_jobs=args.n_jobs),
-    )
+    config = replace(base_config, har=replace(base_config.har, n_jobs=args.n_jobs))
     results = run_analysis(config=config)
     print_summary(
-        results["forecast_summary"],
-        results["hac_tests"],
-        results["edge_stability"],
-        out_dir=OUT_DIR,
+        results["forecast_summary"], results["hac_tests"], results["edge_stability"], out_dir=OUT_DIR,
     )
 
 

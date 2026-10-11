@@ -50,12 +50,8 @@ def _calendar(n_sessions: int = 70) -> pd.DataFrame:
     closes = dates.tz_localize(NY_TZ) + pd.Timedelta(hours=16)
     return pd.DataFrame(
         {
-            "date": dates,
-            "session_open": opens,
-            "session_close": closes,
-            "open_minute": 570,
-            "close_minute": 960,
-            "expected_bars": 390,
+            "date": dates, "session_open": opens, "session_close": closes, "open_minute": 570,
+            "close_minute": 960, "expected_bars": 390,
         }
     )
 
@@ -71,40 +67,21 @@ def _log_variance(n_sessions: int = 70) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def _small_config() -> OOSConfig:
     har = HARConfig(
-        n_jobs=1,
-        min_training_observations=10,
-        rolling_training_observations=20,
-        tuning_frequency=5,
-        cv_splits=2,
-        alpha_fractions=(0.03, 0.10, 0.30, 1.0),
-        lasso_max_iter=300,
-        lasso_tolerance=1e-6,
+        n_jobs=1, min_training_observations=10, rolling_training_observations=20, tuning_frequency=5,
+        cv_splits=2, alpha_fractions=(0.03, 0.10, 0.30, 1.0), lasso_max_iter=300, lasso_tolerance=1e-6,
         hac_lag=5,
     )
     return OOSConfig(
-        protocol_version="test-oos-v2",
-        factor_windows=(4,),
-        factor_window_primary=4,
-        factor_l1_starts=4,
-        min_valid_training_observations=10,
-        checkpoint_frequency_origins=2,
-        loss_bootstrap_repetitions=20,
-        loss_bootstrap_block_lengths=(5,),
-        edge_bootstrap_repetitions=10,
-        edge_bootstrap_checkpoint_step=10,
+        protocol_version="test-oos-v2", factor_windows=(4,), factor_window_primary=4, factor_l1_starts=4,
+        min_valid_training_observations=10, checkpoint_frequency_origins=2, loss_bootstrap_repetitions=20,
+        loss_bootstrap_block_lengths=(5,), edge_bootstrap_repetitions=10, edge_bootstrap_checkpoint_step=10,
         har=har,
     )
 
 
 class StrictPreprocessingTest(unittest.TestCase):
     def test_strict_returns_reject_a_removed_minute(self) -> None:
-        index = pd.DatetimeIndex(
-            [
-                "2026-01-02 09:30",
-                "2026-01-02 09:31",
-                "2026-01-02 09:33",
-            ]
-        ).tz_localize(NY_TZ)
+        index = pd.DatetimeIndex(["2026-01-02 09:30", "2026-01-02 09:31", "2026-01-02 09:33"]).tz_localize(NY_TZ)
         prices = pd.DataFrame({"A": [100.0, 101.0, 103.0]}, index=index)
 
         legacy = compute_intraday_returns(prices)
@@ -115,12 +92,7 @@ class StrictPreprocessingTest(unittest.TestCase):
 
     def test_strict_panel_preserves_contamination_information(self) -> None:
         index = pd.DatetimeIndex(
-            [
-                "2026-01-02 09:30",
-                "2026-01-02 09:31",
-                "2026-01-02 09:33",
-                "2026-01-02 09:34",
-            ]
+            ["2026-01-02 09:30", "2026-01-02 09:31", "2026-01-02 09:33", "2026-01-02 09:34"]
         ).tz_localize(NY_TZ)
         prices = pd.DataFrame({"A": [100.0, 101.0, 103.0, 104.0]}, index=index)
         missing = pd.DataFrame(False, index=index, columns=["A"])
@@ -134,26 +106,15 @@ class StrictPreprocessingTest(unittest.TestCase):
 
 class CalendarAndCausalityTest(unittest.TestCase):
     def test_session_dates_accept_mixed_checkpoint_iso_formats(self) -> None:
-        dates = _session_date_index(
-            ["2026-09-04", "2026-09-08 00:00:00", "2026-09-09T00:00:00"]
-        )
-        self.assertTrue(
-            dates.equals(
-                pd.DatetimeIndex(["2026-09-04", "2026-09-08", "2026-09-09"])
-            )
-        )
+        dates = _session_date_index(["2026-09-04", "2026-09-08 00:00:00", "2026-09-09T00:00:00"])
+        self.assertTrue(dates.equals(pd.DatetimeIndex(["2026-09-04", "2026-09-08", "2026-09-09"])))
 
     def test_checkpoint_normalizes_mixed_legacy_labels_for_parquet(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             checkpoint = Path(temporary)
             _write_forecast_checkpoint(
-                checkpoint,
-                forecasts=[{"har_window": 252}, {"har_window": "252"}],
-                coefficients=[],
-                edges=[],
-                tuning_rows=[],
-                origin_rows=[],
-                state={"table_format": "parquet"},
+                checkpoint, forecasts=[{"har_window": 252}, {"har_window": "252"}], coefficients=[], edges=[],
+                tuning_rows=[], origin_rows=[], state={"table_format": "parquet"},
             )
             stored = pd.read_parquet(checkpoint / "forecast_ledger.parquet")
         self.assertEqual(stored["har_window"].tolist(), ["252", "252"])
@@ -177,26 +138,14 @@ class CalendarAndCausalityTest(unittest.TestCase):
         config = _small_config()
 
         first = issue_target_free_forecasts(
-            original,
-            calendar,
-            spec_name="test_spec",
-            config=config,
-            run_id="first",
+            original, calendar, spec_name="test_spec", config=config, run_id="first",
         ).forecasts
         second = issue_target_free_forecasts(
-            changed,
-            calendar,
-            spec_name="test_spec",
-            config=config,
-            run_id="second",
+            changed, calendar, spec_name="test_spec", config=config, run_id="second",
         ).forecasts
         cutoff = original.index[50]
-        first = first[first["target_date"] < cutoff].sort_values(
-            ["model", "stock", "forecast_origin"]
-        )
-        second = second[second["target_date"] < cutoff].sort_values(
-            ["model", "stock", "forecast_origin"]
-        )
+        first = first[first["target_date"] < cutoff].sort_values(["model", "stock", "forecast_origin"])
+        second = second[second["target_date"] < cutoff].sort_values(["model", "stock", "forecast_origin"])
         self.assertEqual(len(first), len(second))
         np.testing.assert_allclose(
             first["predicted_log_variance"].to_numpy(dtype=float),
@@ -212,32 +161,19 @@ class CalendarAndCausalityTest(unittest.TestCase):
         panel, calendar = _log_variance()
         config = _small_config()
         full = issue_target_free_forecasts(
-            panel,
-            calendar,
-            spec_name="resume_spec",
-            config=config,
-            run_id="full",
+            panel, calendar, spec_name="resume_spec", config=config, run_id="full",
         ).forecasts
         with tempfile.TemporaryDirectory() as temporary:
             checkpoint = Path(temporary)
             partial = issue_target_free_forecasts(
-                panel,
-                calendar,
-                spec_name="resume_spec",
-                config=config,
-                run_id="resume",
-                checkpoint_dir=checkpoint,
-                stop_after_origins=3,
+                panel, calendar, spec_name="resume_spec", config=config, run_id="resume",
+                checkpoint_dir=checkpoint, stop_after_origins=3,
             )
             self.assertEqual(partial.status, "checkpointed_partial")
             resumed = issue_target_free_forecasts(
-                panel,
-                calendar,
-                spec_name="resume_spec",
-                config=replace(config, har=replace(config.har, n_jobs=2)),
-                run_id="resume",
-                checkpoint_dir=checkpoint,
-                resume=True,
+                panel, calendar, spec_name="resume_spec",
+                config=replace(config, har=replace(config.har, n_jobs=2)), run_id="resume",
+                checkpoint_dir=checkpoint, resume=True,
             ).forecasts
         key = ["spec_name", "model", "stock", "forecast_origin", "target_date"]
         left = full.sort_values(key).reset_index(drop=True)
@@ -254,47 +190,25 @@ class CalendarAndCausalityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             checkpoint = Path(temporary)
             issue_target_free_forecasts(
-                panel,
-                calendar,
-                spec_name="strict_spec",
-                config=config,
-                run_id="strict",
-                checkpoint_dir=checkpoint,
-                stop_after_origins=3,
+                panel, calendar, spec_name="strict_spec", config=config, run_id="strict",
+                checkpoint_dir=checkpoint, stop_after_origins=3,
             )
-            changed = replace(
-                config,
-                har=replace(config.har, alpha_fractions=(0.10, 0.30, 1.0)),
-            )
+            changed = replace(config, har=replace(config.har, alpha_fractions=(0.10, 0.30, 1.0)))
             with self.assertRaisesRegex(ValueError, "forecast specification"):
                 issue_target_free_forecasts(
-                    panel,
-                    calendar,
-                    spec_name="strict_spec",
-                    config=changed,
-                    run_id="strict",
-                    checkpoint_dir=checkpoint,
-                    resume=True,
+                    panel, calendar, spec_name="strict_spec", config=changed, run_id="strict",
+                    checkpoint_dir=checkpoint, resume=True,
                 )
 
     def test_prospective_mode_never_backfills_opened_targets(self) -> None:
         panel, calendar = _log_variance()
         result = issue_target_free_forecasts(
-            panel,
-            calendar,
-            spec_name="prospective_spec",
-            config=_small_config(),
-            run_id="prospective",
-            mode="prospective",
-            freeze_timestamp="2023-12-31T00:00:00Z",
+            panel, calendar, spec_name="prospective_spec", config=_small_config(), run_id="prospective",
+            mode="prospective", freeze_timestamp="2023-12-31T00:00:00Z",
             issuance_timestamp="2025-01-01T00:00:00Z",
         )
         self.assertTrue(result.forecasts.empty)
-        self.assertTrue(
-            result.origin_diagnostics["status"]
-            .eq("not_issued_target_already_opened")
-            .all()
-        )
+        self.assertTrue(result.origin_diagnostics["status"] .eq("not_issued_target_already_opened") .all())
 
 
 class ScoringAndInferenceTest(unittest.TestCase):
@@ -308,28 +222,18 @@ class ScoringAndInferenceTest(unittest.TestCase):
                     predicted = 1.0 if model == "own_har" else 1.5
                     rows.append(
                         {
-                            "protocol_version": "test-oos-v2",
-                            "run_id": "score",
-                            "spec_name": "score_spec",
-                            "model": model,
-                            "stock": stock,
-                            "forecast_origin": origin,
-                            "as_of": origin + pd.Timedelta(hours=16),
-                            "target_date": target_date,
+                            "protocol_version": "test-oos-v2", "run_id": "score", "spec_name": "score_spec",
+                            "model": model, "stock": stock, "forecast_origin": origin,
+                            "as_of": origin + pd.Timedelta(hours=16), "target_date": target_date,
                             "target_data_present_at_issue": False,
-                            "predicted_log_variance": np.log(predicted),
-                            "predicted_variance": predicted,
+                            "predicted_log_variance": np.log(predicted), "predicted_variance": predicted,
                         }
                     )
         forecasts = pd.DataFrame(rows)
-        realized = pd.DataFrame(
-            {"A": [2.0, 0.0], "B": [2.0, 2.0]},
-            index=target_dates,
-        )
+        realized = pd.DataFrame({"A": [2.0, 0.0], "B": [2.0, 2.0]}, index=target_dates)
         metadata = pd.DataFrame(
             {
-                "session_date": target_dates,
-                "target_quality_eligible": True,
+                "session_date": target_dates, "target_quality_eligible": True,
                 "target_quality_reason": "eligible_by_predeclared_rule",
             }
         )
@@ -347,10 +251,7 @@ class ScoringAndInferenceTest(unittest.TestCase):
     def test_scoring_uses_raw_positive_variance_and_keeps_nonpositive_status(self) -> None:
         forecasts, realized, metadata = self._forecast_ledger()
         scored = score_forecasts(
-            forecasts,
-            {"score_spec": realized},
-            {"score_spec": metadata},
-            config=_small_config(),
+            forecasts, {"score_spec": realized}, {"score_spec": metadata}, config=_small_config(),
         )
         positive = scored[(scored["target_date"] == pd.Timestamp("2024-03-01")) & (scored["stock"] == "A")]
         self.assertTrue((positive["score_status"] == "scored").all())
@@ -363,10 +264,7 @@ class ScoringAndInferenceTest(unittest.TestCase):
     def test_hac_aggregates_the_stock_panel_by_date(self) -> None:
         forecasts, realized, metadata = self._forecast_ledger()
         scored = score_forecasts(
-            forecasts,
-            {"score_spec": realized},
-            {"score_spec": metadata},
-            config=_small_config(),
+            forecasts, {"score_spec": realized}, {"score_spec": metadata}, config=_small_config(),
         )
         differences = paired_loss_differentials(scored)
         self.assertEqual(len(differences), 3)
@@ -389,11 +287,7 @@ class ScoringAndInferenceTest(unittest.TestCase):
         y = 1.0 + own @ np.array([0.2, -0.4, 0.7]) + cross @ np.array([0.8, 0.0, -0.4, 0.2, 0.1])
         alpha = _alpha_max(y, own, cross)
         fit = fit_partialling_out(
-            y,
-            own,
-            cross,
-            alpha=alpha,
-            cross_feature_names=[f"x{index}" for index in range(cross.shape[1])],
+            y, own, cross, alpha=alpha, cross_feature_names=[f"x{index}" for index in range(cross.shape[1])],
             config=HARConfig(lasso_max_iter=500),
         )
         np.testing.assert_allclose(fit.network_coefficients_standardized, 0.0, atol=1e-12)

@@ -8,24 +8,14 @@ from utils.pca import format_pca_summary
 
 
 def print_summary(
-    panel,
-    complete_panel,
-    benchmark_result,
-    residual_pca,
-    covariance_diff,
-    score_error,
-    *,
-    out_dir: Path,
+    panel, complete_panel, benchmark_result, residual_pca, covariance_diff, score_error, *, out_dir: Path,
 ) -> None:
     print("=== SPY/XLF RESIDUALIZATION ===")
     print(f"Initial panel: {panel.shape}")
     print(f"Complete panel: {complete_panel.shape}")
     print(f"Observations retained: {100 * len(complete_panel) / len(panel):.2f}%")
     maximum_residual_correlation = (
-        benchmark_result["diagnostics"][["corr_resid_SPY", "corr_resid_XLF"]]
-        .abs()
-        .to_numpy()
-        .max()
+        benchmark_result["diagnostics"][["corr_resid_SPY", "corr_resid_XLF"]] .abs() .to_numpy() .max()
     )
     print(f"Maximum residual-SPY/XLF correlation: {maximum_residual_correlation:.3e}")
     print(f"Covariance check: {covariance_diff:.3e}")

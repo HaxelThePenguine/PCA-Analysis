@@ -11,24 +11,13 @@ import pandas as pd
 from utils.benchmark import residualize_against_benchmarks
 from utils.pca import fit_pca
 
-GROUP_COLUMNS = [
-    "benchmark_pct",
-    "residual_PC1_pct",
-    "residual_PC2_to_PC3_pct",
-    "residual_PC4_to_PC12_pct",
-]
+GROUP_COLUMNS = ["benchmark_pct", "residual_PC1_pct", "residual_PC2_to_PC3_pct", "residual_PC4_to_PC12_pct"]
 
 
-def build_variance_ledger(
-    complete_panel: pd.DataFrame,
-    stocks: Sequence[str],
-) -> dict[str, Any]:
+def build_variance_ledger(complete_panel: pd.DataFrame, stocks: Sequence[str]) -> dict[str, Any]:
     """Fit benchmarks and split each stock's variance into additive parts."""
 
-    benchmark_result = residualize_against_benchmarks(
-        complete_panel,
-        stocks=stocks,
-    )
+    benchmark_result = residualize_against_benchmarks(complete_panel, stocks=stocks)
     fitted_returns = benchmark_result["fitted_returns"]
     residual_returns = benchmark_result["residual_returns"]
 
@@ -48,16 +37,9 @@ def build_variance_ledger(
         f"residual_PC{component + 1}_variance"
         for component in range(component_variance.shape[1])
     ]
-    component_variance = pd.DataFrame(
-        component_variance,
-        index=stock_columns,
-        columns=component_labels,
-    )
+    component_variance = pd.DataFrame(component_variance, index=stock_columns, columns=component_labels)
     component_pct = (
-        component_variance.divide(
-            raw_variance,
-            axis="index",
-        )
+        component_variance.divide(raw_variance, axis="index")
         * 100
     )
     component_pct.columns = [
@@ -66,20 +48,14 @@ def build_variance_ledger(
 
     ledger = pd.DataFrame(
         {
-            "raw_variance": raw_variance,
-            "benchmark_variance": benchmark_variance,
-            "residual_variance": residual_variance,
-            "benchmark_pct": 100 * benchmark_variance / raw_variance,
+            "raw_variance": raw_variance, "benchmark_variance": benchmark_variance,
+            "residual_variance": residual_variance, "benchmark_pct": 100 * benchmark_variance / raw_variance,
             "residual_pct": 100 * residual_variance / raw_variance,
         }
     )
     ledger = ledger.join(component_pct)
-    ledger["residual_PC2_to_PC3_pct"] = ledger[
-        ["residual_PC2_pct", "residual_PC3_pct"]
-    ].sum(axis=1)
-    ledger["residual_PC4_to_PC12_pct"] = ledger[
-        [f"residual_PC{component}_pct" for component in range(4, 13)]
-    ].sum(axis=1)
+    ledger["residual_PC2_to_PC3_pct"] = ledger[["residual_PC2_pct", "residual_PC3_pct"]].sum(axis=1)
+    ledger["residual_PC4_to_PC12_pct"] = ledger[[f"residual_PC{component}_pct" for component in range(4, 13)]].sum(axis=1)
     ledger["total_pct"] = ledger[GROUP_COLUMNS].sum(axis=1)
     ledger["variance_identity_error"] = (
         ledger["raw_variance"]
@@ -88,13 +64,9 @@ def build_variance_ledger(
     ).abs()
 
     return {
-        "ledger": ledger,
-        "component_variance": component_variance,
-        "component_pct": component_pct,
-        "raw_variance": raw_variance,
-        "benchmark_variance": benchmark_variance,
-        "residual_variance": residual_variance,
-        "residual_eigenvalues": values,
+        "ledger": ledger, "component_variance": component_variance, "component_pct": component_pct,
+        "raw_variance": raw_variance, "benchmark_variance": benchmark_variance,
+        "residual_variance": residual_variance, "residual_eigenvalues": values,
         "residual_covariance": residual_covariance,
     }
 
@@ -108,16 +80,10 @@ def build_global_summary(results: dict[str, Any]) -> pd.DataFrame:
     eigenvalues = results["residual_eigenvalues"]
 
     components = {
-        "Benchmark SPY/XLF": benchmark_total,
-        "Residual PC1": eigenvalues[0],
-        "Residuals PC2-PC3": eigenvalues[1:3].sum(),
-        "Residuals PC4-PC12": eigenvalues[3:].sum(),
+        "Benchmark SPY/XLF": benchmark_total, "Residual PC1": eigenvalues[0],
+        "Residuals PC2-PC3": eigenvalues[1:3].sum(), "Residuals PC4-PC12": eigenvalues[3:].sum(),
     }
-    summary = pd.DataFrame(
-        {
-            "variance": components,
-        }
-    )
+    summary = pd.DataFrame({"variance": components})
     summary["share_of_raw_pct"] = 100 * summary["variance"] / raw_total
     summary["share_of_residual_pct"] = np.nan
     summary.loc["Residual PC1":, "share_of_residual_pct"] = (

@@ -15,13 +15,9 @@ from utils.plotting import save_figure, style_axis
 
 
 def plot_loadings(loadings: pd.DataFrame, *, out_dir: Path) -> None:
-    pivot = loadings.pivot_table(
-        index="window_end", columns=["factor", "stock"], values="loading"
-    ).sort_index()
+    pivot = loadings.pivot_table(index="window_end", columns=["factor", "stock"], values="loading").sort_index()
     dates = pd.to_datetime(pivot.index)
-    figure, axes = plt.subplots(
-        1, loadings["factor"].nunique(), figsize=(13, 4), sharex=True
-    )
+    figure, axes = plt.subplots(1, loadings["factor"].nunique(), figsize=(13, 4), sharex=True)
     for number, axis in enumerate(np.atleast_1d(axes), start=1):
         factor = f"LF{number}"
         columns = [c for c in pivot.columns if c[0] == factor]
@@ -37,9 +33,7 @@ def plot_loadings(loadings: pd.DataFrame, *, out_dir: Path) -> None:
     save_figure(figure, out_dir / "13_bis_loading_evolution.png", tight_bbox=True)
 
 
-def print_summary(
-    candidates, panel, stress, summary, windows, *, out_dir: Path
-) -> None:
+def print_summary(candidates, panel, stress, summary, windows, *, out_dir: Path) -> None:
     dynamic = summary.iloc[2]
     recurring = candidates[candidates["recurring_candidate"]]
     answer = f"Kalman dynamic factors: median filtered holdout reconstruction MSE {dynamic['holdout_residual_variance_median']:.6g}, one-step MSE {dynamic['one_step_residual_variance_median']:.6g}; loading cosine {dynamic['cosine_median']:.3f}, support Jaccard {dynamic['support_jaccard_median']:.3f}. Recurring candidates: {len(recurring)}; group labels remain data-dependent."

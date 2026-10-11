@@ -4,12 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from config import (
-    CORE_UNIVERSE,
-    REPORTS_DIR,
-    RETURN_CORE_FILE,
-    ensure_project_directories,
-)
+from config import (CORE_UNIVERSE, REPORTS_DIR, RETURN_CORE_FILE, ensure_project_directories,)
 from reporting.intraday import print_summary, save_profile_plot
 from utils.data import load_panel, normalize_intraday_volatility, save_csv_tables
 from utils.pca import fit_pca, pca_diagnostics
@@ -40,13 +35,7 @@ def main() -> None:
     save_csv_tables(tables, OUT_DIR)
     save_profile_plot(profile, out_dir=OUT_DIR)
     print_summary(
-        returns,
-        normalization,
-        pca_result,
-        profile,
-        normalization_error,
-        covariance_diff,
-        score_error,
+        returns, normalization, pca_result, profile, normalization_error, covariance_diff, score_error,
         out_dir=OUT_DIR,
     )
 

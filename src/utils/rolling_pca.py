@@ -17,36 +17,24 @@ STOCKS = list(CORE_UNIVERSE)
 
 
 def residualize_window(
-    window_panel: pd.DataFrame,
-    stocks=CORE_UNIVERSE,
+    window_panel: pd.DataFrame, stocks=CORE_UNIVERSE,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Remove the SPY/XLF exposure estimated inside one rolling window."""
 
-    benchmark_result = residualize_against_benchmarks(
-        window_panel,
-        stocks=stocks,
-    )
+    benchmark_result = residualize_against_benchmarks(window_panel, stocks=stocks)
     residuals = benchmark_result["residual_returns"]
-    diagnostics = benchmark_result["diagnostics"][
-        ["r_squared", "variance_removed_pct", "residual_std"]
-    ].join(benchmark_result["coefficients"])
+    diagnostics = benchmark_result["diagnostics"][["r_squared", "variance_removed_pct", "residual_std"]].join(benchmark_result["coefficients"])
     diagnostics["max_abs_residual_benchmark_corr"] = 0.0
     for benchmark in BENCHMARKS:
         diagnostics["max_abs_residual_benchmark_corr"] = np.maximum(
-            diagnostics["max_abs_residual_benchmark_corr"],
-            residuals.corrwith(window_panel[benchmark]).abs(),
+            diagnostics["max_abs_residual_benchmark_corr"], residuals.corrwith(window_panel[benchmark]).abs(),
         )
     return residuals, diagnostics
 
 
 def collect_rolling_results(
-    complete_panel: pd.DataFrame,
-    normalized_returns: pd.DataFrame,
-    *,
-    stocks=CORE_UNIVERSE,
-    window_sizes=WINDOWS,
-    step_sessions: int = 5,
-    methods=PCA_METHODS,
+    complete_panel: pd.DataFrame, normalized_returns: pd.DataFrame, *, stocks=CORE_UNIVERSE,
+    window_sizes=WINDOWS, step_sessions: int = 5, methods=PCA_METHODS,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Run both PCA variants for each transformation and rolling window."""
 
@@ -77,17 +65,13 @@ def collect_rolling_results(
             for stock, values in diagnostics.iterrows():
                 benchmark_diagnostics.append(
                     {
-                        "window_size_sessions": window_size,
-                        "window_start": window_start,
-                        "window_end": window_end,
-                        "stock": stock,
-                        **values.to_dict(),
+                        "window_size_sessions": window_size, "window_start": window_start,
+                        "window_end": window_end, "stock": stock, **values.to_dict(),
                     }
                 )
 
             transformed_data = {
-                "raw": window_raw,
-                "intraday_normalized": window_normalized,
+                "raw": window_raw, "intraday_normalized": window_normalized,
                 "spy_xlf_residual": window_residuals,
             }
             benchmark_removed = diagnostics["variance_removed_pct"].mean()
@@ -118,19 +102,12 @@ def collect_rolling_results(
 
                     metrics.append(
                         {
-                            "window_size_sessions": window_size,
-                            "window_start": window_start,
-                            "window_end": window_end,
-                            "n_sessions": window_size,
-                            "n_observations": len(window_panel),
-                            "transformation": transformation,
-                            "pca_method": method,
-                            "pc1_eigenvalue": values[0],
-                            "pc2_eigenvalue": values[1],
-                            "pc3_eigenvalue": values[2],
-                            "pc1_explained_pct": 100 * explained[0],
-                            "pc2_explained_pct": 100 * explained[1],
-                            "pc3_explained_pct": 100 * explained[2],
+                            "window_size_sessions": window_size, "window_start": window_start,
+                            "window_end": window_end, "n_sessions": window_size,
+                            "n_observations": len(window_panel), "transformation": transformation,
+                            "pca_method": method, "pc1_eigenvalue": values[0], "pc2_eigenvalue": values[1],
+                            "pc3_eigenvalue": values[2], "pc1_explained_pct": 100 * explained[0],
+                            "pc2_explained_pct": 100 * explained[1], "pc3_explained_pct": 100 * explained[2],
                             "first3_cumulative_pct": 100 * explained[:3].sum(),
                             "effective_dimension": effective_dimension,
                             "pc1_similarity_to_previous": similarity,
@@ -142,20 +119,13 @@ def collect_rolling_results(
                     for stock_position, stock in enumerate(stocks):
                         loadings.append(
                             {
-                                "window_size_sessions": window_size,
-                                "window_start": window_start,
-                                "window_end": window_end,
-                                "transformation": transformation,
-                                "pca_method": method,
-                                "stock": stock,
+                                "window_size_sessions": window_size, "window_start": window_start,
+                                "window_end": window_end, "transformation": transformation,
+                                "pca_method": method, "stock": stock,
                                 "pc1_loading": vectors[stock_position, 0],
                                 "pc2_loading": vectors[stock_position, 1],
                                 "pc3_loading": vectors[stock_position, 2],
                             }
                         )
 
-    return (
-        pd.DataFrame(metrics),
-        pd.DataFrame(loadings),
-        pd.DataFrame(benchmark_diagnostics),
-    )
+    return (pd.DataFrame(metrics), pd.DataFrame(loadings), pd.DataFrame(benchmark_diagnostics))

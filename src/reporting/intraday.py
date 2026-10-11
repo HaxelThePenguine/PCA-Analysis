@@ -29,14 +29,7 @@ def save_profile_plot(profile: pd.DataFrame, *, out_dir: Path) -> None:
 
 
 def print_summary(
-    returns,
-    normalization,
-    pca_result,
-    profile,
-    normalization_error,
-    covariance_diff,
-    score_error,
-    *,
+    returns, normalization, pca_result, profile, normalization_error, covariance_diff, score_error, *,
     out_dir: Path,
 ) -> None:
     print("=== INTRADAY NORMALIZATION ===")

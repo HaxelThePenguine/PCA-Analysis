@@ -4,21 +4,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-from config import (
-    REPORTS_DIR,
-    ensure_project_directories,
-)
+from config import (REPORTS_DIR, ensure_project_directories,)
 from reporting.kalman import plot_loadings, print_summary
 from utils.benchmark import residualize_against_benchmarks
 from utils.data import load_benchmark_panel, validate_panel
 from utils.kalman import (
-    STOCKS,
-    build_comparison_summary,
-    build_stress_summary,
-    candidate_summary,
-    collect_k_sensitivity,
-    collect_window_results,
-    make_windows,
+    STOCKS, build_comparison_summary, build_stress_summary, candidate_summary, collect_k_sensitivity,
+    collect_window_results, make_windows,
 )
 from utils.l1_rotation import fit_l1_rotation
 from utils.pca import fit_pca
@@ -55,17 +47,11 @@ def main() -> None:
     )
     candidates = candidate_summary(groups)
     sensitivity = collect_k_sensitivity(
-        panel,
-        windows,
-        factor_counts=SENSITIVITY_K,
-        every=SENSITIVITY_EVERY,
-        starts=SENSITIVITY_STARTS,
-        seed=SEED,
+        panel, windows, factor_counts=SENSITIVITY_K, every=SENSITIVITY_EVERY,
+        starts=SENSITIVITY_STARTS, seed=SEED,
     )
     stress = build_stress_summary(groups, CRISIS_START, CRISIS_END)
-    summary = build_comparison_summary(
-        static_pca, static_loadings, metrics, comparisons
-    )
+    summary = build_comparison_summary(static_pca, static_loadings, metrics, comparisons)
     static_reference = pd.DataFrame(
         [
             {"factor": f"LF{i + 1}", "stock": stock, "loading": static_loadings[row, i]}
@@ -74,14 +60,10 @@ def main() -> None:
         ]
     )
     outputs = {
-        "13_bis_dynamic_loadings.csv": loadings,
-        "13_bis_dynamic_factor_metrics.csv": metrics,
-        "13_bis_static_vs_kalman_windows.csv": comparisons,
-        "13_bis_comparison_summary.csv": summary,
-        "13_bis_k_sensitivity.csv": sensitivity,
-        "13_bis_structural_group_metrics.csv": groups,
-        "13_bis_structural_candidates.csv": candidates,
-        "13_bis_regional_stress_comparison.csv": stress,
+        "13_bis_dynamic_loadings.csv": loadings, "13_bis_dynamic_factor_metrics.csv": metrics,
+        "13_bis_static_vs_kalman_windows.csv": comparisons, "13_bis_comparison_summary.csv": summary,
+        "13_bis_k_sensitivity.csv": sensitivity, "13_bis_structural_group_metrics.csv": groups,
+        "13_bis_structural_candidates.csv": candidates, "13_bis_regional_stress_comparison.csv": stress,
         "13_bis_static_reference_loadings.csv": static_reference,
     }
     for filename, table in outputs.items():

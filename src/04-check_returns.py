@@ -13,9 +13,7 @@ def main() -> None:
     """Load the return matrix and print its diagnostics."""
 
     returns = pd.read_parquet(RETURN_MATRIX_FILE)
-    print_return_diagnostics(
-        returns, summarize_returns(returns), largest_absolute_returns(returns)
-    )
+    print_return_diagnostics(returns, summarize_returns(returns), largest_absolute_returns(returns))
 
 
 if __name__ == "__main__":

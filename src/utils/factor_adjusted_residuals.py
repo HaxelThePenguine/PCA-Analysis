@@ -71,11 +71,7 @@ class FactorAdjustmentResult:
     factor_metrics: pd.DataFrame
 
 
-def _check_input(
-    panel: pd.DataFrame,
-    stocks: Sequence[str],
-    benchmarks: Sequence[str],
-) -> pd.DataFrame:
+def _check_input(panel: pd.DataFrame, stocks: Sequence[str], benchmarks: Sequence[str]) -> pd.DataFrame:
     columns = [*stocks, *benchmarks]
     missing = [column for column in columns if column not in panel.columns]
     if missing:
@@ -91,11 +87,7 @@ def _projector(loadings: np.ndarray) -> np.ndarray:
 
 
 def fit_factor_window(
-    panel: pd.DataFrame,
-    stocks: Sequence[str],
-    benchmarks: Sequence[str],
-    config: FactorConfig,
-    *,
+    panel: pd.DataFrame, stocks: Sequence[str], benchmarks: Sequence[str], config: FactorConfig, *,
     executor: Executor | None = None,
 ) -> FactorFit:
     """Estimate benchmark residuals, correlation PCA, and L1 rotation in-sample."""
@@ -103,9 +95,7 @@ def fit_factor_window(
     data = _check_input(panel, stocks, benchmarks)
     stocks = tuple(stocks)
     benchmarks = tuple(benchmarks)
-    benchmark_fit = residualize_against_benchmarks(
-        data, stocks=stocks, benchmarks=benchmarks
-    )
+    benchmark_fit = residualize_against_benchmarks(data, stocks=stocks, benchmarks=benchmarks)
     residuals = benchmark_fit["residual_returns"]
     pca = fit_pca(residuals, method="correlation")
     if config.n_components < 2 or config.n_components > len(stocks):
@@ -116,12 +106,8 @@ def fit_factor_window(
     l1_rotation_status = "ok"
     try:
         rotation_result = fit_l1_rotation(
-            pca,
-            n_components=config.n_components,
-            n_starts=config.l1_starts,
-            random_state=config.random_seed,
-            n_jobs=config.n_jobs,
-            executor=executor,
+            pca, n_components=config.n_components, n_starts=config.l1_starts, random_state=config.random_seed,
+            n_jobs=config.n_jobs, executor=executor,
         )
         loadings = rotation_result.rotated_loadings.copy()
         rotation = rotation_result.rotation.copy()
@@ -131,8 +117,7 @@ def fit_factor_window(
         l1_rotation_status = f"failed:{type(error).__name__}"
         loadings = pca.loadings.iloc[:, : config.n_components].copy()
         rotation = pd.DataFrame(
-            np.eye(config.n_components),
-            index=[f"PC{i}" for i in range(1, config.n_components + 1)],
+            np.eye(config.n_components), index=[f"PC{i}" for i in range(1, config.n_components + 1)],
             columns=[f"PC{i}" for i in range(1, config.n_components + 1)],
         )
         l1_optimizer_success_rate = 0.0
@@ -157,53 +142,36 @@ def fit_factor_window(
         pca_explained=pca.explained.copy(),
         pca_eigenvalues=pca.eigenvalues.copy(),
         pca_weights=pd.DataFrame(
-            base_weights,
-            index=stocks,
-            columns=[f"PC{i}" for i in range(1, config.n_components + 1)],
+            base_weights, index=stocks, columns=[f"PC{i}" for i in range(1, config.n_components + 1)],
         ),
-        factor_projector=pd.DataFrame(
-            pca_projector,
-            index=stocks,
-            columns=stocks,
-        ),
+        factor_projector=pd.DataFrame(pca_projector, index=stocks, columns=stocks),
         loadings=loadings,
         rotation=rotation,
         rotation_condition_number=float(np.linalg.cond(rotation.to_numpy(dtype=float))),
         projector_invariance_error=projector_error,
         training_orthogonality_error=orthogonality_error,
         training_factor_variance_removed_pct=float(factor_removed),
-        training_benchmark_variance_removed_pct=float(
-            benchmark_diagnostics["variance_removed_pct"].mean()
-        ),
+        training_benchmark_variance_removed_pct=float(benchmark_diagnostics["variance_removed_pct"].mean()),
         training_max_abs_residual_benchmark_corr=float(
-            benchmark_diagnostics[
-                [f"corr_resid_{name}" for name in benchmarks]
-            ].abs().to_numpy().max()
+            benchmark_diagnostics[[f"corr_resid_{name}" for name in benchmarks]].abs().to_numpy().max()
         ),
         l1_rotation_status=l1_rotation_status,
         l1_optimizer_success_rate=l1_optimizer_success_rate,
     )
 
 
-def apply_factor_fit(
-    panel: pd.DataFrame,
-    fit: FactorFit,
-) -> dict[str, pd.DataFrame | float]:
+def apply_factor_fit(panel: pd.DataFrame, fit: FactorFit) -> dict[str, pd.DataFrame | float]:
     """Apply frozen training parameters to a new block without refitting."""
 
     data = _check_input(panel, fit.stocks, fit.benchmarks)
-    design = np.column_stack(
-        [np.ones(len(data)), data.loc[:, list(fit.benchmarks)].to_numpy(dtype=float)]
-    )
+    design = np.column_stack([np.ones(len(data)), data.loc[:, list(fit.benchmarks)].to_numpy(dtype=float)])
     coefficients = fit.coefficients.loc[
         list(fit.stocks), ["alpha", *[f"beta_{name}" for name in fit.benchmarks]]
     ].to_numpy(dtype=float)
     benchmark_residual_values = (
         data.loc[:, list(fit.stocks)].to_numpy(dtype=float) - design @ coefficients.T
     )
-    benchmark_residuals = pd.DataFrame(
-        benchmark_residual_values, index=data.index, columns=fit.stocks
-    )
+    benchmark_residuals = pd.DataFrame(benchmark_residual_values, index=data.index, columns=fit.stocks)
     standardized = (
         benchmark_residuals.subtract(fit.residual_means, axis="columns")
         .divide(fit.residual_scales, axis="columns")
@@ -218,14 +186,10 @@ def apply_factor_fit(
         factor_basis = loadings
     scores = standardized @ factor_basis
     local_loadings = fit.loadings.to_numpy(dtype=float)
-    local_scores = standardized @ local_loadings @ np.linalg.pinv(
-        local_loadings.T @ local_loadings
-    )
+    local_scores = standardized @ local_loadings @ np.linalg.pinv(local_loadings.T @ local_loadings)
     factor_residuals_z = standardized - standardized @ projector
     factor_adjusted = pd.DataFrame(
-        factor_residuals_z * fit.residual_scales.to_numpy(dtype=float),
-        index=data.index,
-        columns=fit.stocks,
+        factor_residuals_z * fit.residual_scales.to_numpy(dtype=float), index=data.index, columns=fit.stocks,
     )
     return {
         "raw_returns": data.loc[:, list(fit.stocks)].copy(),
@@ -234,31 +198,21 @@ def apply_factor_fit(
         "standardized_factor_residuals": pd.DataFrame(
             factor_residuals_z, index=data.index, columns=fit.stocks
         ),
-        "factor_scores": pd.DataFrame(
-            scores, index=data.index, columns=fit.pca_weights.columns
-        ),
-        "local_factor_scores": pd.DataFrame(
-            local_scores, index=data.index, columns=fit.loadings.columns
-        ),
+        "factor_scores": pd.DataFrame(scores, index=data.index, columns=fit.pca_weights.columns),
+        "local_factor_scores": pd.DataFrame(local_scores, index=data.index, columns=fit.loadings.columns),
         "orthogonality_error": float(np.max(np.abs(factor_residuals_z @ factor_basis))),
     }
 
 
 def run_factor_adjustment(
-    panel: pd.DataFrame,
-    stocks: Sequence[str],
-    benchmarks: Sequence[str],
-    config: FactorConfig,
-    *,
+    panel: pd.DataFrame, stocks: Sequence[str], benchmarks: Sequence[str], config: FactorConfig, *,
     spec_name: str,
 ) -> FactorAdjustmentResult:
     """Run causal rolling fits and apply each fit only to later sessions."""
 
     data = _check_input(panel, stocks, benchmarks)
     sessions, codes = session_index(data.index)
-    starts = rolling_starts(
-        len(sessions), config.window_sessions, config.update_step_sessions
-    )
+    starts = rolling_starts(len(sessions), config.window_sessions, config.update_step_sessions)
     if not starts:
         raise ValueError("The panel is shorter than the factor window.")
 
@@ -284,40 +238,33 @@ def run_factor_adjustment(
             else len(sessions)
         )
         score_end = min(next_origin, len(sessions)) - 1
-        train_positions = np.flatnonzero(
-            (codes >= train_start) & (codes <= train_end)
-        )
+        train_positions = np.flatnonzero((codes >= train_start) & (codes <= train_end))
         score_positions = np.flatnonzero((codes >= origin) & (codes <= score_end))
         if not len(train_positions) or not len(score_positions):
             continue
-        fit = fit_factor_window(
-            data.iloc[train_positions],
-            stocks,
-            benchmarks,
-            config,
-            executor=executor,
-        )
+        fit = fit_factor_window(data.iloc[train_positions], stocks, benchmarks, config, executor=executor)
         if previous_loadings is not None:
             aligned, order, signs = align_loading_columns(
-                previous_loadings.to_numpy(dtype=float),
-                fit.loadings.to_numpy(dtype=float),
+                previous_loadings.to_numpy(dtype=float), fit.loadings.to_numpy(dtype=float),
             )
             rotation = fit.rotation.to_numpy(dtype=float)[:, order] * signs[None, :]
             fit = replace(
-                fit,
-                loadings=pd.DataFrame(
-                    aligned,
-                    index=fit.loadings.index,
-                    columns=fit.loadings.columns,
-                ),
-                rotation=pd.DataFrame(
-                    rotation,
-                    index=fit.rotation.index,
-                    columns=fit.rotation.columns,
-                ),
+                fit, loadings=pd.DataFrame(aligned, index=fit.loadings.index, columns=fit.loadings.columns),
+                rotation=pd.DataFrame(rotation, index=fit.rotation.index, columns=fit.rotation.columns),
             )
         applied = apply_factor_fit(data.iloc[score_positions], fit)
         update_id = f"{config.window_sessions}_{sessions[train_end].date().isoformat()}"
+        dates = {
+            name: sessions[position].date().isoformat()
+            for name, position in (("training_start", train_start), ("training_end", train_end),
+                ("score_start", origin), ("score_end", score_end))
+        }
+        fit_quality = {
+            "rotation_condition_number": fit.rotation_condition_number,
+            "projector_invariance_error": fit.projector_invariance_error,
+            "l1_rotation_status": fit.l1_rotation_status,
+            "l1_optimizer_success_rate": fit.l1_optimizer_success_rate,
+        }
         raw_parts.append(applied["raw_returns"])
         benchmark_parts.append(applied["benchmark_residuals"])
         factor_parts.append(applied["factor_adjusted_residuals"])
@@ -332,13 +279,8 @@ def run_factor_adjustment(
                 turnover = np.nan
             else:
                 previous = previous_loadings[factor].to_numpy(dtype=float)
-                cosine = float(
-                    previous @ values
-                    / (np.linalg.norm(previous) * np.linalg.norm(values))
-                )
-                previous_support = set(
-                    np.flatnonzero(np.abs(previous) > 0.05).tolist()
-                )
+                cosine = float(previous @ values / (np.linalg.norm(previous) * np.linalg.norm(values)))
+                previous_support = set(np.flatnonzero(np.abs(previous) > 0.05).tolist())
                 union = support | previous_support
                 jaccard = (
                     float(len(support & previous_support) / len(union))
@@ -348,57 +290,33 @@ def run_factor_adjustment(
                 turnover = float(1.0 - cosine)
             metric_rows.append(
                 {
-                    "spec_name": spec_name,
-                    "update_id": update_id,
-                    "factor": factor,
-                    "factor_number": factor_number,
-                    "l1_norm": float(np.abs(values).sum()),
+                    "spec_name": spec_name, "update_id": update_id, "factor": factor,
+                    "factor_number": factor_number, "l1_norm": float(np.abs(values).sum()),
                     "n_small_coefficients": int(np.sum(np.abs(values) <= 0.05)),
-                    "small_loading_threshold": 0.05,
-                    "cosine_similarity_previous": cosine,
-                    "support_jaccard_previous": jaccard,
-                    "factor_turnover": turnover,
-                    "rotation_condition_number": fit.rotation_condition_number,
-                    "projector_invariance_error": fit.projector_invariance_error,
-                    "l1_rotation_status": fit.l1_rotation_status,
-                    "l1_optimizer_success_rate": fit.l1_optimizer_success_rate,
+                    "small_loading_threshold": 0.05, "cosine_similarity_previous": cosine,
+                    "support_jaccard_previous": jaccard, "factor_turnover": turnover,
+                    **fit_quality,
                     "training_orthogonality_error": fit.training_orthogonality_error,
                     "score_orthogonality_error": applied["orthogonality_error"],
-                    "training_start": sessions[train_start].date().isoformat(),
-                    "training_end": sessions[train_end].date().isoformat(),
-                    "score_start": sessions[origin].date().isoformat(),
-                    "score_end": sessions[score_end].date().isoformat(),
+                    **dates,
                 }
             )
         previous_loadings = fit.loadings.copy()
         score_dates = data.index[score_positions]
         diagnostic_rows.append(
             {
-                "spec_name": spec_name,
-                "update_id": update_id,
-                "window_sessions": config.window_sessions,
+                "spec_name": spec_name, "update_id": update_id, "window_sessions": config.window_sessions,
                 "update_step_sessions": config.update_step_sessions,
-                "factor_origin": sessions[origin].date().isoformat(),
-                "training_start": sessions[train_start].date().isoformat(),
-                "training_end": sessions[train_end].date().isoformat(),
-                "score_start": sessions[origin].date().isoformat(),
-                "score_end": sessions[score_end].date().isoformat(),
-                "n_training_rows": len(train_positions),
-                "n_score_rows": len(score_positions),
-                "pca_pc1_explained_pct": 100.0 * fit.pca_explained[0],
-                "pca_first3_explained_pct": 100.0
-                * fit.pca_explained[: config.n_components].sum(),
+                "factor_origin": dates["score_start"], **dates, "n_training_rows": len(train_positions),
+                "n_score_rows": len(score_positions), "pca_pc1_explained_pct": 100.0 * fit.pca_explained[0],
+                "pca_first3_explained_pct": 100.0 * fit.pca_explained[: config.n_components].sum(),
                 "mean_benchmark_variance_removed_pct": fit.training_benchmark_variance_removed_pct,
                 "max_abs_residual_benchmark_corr": fit.training_max_abs_residual_benchmark_corr,
                 "factor_variance_removed_pct": fit.training_factor_variance_removed_pct,
-                "rotation_condition_number": fit.rotation_condition_number,
-                "projector_invariance_error": fit.projector_invariance_error,
-                "l1_rotation_status": fit.l1_rotation_status,
-                "l1_optimizer_success_rate": fit.l1_optimizer_success_rate,
+                **fit_quality,
                 "training_residual_orthogonality_error": fit.training_orthogonality_error,
                 "score_residual_orthogonality_error": applied["orthogonality_error"],
-                "n_score_sessions": score_end - origin + 1,
-                "score_first_timestamp": str(score_dates[0]),
+                "n_score_sessions": score_end - origin + 1, "score_first_timestamp": str(score_dates[0]),
                 "score_last_timestamp": str(score_dates[-1]),
             }
         )
@@ -406,21 +324,18 @@ def run_factor_adjustment(
         coefficients.insert(0, "spec_name", spec_name)
         coefficients.insert(1, "update_id", update_id)
         coefficients.insert(2, "window_sessions", config.window_sessions)
-        coefficients.insert(3, "training_start", sessions[train_start].date().isoformat())
-        coefficients.insert(4, "training_end", sessions[train_end].date().isoformat())
+        coefficients.insert(3, "training_start", dates["training_start"])
+        coefficients.insert(4, "training_end", dates["training_end"])
         coefficient_rows.extend(coefficients.to_dict("records"))
         for factor_number, factor in enumerate(fit.loadings.columns, start=1):
             for stock in fit.loadings.index:
                 loading_rows.append(
                     {
-                        "spec_name": spec_name,
-                        "update_id": update_id,
+                        "spec_name": spec_name, "update_id": update_id,
                         "window_sessions": config.window_sessions,
-                        "training_start": sessions[train_start].date().isoformat(),
-                        "training_end": sessions[train_end].date().isoformat(),
-                        "factor": factor,
-                        "factor_number": factor_number,
-                        "stock": stock,
+                        "training_start": dates["training_start"],
+                        "training_end": dates["training_end"], "factor": factor,
+                        "factor_number": factor_number, "stock": stock,
                         "loading": float(fit.loadings.loc[stock, factor]),
                     }
                 )
@@ -429,24 +344,17 @@ def run_factor_adjustment(
             or (update_number + 1) % progress_step == 0
             or update_number == len(starts) - 1
         ):
-            print(
-                f"[factor] {spec_name}: block {update_number + 1}/{len(starts)}",
-                flush=True,
-            )
+            print(f"[factor] {spec_name}: block {update_number + 1}/{len(starts)}", flush=True)
     if executor is not None:
         executor.shutdown(wait=True)
     if not factor_parts:
         raise ValueError("No factor-adjusted score block was produced.")
     return FactorAdjustmentResult(
-        spec_name=spec_name,
-        config=config,
-        raw_returns=pd.concat(raw_parts).sort_index(),
+        spec_name=spec_name, config=config, raw_returns=pd.concat(raw_parts).sort_index(),
         benchmark_residuals=pd.concat(benchmark_parts).sort_index(),
         factor_adjusted_residuals=pd.concat(factor_parts).sort_index(),
         pca_factor_scores=pd.concat(pca_score_parts).sort_index(),
         local_factor_scores=pd.concat(local_score_parts).sort_index(),
-        diagnostics=pd.DataFrame(diagnostic_rows),
-        benchmark_coefficients=pd.DataFrame(coefficient_rows),
-        factor_loadings=pd.DataFrame(loading_rows),
-        factor_metrics=pd.DataFrame(metric_rows),
+        diagnostics=pd.DataFrame(diagnostic_rows), benchmark_coefficients=pd.DataFrame(coefficient_rows),
+        factor_loadings=pd.DataFrame(loading_rows), factor_metrics=pd.DataFrame(metric_rows),
     )

@@ -17,15 +17,9 @@ from utils.rolling_pca import STEP_SESSIONS, WINDOWS
 
 TRANSFORMATIONS = ("raw", "intraday_normalized", "spy_xlf_residual")
 TRANSFORM_LABELS = {
-    "raw": "Raw",
-    "intraday_normalized": "Intraday-normalized",
-    "spy_xlf_residual": "SPY/XLF residual",
+    "raw": "Raw", "intraday_normalized": "Intraday-normalized", "spy_xlf_residual": "SPY/XLF residual",
 }
-TRANSFORM_COLORS = {
-    "raw": "#2F6690",
-    "intraday_normalized": "#D99A2B",
-    "spy_xlf_residual": "#E07A5F",
-}
+TRANSFORM_COLORS = {"raw": "#2F6690", "intraday_normalized": "#D99A2B", "spy_xlf_residual": "#E07A5F"}
 GRID_COLOR = "#D9DEE5"
 
 
@@ -37,23 +31,17 @@ def plot_correlation_metrics(metrics: pd.DataFrame, *, out_dir: Path) -> None:
         ("first3_cumulative_pct", "First 3 PCs explained variance (%)"),
         ("effective_dimension", "Effective cross-sectional dimension"),
     ]
-    figure, axes = plt.subplots(
-        len(WINDOWS), len(plot_specs), figsize=(15, 8), sharex="col"
-    )
+    figure, axes = plt.subplots(len(WINDOWS), len(plot_specs), figsize=(15, 8), sharex="col")
     axes = np.atleast_2d(axes)
     for row, window_size in enumerate(WINDOWS):
-        subset = correlation[
-            correlation["window_size_sessions"] == window_size
-        ].sort_values("window_end")
+        subset = correlation[correlation["window_size_sessions"] == window_size].sort_values("window_end")
         for column, (metric, ylabel) in enumerate(plot_specs):
             axis = axes[row, column]
             for transformation in TRANSFORMATIONS:
                 series = subset[subset["transformation"] == transformation]
                 axis.plot(
-                    pd.to_datetime(series["window_end"], utc=True),
-                    series[metric],
-                    color=TRANSFORM_COLORS[transformation],
-                    linewidth=1.4,
+                    pd.to_datetime(series["window_end"], utc=True), series[metric],
+                    color=TRANSFORM_COLORS[transformation], linewidth=1.4,
                     label=TRANSFORM_LABELS[transformation],
                 )
             axis.set_title(f"{window_size}-session window")
@@ -64,22 +52,10 @@ def plot_correlation_metrics(metrics: pd.DataFrame, *, out_dir: Path) -> None:
             if row == len(WINDOWS) - 1:
                 axis.set_xlabel("Window end")
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    figure.legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.995),
-        ncol=3,
-        frameon=False,
-    )
-    figure.suptitle(
-        "Rolling correlation PCA diagnostics", x=0.06, ha="left", y=1.04, fontsize=14
-    )
+    figure.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.995), ncol=3, frameon=False)
+    figure.suptitle("Rolling correlation PCA diagnostics", x=0.06, ha="left", y=1.04, fontsize=14)
     figure.text(
-        0.06,
-        1.005,
-        "Descriptive estimates; windows overlap and are not independent.",
-        color="#666666",
+        0.06, 1.005, "Descriptive estimates; windows overlap and are not independent.", color="#666666",
         fontsize=9,
     )
     figure.tight_layout(rect=[0, 0, 1, 0.94])
@@ -94,17 +70,12 @@ def plot_loading_stability(metrics: pd.DataFrame, *, out_dir: Path) -> None:
     figure, axes = plt.subplots(len(WINDOWS), 1, figsize=(11, 6), sharex=True)
     axes = np.atleast_1d(axes)
     for axis, window_size in zip(axes, WINDOWS):
-        subset = correlation[
-            correlation["window_size_sessions"] == window_size
-        ].sort_values("window_end")
+        subset = correlation[correlation["window_size_sessions"] == window_size].sort_values("window_end")
         for transformation in TRANSFORMATIONS:
             series = subset[subset["transformation"] == transformation]
             axis.plot(
-                pd.to_datetime(series["window_end"], utc=True),
-                series["pc1_similarity_to_previous"],
-                color=TRANSFORM_COLORS[transformation],
-                linewidth=1.4,
-                label=TRANSFORM_LABELS[transformation],
+                pd.to_datetime(series["window_end"], utc=True), series["pc1_similarity_to_previous"],
+                color=TRANSFORM_COLORS[transformation], linewidth=1.4, label=TRANSFORM_LABELS[transformation],
             )
         axis.set_title(f"{window_size}-session window")
         axis.set_ylabel("Absolute loading similarity")
@@ -112,22 +83,10 @@ def plot_loading_stability(metrics: pd.DataFrame, *, out_dir: Path) -> None:
         style_axis(axis, format_dates=True)
     axes[-1].set_xlabel("Window end")
     handles, labels = axes[0].get_legend_handles_labels()
-    figure.legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 1.0),
-        ncol=3,
-        frameon=False,
-    )
-    figure.suptitle(
-        "Rolling PC1 loading stability", x=0.08, ha="left", y=1.14, fontsize=14
-    )
+    figure.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.0), ncol=3, frameon=False)
+    figure.suptitle("Rolling PC1 loading stability", x=0.08, ha="left", y=1.14, fontsize=14)
     figure.text(
-        0.08,
-        1.09,
-        "Absolute dot product; 1 = identical. First window has no comparison.",
-        color="#666666",
+        0.08, 1.09, "Absolute dot product; 1 = identical. First window has no comparison.", color="#666666",
         fontsize=9,
     )
     figure.tight_layout(rect=[0, 0, 1, 0.9])
@@ -142,15 +101,10 @@ def plot_benchmark_variance_removed(metrics: pd.DataFrame, *, out_dir: Path) -> 
     ]
     figure, axis = plt.subplots(figsize=(11, 4.8))
     for window_size, color in zip(WINDOWS, ("#2F6690", "#D99A2B")):
-        subset = residual[residual["window_size_sessions"] == window_size].sort_values(
-            "window_end"
-        )
+        subset = residual[residual["window_size_sessions"] == window_size].sort_values("window_end")
         axis.plot(
-            pd.to_datetime(subset["window_end"], utc=True),
-            subset["mean_benchmark_variance_removed_pct"],
-            color=color,
-            linewidth=1.5,
-            label=f"{window_size}-session window",
+            pd.to_datetime(subset["window_end"], utc=True), subset["mean_benchmark_variance_removed_pct"],
+            color=color, linewidth=1.5, label=f"{window_size}-session window",
         )
     axis.set_title("Rolling variance share removed by SPY/XLF")
     axis.set_xlabel("Window end")
@@ -188,7 +142,5 @@ def print_summary(metrics, panel, sessions, *, out_dir: Path) -> None:
     )
     print("\n=== CORRELATION PCA ROLLING SUMMARY ===")
     print(summary.to_string())
-    print(
-        "\nRolling estimates are descriptive; bootstrap confidence bands are not available."
-    )
+    print("\nRolling estimates are descriptive; bootstrap confidence bands are not available.")
     print(f"\nOutputs saved to: {out_dir}")

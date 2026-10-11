@@ -15,12 +15,8 @@ from utils.plotting import save_figure, style_axis
 
 
 COLORS = {
-    "own_har": "#777777",
-    "network_har_l1_1se": "#2F6690",
-    "network_har_l1_min_loss": "#D99A2B",
-    "raw": "#777777",
-    "benchmark_residual": "#C26A2E",
-    "factor_adjusted": "#2F6690",
+    "own_har": "#777777", "network_har_l1_1se": "#2F6690", "network_har_l1_min_loss": "#D99A2B",
+    "raw": "#777777", "benchmark_residual": "#C26A2E", "factor_adjusted": "#2F6690",
 }
 
 
@@ -41,11 +37,7 @@ def plot_cumulative_qlike(forecasts: pd.DataFrame, *, out_dir: Path) -> None:
     network = forecasts[forecasts["model"] == "network_har_l1_1se"][
         ["spec_name", "forecast_origin", "target_date", "stock", "qlike"]
     ].rename(columns={"qlike": "network_qlike"})
-    joined = own.merge(
-        network,
-        on=["spec_name", "forecast_origin", "target_date", "stock"],
-        how="inner",
-    )
+    joined = own.merge(network, on=["spec_name", "forecast_origin", "target_date", "stock"], how="inner")
     if joined.empty:
         _empty_figure(out_dir / "15_cumulative_qlike_difference.png", "Cumulative QLIKE difference")
         return
@@ -54,9 +46,7 @@ def plot_cumulative_qlike(forecasts: pd.DataFrame, *, out_dir: Path) -> None:
     for spec_name, group in joined.groupby("spec_name"):
         daily = group.groupby("target_date", as_index=False)["difference"].mean().sort_values("target_date")
         axis.plot(
-            pd.to_datetime(daily["target_date"]),
-            daily["difference"].cumsum(),
-            linewidth=1.5,
+            pd.to_datetime(daily["target_date"]), daily["difference"].cumsum(), linewidth=1.5,
             label=spec_name,
         )
     axis.axhline(0.0, color="#444444", linewidth=0.8)
@@ -98,11 +88,7 @@ def plot_stock_qlike_improvement(forecasts: pd.DataFrame, *, out_dir: Path) -> N
         data = summary[summary["spec_name"] == spec_name].set_index("stock").reindex(stocks)
         offset = (number - (len(specs) - 1) / 2.0) * width
         axis.bar(
-            positions + offset,
-            data["mean_improvement"],
-            width=width,
-            yerr=1.96 * data["se"],
-            capsize=2,
+            positions + offset, data["mean_improvement"], width=width, yerr=1.96 * data["se"], capsize=2,
             color=COLORS["network_har_l1_1se"] if number == 0 else COLORS["network_har_l1_min_loss"],
             label=spec_name,
         )
@@ -154,28 +140,21 @@ def plot_edge_persistence(edge_history: pd.DataFrame, edge_stability: pd.DataFra
     if history.empty or stable.empty:
         _empty_figure(out_dir / "15_edge_selection_persistence.png", "Edge-selection persistence")
         return
-    ranked = stable.sort_values(
-        ["selection_probability", "median_absolute_strength"],
-        ascending=False,
-    )
+    ranked = stable.sort_values(["selection_probability", "median_absolute_strength"], ascending=False)
     non_degenerate = ranked[ranked["selection_probability"] < 1.0 - 1e-12]
     selected_stability = non_degenerate.head(6) if len(non_degenerate) >= 6 else ranked.head(6)
     top_edges = selected_stability["edge_id"].tolist()
     probability = selected_stability.set_index("edge_id")["selection_probability"]
     origin = (
-        history[history["edge_id"].isin(top_edges)]
-        .groupby(["forecast_origin", "edge_id"], as_index=False)["selected"]
+        history[history["edge_id"].isin(top_edges)] .groupby(["forecast_origin", "edge_id"], as_index=False)["selected"]
         .max()
     )
     figure, axis = plt.subplots(figsize=(11, 5.5))
     for edge in top_edges:
         data = origin[origin["edge_id"] == edge].sort_values("forecast_origin")
         axis.step(
-            pd.to_datetime(data["forecast_origin"]),
-            data["selected"].astype(float),
-            where="post",
-            linewidth=1.2,
-            label=f"{edge} (p={probability.loc[edge]:.2f})",
+            pd.to_datetime(data["forecast_origin"]), data["selected"].astype(float), where="post",
+            linewidth=1.2, label=f"{edge} (p={probability.loc[edge]:.2f})",
         )
     axis.set_ylim(-0.05, 1.05)
     axis.set_ylabel("Selected in refit")
@@ -209,11 +188,8 @@ def plot_group_connectivity(group_table: pd.DataFrame, *, out_dir: Path) -> None
     pivot = selected.pivot_table(index="group", columns="spec_name", values="mean_selection_probability", aggfunc="mean").fillna(0.0)
     figure, axis = plt.subplots(figsize=(11, 5.5))
     order = [
-        "descriptive_raw_120",
-        "descriptive_raw_60",
-        "descriptive_benchmark_residual_120",
-        "descriptive_benchmark_residual_60",
-        "descriptive_factor_adjusted_120",
+        "descriptive_raw_120", "descriptive_raw_60", "descriptive_benchmark_residual_120",
+        "descriptive_benchmark_residual_60", "descriptive_factor_adjusted_120",
         "descriptive_factor_adjusted_60",
     ]
     columns = [column for column in order if column in pivot.columns]
@@ -221,8 +197,7 @@ def plot_group_connectivity(group_table: pd.DataFrame, *, out_dir: Path) -> None
     positions = np.arange(len(pivot.index))
     width = 0.8 / max(len(columns), 1)
     control_colors = {
-        "raw": COLORS["raw"],
-        "benchmark_residual": COLORS["benchmark_residual"],
+        "raw": COLORS["raw"], "benchmark_residual": COLORS["benchmark_residual"],
         "factor_adjusted": COLORS["factor_adjusted"],
     }
     for number, column in enumerate(columns):
@@ -231,12 +206,8 @@ def plot_group_connectivity(group_table: pd.DataFrame, *, out_dir: Path) -> None
         label = f"{control.replace('_', ' ').title()} / {window} sessions"
         offset = (number - (len(columns) - 1) / 2.0) * width
         axis.bar(
-            positions + offset,
-            pivot[column].to_numpy(dtype=float),
-            width=width,
-            color=control_colors[control],
-            hatch="//" if window == "60" else "",
-            label=label,
+            positions + offset, pivot[column].to_numpy(dtype=float), width=width,
+            color=control_colors[control], hatch="//" if window == "60" else "", label=label,
         )
     axis.set_xticks(positions, pivot.index)
     axis.set_ylabel("Mean within-group edge selection probability")
@@ -271,16 +242,13 @@ def plot_variance_removed(factor_diagnostics: pd.DataFrame, *, out_dir: Path) ->
 def plot_factor_loading_evolution(factor_loadings: pd.DataFrame, *, out_dir: Path) -> None:
     """Plot the largest primary factor loadings through time."""
 
-    data = factor_loadings[
-        factor_loadings["spec_name"].astype(str).eq("factor_adjusted_120")
-    ].copy()
+    data = factor_loadings[factor_loadings["spec_name"].astype(str).eq("factor_adjusted_120")].copy()
     if data.empty:
         _empty_figure(out_dir / "15_factor_loading_evolution.png", "Factor loading evolution")
         return
     data["training_end"] = pd.to_datetime(data["training_end"])
     importance = (
-        data.assign(abs_loading=data["loading"].abs())
-        .groupby(["factor", "stock"], as_index=False)["abs_loading"]
+        data.assign(abs_loading=data["loading"].abs()) .groupby(["factor", "stock"], as_index=False)["abs_loading"]
         .mean()
     )
     factors = sorted(data["factor"].unique())
@@ -303,13 +271,8 @@ def plot_factor_loading_evolution(factor_loadings: pd.DataFrame, *, out_dir: Pat
 
 
 def make_figures(
-    forecasts: pd.DataFrame,
-    edge_history: pd.DataFrame,
-    edge_stability: pd.DataFrame,
-    group_connectivity: pd.DataFrame,
-    factor_diagnostics: pd.DataFrame,
-    factor_loadings: pd.DataFrame,
-    *,
+    forecasts: pd.DataFrame, edge_history: pd.DataFrame, edge_stability: pd.DataFrame,
+    group_connectivity: pd.DataFrame, factor_diagnostics: pd.DataFrame, factor_loadings: pd.DataFrame, *,
     out_dir: Path,
 ) -> None:
     """Render the compact stage-15 figure set."""
@@ -325,11 +288,7 @@ def make_figures(
 
 
 def print_summary(
-    forecast_summary: pd.DataFrame,
-    hac_tests: pd.DataFrame,
-    edge_stability: pd.DataFrame,
-    *,
-    out_dir: Path,
+    forecast_summary: pd.DataFrame, hac_tests: pd.DataFrame, edge_stability: pd.DataFrame, *, out_dir: Path,
 ) -> str:
     """Save and print the Stage 15 forecast and network summary."""
 

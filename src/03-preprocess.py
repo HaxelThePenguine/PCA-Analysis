@@ -2,18 +2,9 @@
 
 from __future__ import annotations
 
-from config import (
-    CLOSE_MATRIX_FILE,
-    MISSING_MASK_FILE,
-    RETURN_MATRIX_FILE,
-    ensure_project_directories,
-)
+from config import (CLOSE_MATRIX_FILE, MISSING_MASK_FILE, RETURN_MATRIX_FILE, ensure_project_directories,)
 from reporting.preprocessing import print_clean_prices, print_raw_prices
-from utils.preprocessing import (
-    build_price_matrix,
-    compute_strict_intraday_returns,
-    remove_systemic_gap,
-)
+from utils.preprocessing import (build_price_matrix, compute_strict_intraday_returns, remove_systemic_gap,)
 
 
 def main() -> None:

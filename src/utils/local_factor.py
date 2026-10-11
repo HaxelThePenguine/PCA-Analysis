@@ -9,12 +9,7 @@ import numpy as np
 import pandas as pd
 
 from config import CORE_UNIVERSE
-from utils.l1_rotation import (
-    L1RotationResult,
-    align_loading_columns,
-    l1_rotate_basis,
-    local_factor_test,
-)
+from utils.l1_rotation import (L1RotationResult, align_loading_columns, l1_rotate_basis, local_factor_test,)
 from utils.pca import PCAResult, orient_eigenvectors
 
 STOCKS = list(CORE_UNIVERSE)
@@ -52,17 +47,12 @@ def build_session_moments(data: pd.DataFrame) -> SessionMoments:
         sums.append(values.sum(axis=0))
         cross_products.append(values.T @ values)
     return SessionMoments(
-        labels=pd.Index(labels, name="session"),
-        counts=np.asarray(counts, dtype=int),
-        sums=np.asarray(sums),
+        labels=pd.Index(labels, name="session"), counts=np.asarray(counts, dtype=int), sums=np.asarray(sums),
         cross_products=np.asarray(cross_products),
     )
 
 
-def bootstrap_correlation(
-    moments: SessionMoments,
-    draw: np.ndarray,
-) -> np.ndarray:
+def bootstrap_correlation(moments: SessionMoments, draw: np.ndarray) -> np.ndarray:
     """Build a correlation matrix from a with-replacement session draw."""
 
     weights = np.bincount(draw, minlength=len(moments.labels)).astype(float)
@@ -77,9 +67,7 @@ def bootstrap_correlation(
     return correlation
 
 
-def correlation_eigendecomposition(
-    correlation: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
+def correlation_eigendecomposition(correlation: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return descending eigenvalues and reproducibly oriented eigenvectors."""
 
     values, vectors = np.linalg.eigh(correlation)
@@ -87,16 +75,12 @@ def correlation_eigendecomposition(
     return np.maximum(values[order], 0.0), orient_eigenvectors(vectors[:, order])
 
 
-def loading_rows(
-    transformation: str,
-    result: L1RotationResult,
-) -> list[dict[str, Any]]:
+def loading_rows(transformation: str, result: L1RotationResult) -> list[dict[str, Any]]:
     """Return initial and rotated structural loadings in tidy form."""
 
     rows = []
     matrices = (
-        ("principal_component_basis", result.initial_loadings),
-        ("l1_rotation", result.rotated_loadings),
+        ("principal_component_basis", result.initial_loadings), ("l1_rotation", result.rotated_loadings),
     )
     for method, matrix in matrices:
         test = local_factor_test(matrix)
@@ -105,25 +89,16 @@ def loading_rows(
                 value = float(matrix.loc[stock, factor])
                 rows.append(
                     {
-                        "transformation": transformation,
-                        "method": method,
-                        "factor": factor,
-                        "factor_number": factor_number,
-                        "stock": stock,
-                        "loading": value,
-                        "absolute_loading": abs(value),
-                        "small_loading_threshold": test.h_n,
-                        "is_small": abs(value) < test.h_n,
-                        "is_active": abs(value) >= test.h_n,
+                        "transformation": transformation, "method": method, "factor": factor,
+                        "factor_number": factor_number, "stock": stock, "loading": value,
+                        "absolute_loading": abs(value), "small_loading_threshold": test.h_n,
+                        "is_small": abs(value) < test.h_n, "is_active": abs(value) >= test.h_n,
                     }
                 )
     return rows
 
 
-def diagnostic_rows(
-    transformation: str,
-    result: L1RotationResult,
-) -> list[dict[str, Any]]:
+def diagnostic_rows(transformation: str, result: L1RotationResult) -> list[dict[str, Any]]:
     """Summarize the local-factor decision and rotation diagnostics."""
 
     initial_test = local_factor_test(result.initial_loadings)
@@ -132,17 +107,13 @@ def diagnostic_rows(
     for factor_number, factor in enumerate(result.rotated_loadings.columns):
         rows.append(
             {
-                "transformation": transformation,
-                "factor": factor,
-                "factor_number": factor_number + 1,
+                "transformation": transformation, "factor": factor, "factor_number": factor_number + 1,
                 "l1_norm": result.l1_norms.iloc[factor_number],
                 "solution_frequency": result.solution_frequencies.iloc[factor_number],
                 "candidate_source": result.sources.iloc[factor_number],
                 "pc_small_count": initial_test.small_counts.iloc[factor_number],
-                "rotated_small_count": rotated_test.small_counts.iloc[factor_number],
-                "h_n": rotated_test.h_n,
-                "gamma_n": rotated_test.gamma_n,
-                "has_local_factors": rotated_test.has_local_factors,
+                "rotated_small_count": rotated_test.small_counts.iloc[factor_number], "h_n": rotated_test.h_n,
+                "gamma_n": rotated_test.gamma_n, "has_local_factors": rotated_test.has_local_factors,
                 "optimizer_success_rate": result.optimizer_success_rate,
                 "reconstruction_pct": result.reconstruction_pct,
                 "reconstruction_max_abs_error": result.reconstruction_max_abs_error,
@@ -152,10 +123,7 @@ def diagnostic_rows(
     return rows
 
 
-def factor_count_rows(
-    transformation: str,
-    pca: PCAResult,
-) -> list[dict[str, Any]]:
+def factor_count_rows(transformation: str, pca: PCAResult) -> list[dict[str, Any]]:
     """Report adjacent eigenvalue ratios as a factor-count diagnostic."""
 
     upper = min(MAX_FACTOR_COUNT, len(pca.eigenvalues) - 1)
@@ -165,14 +133,11 @@ def factor_count_rows(
     for index, eigenvalue in enumerate(pca.eigenvalues, start=1):
         rows.append(
             {
-                "transformation": transformation,
-                "component": index,
-                "eigenvalue": eigenvalue,
+                "transformation": transformation, "component": index, "eigenvalue": eigenvalue,
                 "explained_pct": 100.0 * pca.explained[index - 1],
                 "cumulative_pct": 100.0 * pca.explained[:index].sum(),
                 "eigenvalue_ratio": ratios[index - 1] if index <= upper else np.nan,
-                "ratio_search_upper_bound": upper,
-                "eigenvalue_ratio_selection": selected,
+                "ratio_search_upper_bound": upper, "eigenvalue_ratio_selection": selected,
                 "is_primary_specification": index == N_COMPONENTS,
             }
         )
@@ -187,23 +152,17 @@ def k_sensitivity_rows(pca: PCAResult) -> list[dict[str, Any]]:
     for n_factors in range(2, MAX_FACTOR_COUNT + 1):
         initial = np.sqrt(n_variables) * pca.eigenvectors[:, :n_factors]
         fit = l1_rotate_basis(
-            initial,
-            n_starts=SENSITIVITY_STARTS,
-            random_state=RANDOM_STATE + 100 * n_factors,
+            initial, n_starts=SENSITIVITY_STARTS, random_state=RANDOM_STATE + 100 * n_factors,
             eigenvalues=pca.eigenvalues[:n_factors],
         )
         test = local_factor_test(fit.rotated_loadings)
         rows.append(
             {
-                "n_factors": n_factors,
-                "total_l1_norm": np.abs(fit.rotated_loadings).sum(),
+                "n_factors": n_factors, "total_l1_norm": np.abs(fit.rotated_loadings).sum(),
                 "minimum_small_count": test.small_counts.min(),
-                "maximum_small_count": test.small_counts.max(),
-                "gamma_n": test.gamma_n,
+                "maximum_small_count": test.small_counts.max(), "gamma_n": test.gamma_n,
                 "has_local_factors": test.has_local_factors,
-                "pc_fallback_count": sum(
-                    source == "pc_fallback" for source in fit.sources
-                ),
+                "pc_fallback_count": sum(source == "pc_fallback" for source in fit.sources),
                 "rotation_condition_number": np.linalg.cond(fit.rotation),
                 "optimizer_success_rate": fit.optimizer_success_rate,
                 "cumulative_explained_pct": 100.0 * pca.explained[:n_factors].sum(),
@@ -213,12 +172,8 @@ def k_sensitivity_rows(pca: PCAResult) -> list[dict[str, Any]]:
 
 
 def bootstrap_local_factors(
-    data: pd.DataFrame,
-    reference: L1RotationResult,
-    *,
-    replications: int = BOOTSTRAP_REPLICATIONS,
-    n_starts: int = BOOTSTRAP_STARTS,
-    random_state: int = RANDOM_STATE,
+    data: pd.DataFrame, reference: L1RotationResult, *, replications: int = BOOTSTRAP_REPLICATIONS,
+    n_starts: int = BOOTSTRAP_STARTS, random_state: int = RANDOM_STATE,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Estimate loading support and direction stability by session bootstrap."""
 
@@ -241,15 +196,10 @@ def bootstrap_local_factors(
         eigenvalues, eigenvectors = correlation_eigendecomposition(correlation)
         initial = np.sqrt(len(stocks)) * eigenvectors[:, :n_components]
         fit = l1_rotate_basis(
-            initial,
-            n_starts=n_starts,
-            random_state=random_state + replication + 1,
+            initial, n_starts=n_starts, random_state=random_state + replication + 1,
             eigenvalues=eigenvalues[:n_components],
         )
-        aligned, _, similarities = align_loading_columns(
-            reference_loadings,
-            fit.rotated_loadings,
-        )
+        aligned, _, similarities = align_loading_columns(reference_loadings, fit.rotated_loadings)
         active = np.abs(aligned) >= reference_test.h_n
         active_counts += active
 
@@ -262,14 +212,11 @@ def bootstrap_local_factors(
             jaccard = 1.0 if union == 0 else intersection / union
             stability_rows.append(
                 {
-                    "replication": replication + 1,
-                    "factor": f"LF{factor + 1}",
-                    "cosine_similarity": similarities[factor],
-                    "support_jaccard": jaccard,
+                    "replication": replication + 1, "factor": f"LF{factor + 1}",
+                    "cosine_similarity": similarities[factor], "support_jaccard": jaccard,
                     "active_count": int(active[:, factor].sum()),
                     "small_count": int((~active[:, factor]).sum()),
-                    "has_local_factor": int((~active[:, factor]).sum())
-                    > reference_test.gamma_n,
+                    "has_local_factor": int((~active[:, factor]).sum()) > reference_test.gamma_n,
                     "rotation_condition_number": np.linalg.cond(fit.rotation),
                 }
             )
@@ -280,15 +227,12 @@ def bootstrap_local_factors(
         for factor in range(n_components):
             probability_rows.append(
                 {
-                    "stock": stock,
-                    "factor": f"LF{factor + 1}",
+                    "stock": stock, "factor": f"LF{factor + 1}",
                     "reference_loading": reference_loadings[stock_index, factor],
-                    "reference_active": abs(reference_loadings[stock_index, factor])
-                    >= reference_test.h_n,
+                    "reference_active": abs(reference_loadings[stock_index, factor]) >= reference_test.h_n,
                     "active_probability": probabilities[stock_index, factor],
                     "small_probability": 1.0 - probabilities[stock_index, factor],
-                    "small_loading_threshold": reference_test.h_n,
-                    "bootstrap_replications": replications,
+                    "small_loading_threshold": reference_test.h_n, "bootstrap_replications": replications,
                 }
             )
     return pd.DataFrame(probability_rows), pd.DataFrame(stability_rows)

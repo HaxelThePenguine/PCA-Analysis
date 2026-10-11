@@ -45,11 +45,8 @@ def make_windows(panel: pd.DataFrame) -> list[Window]:
         if len(train) and len(test):
             windows.append(
                 Window(
-                    name=f"{WINDOW}_{sessions[end].date().isoformat()}",
-                    start=pd.Timestamp(sessions[start]),
-                    train_end=pd.Timestamp(sessions[train_end]),
-                    end=pd.Timestamp(sessions[end]),
-                    train=train,
+                    name=f"{WINDOW}_{sessions[end].date().isoformat()}", start=pd.Timestamp(sessions[start]),
+                    train_end=pd.Timestamp(sessions[train_end]), end=pd.Timestamp(sessions[end]), train=train,
                     test=test,
                 )
             )
@@ -67,15 +64,8 @@ def spd(value: np.ndarray, floor: float = 1e-8) -> np.ndarray:
 
 
 def kalman(
-    y: np.ndarray,
-    H: np.ndarray,
-    A: np.ndarray,
-    Q: np.ndarray,
-    R: np.ndarray,
-    mean: np.ndarray,
-    covariance: np.ndarray,
-    *,
-    transition_first: bool,
+    y: np.ndarray, H: np.ndarray, A: np.ndarray, Q: np.ndarray, R: np.ndarray, mean: np.ndarray,
+    covariance: np.ndarray, *, transition_first: bool,
 ) -> dict[str, np.ndarray]:
     """Linear Kalman filter for y_t = H f_t + eps_t."""
 
@@ -103,11 +93,7 @@ def kalman(
         pred[t], pred_cov[t], filt[t], filt_cov[t] = m, P, mean, covariance
         innovations[t], innovation_cov[t] = v, S
     return {
-        "pred": pred,
-        "pred_cov": pred_cov,
-        "filt": filt,
-        "filt_cov": filt_cov,
-        "innovations": innovations,
+        "pred": pred, "pred_cov": pred_cov, "filt": filt, "filt_cov": filt_cov, "innovations": innovations,
         "innovation_cov": innovation_cov,
     }
 
@@ -161,13 +147,7 @@ def subspace_error(base: np.ndarray, rotated: np.ndarray) -> float:
     return float(np.max(np.abs(base_projection - rotated_projection)))
 
 
-def fit_window(
-    panel: pd.DataFrame,
-    window: Window,
-    k: int,
-    starts: int,
-    seed: int,
-) -> dict[str, object]:
+def fit_window(panel: pd.DataFrame, window: Window, k: int, starts: int, seed: int) -> dict[str, object]:
     """Fit benchmarks, PCA, and Kalman parameters on training sessions only."""
 
     train = panel.iloc[window.train]
@@ -184,50 +164,28 @@ def fit_window(
     pca = fit_pca(train, method="correlation")
     x_train = pca.analysis_data.to_numpy(dtype=float)
     x_test = (
-        test.subtract(pca.means, axis="columns")
-        .divide(pca.scales, axis="columns")
-        .to_numpy(dtype=float)
+        test.subtract(pca.means, axis="columns") .divide(pca.scales, axis="columns") .to_numpy(dtype=float)
     )
     H = np.sqrt(train.shape[1]) * pca.eigenvectors[:, :k]
-    rotation_result = fit_l1_rotation(
-        pca, n_components=k, n_starts=starts, random_state=seed
-    )
+    rotation_result = fit_l1_rotation(pca, n_components=k, n_starts=starts, random_state=seed)
     rotation = rotation_result.rotation.to_numpy(dtype=float)
     rotated = H @ rotation
     A, Q, R, P0, factors = state_parameters(x_train, H)
     train_filter = kalman(x_train, H, A, Q, R, factors[0], P0, transition_first=False)
     smooth(train_filter, A)
     test_filter = kalman(
-        x_test,
-        H,
-        A,
-        Q,
-        R,
-        train_filter["filt"][-1],
-        train_filter["filt_cov"][-1],
-        transition_first=True,
+        x_test, H, A, Q, R, train_filter["filt"][-1], train_filter["filt_cov"][-1], transition_first=True,
     )
     return {
-        "window": window,
-        "pca": pca,
-        "H": H,
-        "rotation": rotation,
-        "rotated": rotated,
-        "x_train": x_train,
-        "x_test": x_test,
-        "train_filter": train_filter,
-        "test_filter": test_filter,
-        "static_train": project(x_train, rotated),
-        "static_test": project(x_test, rotated),
-        "dynamic_train": train_filter["smooth"] @ H.T,
-        "dynamic_test": test_filter["filt"] @ H.T,
+        "window": window, "pca": pca, "H": H, "rotation": rotation, "rotated": rotated, "x_train": x_train,
+        "x_test": x_test, "train_filter": train_filter, "test_filter": test_filter,
+        "static_train": project(x_train, rotated), "static_test": project(x_test, rotated),
+        "dynamic_train": train_filter["smooth"] @ H.T, "dynamic_test": test_filter["filt"] @ H.T,
         "one_step_test": test_filter["pred"] @ H.T,
     }
 
 
-def variance(
-    observed: np.ndarray, reconstructed: np.ndarray
-) -> tuple[float, float, float]:
+def variance(observed: np.ndarray, reconstructed: np.ndarray) -> tuple[float, float, float]:
     """Return mean squared reconstruction, residual MSE, and explained percent."""
 
     residual = observed - reconstructed
@@ -251,20 +209,12 @@ def innovations(result: dict[str, np.ndarray]) -> tuple[float, float, float]:
 
 
 def align(
-    previous: np.ndarray,
-    current: np.ndarray,
-    states: np.ndarray,
-    covariance: np.ndarray,
+    previous: np.ndarray, current: np.ndarray, states: np.ndarray, covariance: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Align loadings, states, and the final state covariance."""
 
     aligned, order, cosine = align_loading_columns(previous, current)
-    signs = np.array(
-        [
-            1.0 if previous[:, i] @ current[:, j] >= 0 else -1.0
-            for i, j in enumerate(order)
-        ]
-    )
+    signs = np.array([1.0 if previous[:, i] @ current[:, j] >= 0 else -1.0 for i, j in enumerate(order)])
     states = states[:, order] * signs
     covariance = covariance[np.ix_(order, order)] * signs[:, None] * signs[None, :]
     return aligned, cosine, states, covariance
@@ -292,8 +242,7 @@ def group_metrics(window: Window, loadings: np.ndarray) -> list[dict[str, object
     """Measure data-driven concentration for the three requested bank groups."""
 
     groups = {
-        "morgan_stanley_local": ["MS"],
-        "large_bank": ["JPM", "BAC", "WFC", "C"],
+        "morgan_stanley_local": ["MS"], "large_bank": ["JPM", "BAC", "WFC", "C"],
         "regional_bank": ["USB", "TFC", "KEY", "RF", "FITB", "CFG", "HBAN"],
     }
     rows = []
@@ -308,9 +257,7 @@ def group_metrics(window: Window, loadings: np.ndarray) -> list[dict[str, object
                     "window_end": window.end.date().isoformat(),
                     "factor": f"LF{factor + 1}",
                     "group": name,
-                    "absolute_loading_share": float(
-                        absolute[inside].sum() / absolute.sum()
-                    ),
+                    "absolute_loading_share": float(absolute[inside].sum() / absolute.sum()),
                     "group_density_ratio": float(
                         absolute[inside].mean() / max(absolute[outside].mean(), 1e-12)
                     ),
@@ -322,21 +269,14 @@ def group_metrics(window: Window, loadings: np.ndarray) -> list[dict[str, object
 def candidate_summary(groups: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for (factor, group), values in groups.groupby(["factor", "group"]):
-        minimum_share = {
-            "morgan_stanley_local": 0.15,
-            "large_bank": 0.35,
-            "regional_bank": 0.55,
-        }[group]
+        minimum_share = {"morgan_stanley_local": 0.15, "large_bank": 0.35, "regional_bank": 0.55}[group]
         share = values["absolute_loading_share"]
         density = values["group_density_ratio"]
         rate = float(((share >= minimum_share) & (density >= 1.5)).mean())
         rows.append(
             {
-                "factor": factor,
-                "group": group,
-                "median_share": float(share.median()),
-                "median_density_ratio": float(density.median()),
-                "recurrence_rate": rate,
+                "factor": factor, "group": group, "median_share": float(share.median()),
+                "median_density_ratio": float(density.median()), "recurrence_rate": rate,
                 "recurring_candidate": rate >= 0.60,
             }
         )
@@ -344,14 +284,7 @@ def candidate_summary(groups: pd.DataFrame) -> pd.DataFrame:
 
 
 def collect_window_results(
-    panel,
-    windows,
-    static_loadings,
-    *,
-    k: int,
-    starts: int,
-    seed: int,
-    small_tolerance: float = 1e-08,
+    panel, windows, static_loadings, *, k: int, starts: int, seed: int, small_tolerance: float = 1e-08,
 ):
     previous = static_loadings.copy()
     loading_rows, metric_rows, group_rows, comparison_rows = ([], [], [], [])
@@ -366,9 +299,7 @@ def collect_window_results(
         diagnostic = local_factor_test(aligned)
         support = jaccard(aligned, previous, diagnostic.h_n)
         changes = turnover(aligned, previous)
-        innovation_rmse, innovation_z, innovation_condition = innovations(
-            result["test_filter"]
-        )
+        innovation_rmse, innovation_z, innovation_condition = innovations(result["test_filter"])
         state_sd = np.sqrt(np.maximum(np.diag(state_covariance), 0.0))
         train_static = variance(result["x_train"], result["static_train"])
         test_static = variance(result["x_test"], result["static_test"])
@@ -387,62 +318,40 @@ def collect_window_results(
             )
             metric_rows.append(
                 {
-                    "window_id": window.name,
-                    "window_end": window.end.date().isoformat(),
-                    "factor": f"LF{factor + 1}",
-                    "l1_norm": float(np.abs(aligned[:, factor]).sum()),
-                    "near_zero_count": int(
-                        (np.abs(aligned[:, factor]) < small_tolerance).sum()
-                    ),
+                    "window_id": window.name, "window_end": window.end.date().isoformat(),
+                    "factor": f"LF{factor + 1}", "l1_norm": float(np.abs(aligned[:, factor]).sum()),
+                    "near_zero_count": int((np.abs(aligned[:, factor]) < small_tolerance).sum()),
                     "small_count": int(diagnostic.small_counts.iloc[factor]),
                     "small_loading_threshold": float(diagnostic.h_n),
                     "cosine_previous": np.nan if number == 0 else float(cosine[factor]),
                     "cosine_to_static_reference": float(static_cosine),
-                    "support_jaccard_previous": np.nan
-                    if number == 0
-                    else float(support[factor]),
-                    "factor_turnover": np.nan
-                    if number == 0
-                    else float(changes[factor]),
-                    "state_estimate": float(states[-1, factor]),
-                    "state_sd": float(state_sd[factor]),
-                    "state_ci95_low": float(
-                        states[-1, factor] - 1.96 * state_sd[factor]
-                    ),
-                    "state_ci95_high": float(
-                        states[-1, factor] + 1.96 * state_sd[factor]
-                    ),
-                    "innovation_rmse": innovation_rmse,
-                    "innovation_z_rms": innovation_z,
+                    "support_jaccard_previous": np.nan if number == 0 else float(support[factor]),
+                    "factor_turnover": np.nan if number == 0 else float(changes[factor]),
+                    "state_estimate": float(states[-1, factor]), "state_sd": float(state_sd[factor]),
+                    "state_ci95_low": float(states[-1, factor] - 1.96 * state_sd[factor]),
+                    "state_ci95_high": float(states[-1, factor] + 1.96 * state_sd[factor]),
+                    "innovation_rmse": innovation_rmse, "innovation_z_rms": innovation_z,
                     "max_innovation_condition_number": innovation_condition,
-                    "rotation_condition_number": float(
-                        np.linalg.cond(result["rotation"])
-                    ),
+                    "rotation_condition_number": float(np.linalg.cond(result["rotation"])),
                     "subspace_preservation_error": space_error,
                     "dynamic_train_residual_variance": train_dynamic[1],
                     "dynamic_train_explained_pct": train_dynamic[2],
                     "kalman_filtered_holdout_residual_variance": test_dynamic[1],
-                    "sampling_noise_warning": bool(
-                        number and (cosine[factor] < 0.8 or support[factor] < 0.5)
-                    ),
+                    "sampling_noise_warning": bool(number and (cosine[factor] < 0.8 or support[factor] < 0.5)),
                 }
             )
         for factor in range(k):
             for stock, value in zip(result["pca"].analysis_data.columns, aligned[:, factor]):
                 loading_rows.append(
                     {
-                        "window_id": window.name,
-                        "window_end": window.end.date().isoformat(),
-                        "factor": f"LF{factor + 1}",
-                        "stock": stock,
-                        "loading": float(value),
+                        "window_id": window.name, "window_end": window.end.date().isoformat(),
+                        "factor": f"LF{factor + 1}", "stock": stock, "loading": float(value),
                     }
                 )
         group_rows.extend(group_metrics(window, aligned))
         comparison_rows.append(
             {
-                "window_id": window.name,
-                "window_end": window.end.date().isoformat(),
+                "window_id": window.name, "window_end": window.end.date().isoformat(),
                 "static_train_residual_variance": train_static[1],
                 "static_train_explained_pct": train_static[2],
                 "static_holdout_residual_variance": test_static[1],
@@ -464,9 +373,7 @@ def collect_window_results(
     return (loadings, metrics, groups, comparisons)
 
 
-def collect_k_sensitivity(
-    panel, windows, *, factor_counts, every: int, starts: int, seed: int
-):
+def collect_k_sensitivity(panel, windows, *, factor_counts, every: int, starts: int, seed: int):
     sensitivity_rows = []
     for k in factor_counts:
         for number, window in enumerate(windows[::every]):
@@ -477,14 +384,10 @@ def collect_k_sensitivity(
             one_step = variance(result["x_test"], result["one_step_test"])
             sensitivity_rows.append(
                 {
-                    "k": k,
-                    "window_id": window.name,
-                    "has_local_factors": diagnostic.has_local_factors,
+                    "k": k, "window_id": window.name, "has_local_factors": diagnostic.has_local_factors,
                     "small_count_max": int(diagnostic.small_counts.max()),
                     "total_l1_norm": float(np.abs(result["rotated"]).sum()),
-                    "rotation_condition_number": float(
-                        np.linalg.cond(result["rotation"])
-                    ),
+                    "rotation_condition_number": float(np.linalg.cond(result["rotation"])),
                     "static_holdout_residual_variance": static_holdout[1],
                     "kalman_filtered_holdout_residual_variance": dynamic_holdout[1],
                     "kalman_one_step_holdout_residual_variance": one_step[1],
@@ -496,9 +399,7 @@ def collect_k_sensitivity(
 
 def build_stress_summary(groups, crisis_start, crisis_end):
     regional = groups[groups["group"] == "regional_bank"].copy()
-    regional["crisis"] = pd.to_datetime(regional["window_end"]).between(
-        crisis_start, crisis_end
-    )
+    regional["crisis"] = pd.to_datetime(regional["window_end"]).between(crisis_start, crisis_end)
     stress_rows = []
     for factor, values in regional.groupby("factor"):
         crisis = values[values["crisis"]]
@@ -507,15 +408,10 @@ def build_stress_summary(groups, crisis_start, crisis_end):
         other_share = other["absolute_loading_share"].median()
         stress_rows.append(
             {
-                "factor": factor,
-                "crisis_windows": len(crisis),
-                "other_windows": len(other),
-                "regional_share_crisis_median": crisis_share,
-                "regional_share_other_median": other_share,
+                "factor": factor, "crisis_windows": len(crisis), "other_windows": len(other),
+                "regional_share_crisis_median": crisis_share, "regional_share_other_median": other_share,
                 "delta_crisis_minus_other": crisis_share - other_share,
-                "stronger_during_crisis": bool(
-                    len(crisis) and len(other) and (crisis_share > other_share)
-                ),
+                "stronger_during_crisis": bool(len(crisis) and len(other) and (crisis_share > other_share)),
             }
         )
     stress = pd.DataFrame(stress_rows)
@@ -529,47 +425,30 @@ def build_comparison_summary(static_pca, static_loadings, metrics, comparisons):
     summary = pd.DataFrame(
         [
             {
-                "method": "Static PCA + L1 (full sample)",
-                "n_windows": 1,
-                "reconstruction_pct": static_full[2],
-                "holdout_residual_variance_median": np.nan,
-                "one_step_residual_variance_median": np.nan,
-                "cosine_median": 1.0,
-                "support_jaccard_median": 1.0,
-                "turnover_median": 0.0,
-                "max_subspace_preservation_error": 0.0,
+                "method": "Static PCA + L1 (full sample)", "n_windows": 1,
+                "reconstruction_pct": static_full[2], "holdout_residual_variance_median": np.nan,
+                "one_step_residual_variance_median": np.nan, "cosine_median": 1.0,
+                "support_jaccard_median": 1.0, "turnover_median": 0.0, "max_subspace_preservation_error": 0.0,
             },
             {
-                "method": "Static PCA + L1 (rolling holdout)",
-                "n_windows": len(comparisons),
+                "method": "Static PCA + L1 (rolling holdout)", "n_windows": len(comparisons),
                 "reconstruction_pct": comparisons["static_train_explained_pct"].mean(),
-                "holdout_residual_variance_median": comparisons[
-                    "static_holdout_residual_variance"
-                ].median(),
+                "holdout_residual_variance_median": comparisons["static_holdout_residual_variance"].median(),
                 "one_step_residual_variance_median": np.nan,
                 "cosine_median": stable["cosine_previous"].median(),
                 "support_jaccard_median": stable["support_jaccard_previous"].median(),
                 "turnover_median": stable["factor_turnover"].median(),
-                "max_subspace_preservation_error": comparisons[
-                    "subspace_preservation_error"
-                ].max(),
+                "max_subspace_preservation_error": comparisons["subspace_preservation_error"].max(),
             },
             {
-                "method": "Kalman dynamic factors + L1",
-                "n_windows": len(comparisons),
+                "method": "Kalman dynamic factors + L1", "n_windows": len(comparisons),
                 "reconstruction_pct": comparisons["dynamic_train_explained_pct"].mean(),
-                "holdout_residual_variance_median": comparisons[
-                    "kalman_filtered_holdout_residual_variance"
-                ].median(),
-                "one_step_residual_variance_median": comparisons[
-                    "kalman_one_step_holdout_residual_variance"
-                ].median(),
+                "holdout_residual_variance_median": comparisons["kalman_filtered_holdout_residual_variance"].median(),
+                "one_step_residual_variance_median": comparisons["kalman_one_step_holdout_residual_variance"].median(),
                 "cosine_median": stable["cosine_previous"].median(),
                 "support_jaccard_median": stable["support_jaccard_previous"].median(),
                 "turnover_median": stable["factor_turnover"].median(),
-                "max_subspace_preservation_error": comparisons[
-                    "subspace_preservation_error"
-                ].max(),
+                "max_subspace_preservation_error": comparisons["subspace_preservation_error"].max(),
             },
         ]
     )

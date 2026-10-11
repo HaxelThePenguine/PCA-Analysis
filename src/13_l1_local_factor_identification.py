@@ -4,31 +4,16 @@ from __future__ import annotations
 
 import pandas as pd
 
-from config import (
-    REPORTS_DIR,
-    ensure_project_directories,
-)
+from config import (REPORTS_DIR, ensure_project_directories,)
 from reporting.local_factors import (
-    plot_bootstrap_support,
-    plot_factor_diagnostics,
-    plot_loading_comparison,
-    print_summary,
+    plot_bootstrap_support, plot_factor_diagnostics, plot_loading_comparison, print_summary,
 )
 from utils.benchmark import build_factor_panels
 from utils.data import load_benchmark_panel
 from utils.l1_rotation import L1RotationResult, fit_l1_rotation
 from utils.local_factor import (
-    BOOTSTRAP_REPLICATIONS,
-    BOOTSTRAP_STARTS,
-    N_COMPONENTS,
-    PRIMARY_STARTS,
-    RANDOM_STATE,
-    STOCKS,
-    bootstrap_local_factors,
-    diagnostic_rows,
-    factor_count_rows,
-    k_sensitivity_rows,
-    loading_rows,
+    BOOTSTRAP_REPLICATIONS, BOOTSTRAP_STARTS, N_COMPONENTS, PRIMARY_STARTS, RANDOM_STATE, STOCKS,
+    bootstrap_local_factors, diagnostic_rows, factor_count_rows, k_sensitivity_rows, loading_rows,
 )
 from utils.pca import PCAResult, fit_pca
 
@@ -52,10 +37,7 @@ def main() -> None:
     for offset, (transformation, data) in enumerate(factor_panels.items()):
         pca = fit_pca(data, method="correlation")
         result = fit_l1_rotation(
-            pca,
-            n_components=N_COMPONENTS,
-            n_starts=PRIMARY_STARTS,
-            random_state=RANDOM_STATE + offset,
+            pca, n_components=N_COMPONENTS, n_starts=PRIMARY_STARTS, random_state=RANDOM_STATE + offset,
         )
         pca_fits[transformation] = pca
         fits[transformation] = result
@@ -68,8 +50,7 @@ def main() -> None:
         score_loadings.insert(0, "transformation", transformation)
         score_loading_frames.append(score_loadings.reset_index(names="stock"))
         score_correlations = (
-            result.score_correlation.rename_axis("factor")
-            .reset_index()
+            result.score_correlation.rename_axis("factor") .reset_index()
             .melt(id_vars="factor", var_name="other_factor", value_name="correlation")
         )
         score_correlations.insert(0, "transformation", transformation)
@@ -78,11 +59,8 @@ def main() -> None:
         rotation.insert(0, "transformation", transformation)
         rotation_frames.append(rotation.reset_index(names="principal_component"))
     probabilities, stability = bootstrap_local_factors(
-        factor_panels["benchmark_residual"],
-        fits["benchmark_residual"],
-        replications=BOOTSTRAP_REPLICATIONS,
-        n_starts=BOOTSTRAP_STARTS,
-        random_state=RANDOM_STATE,
+        factor_panels["benchmark_residual"], fits["benchmark_residual"], replications=BOOTSTRAP_REPLICATIONS,
+        n_starts=BOOTSTRAP_STARTS, random_state=RANDOM_STATE,
     )
     loadings = pd.DataFrame(loading_records)
     diagnostics = pd.DataFrame(diagnostic_records)
@@ -94,9 +72,7 @@ def main() -> None:
     k_sensitivity.to_csv(OUT_DIR / "13_k_sensitivity.csv", index=False)
     probabilities.to_csv(OUT_DIR / "13_bootstrap_support_probability.csv", index=False)
     stability.to_csv(OUT_DIR / "13_bootstrap_factor_stability.csv", index=False)
-    pd.concat(rotation_frames, ignore_index=True).to_csv(
-        OUT_DIR / "13_rotation_matrices.csv", index=False
-    )
+    pd.concat(rotation_frames, ignore_index=True).to_csv(OUT_DIR / "13_rotation_matrices.csv", index=False)
     pd.concat(score_loading_frames, ignore_index=True).to_csv(
         OUT_DIR / "13_factor_score_loadings.csv", index=False
     )

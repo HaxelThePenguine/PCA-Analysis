@@ -28,12 +28,8 @@ class PCAResult:
 
 def pca_diagnostics(result: PCAResult) -> tuple[float, float]:
     """Check the estimated matrix and score variances against pandas."""
-    matrix_error = float(
-        (result.matrix - result.analysis_data.cov()).abs().to_numpy().max()
-    )
-    score_error = float(
-        np.max(np.abs(result.eigenvalues - result.scores.var(ddof=1).to_numpy()))
-    )
+    matrix_error = float((result.matrix - result.analysis_data.cov()).abs().to_numpy().max())
+    score_error = float(np.max(np.abs(result.eigenvalues - result.scores.var(ddof=1).to_numpy())))
     return matrix_error, score_error
 
 
@@ -47,10 +43,7 @@ def reconstruction_by_stock(result: PCAResult, n_components: int = 3) -> pd.Data
     )
     residuals = result.analysis_data - reconstruction
     summary = pd.DataFrame(
-        {
-            "original_variance": result.analysis_data.var(ddof=1),
-            "residual_variance": residuals.var(ddof=1),
-        }
+        {"original_variance": result.analysis_data.var(ddof=1), "residual_variance": residuals.var(ddof=1)}
     )
     summary["explained_pct"] = 100 * (
         1 - summary["residual_variance"] / summary["original_variance"]
@@ -150,38 +143,17 @@ def fit_pca(data: pd.DataFrame, method: str = "covariance") -> PCAResult:
     explained = values / total_variance
     labels = [f"PC{i}" for i in range(1, len(values) + 1)]
     summary = pd.DataFrame(
-        {
-            "eigenvalue": values,
-            "explained_pct": explained * 100,
-            "cumulative_pct": explained.cumsum() * 100,
-        },
+        {"eigenvalue": values, "explained_pct": explained * 100, "cumulative_pct": explained.cumsum() * 100},
         index=labels,
     )
     weights = pd.DataFrame(vectors, index=data.columns, columns=labels)
-    loadings = pd.DataFrame(
-        vectors * np.sqrt(values)[None, :],
-        index=data.columns,
-        columns=labels,
-    )
-    scores = pd.DataFrame(
-        analysis_data.to_numpy(dtype=float) @ vectors,
-        index=data.index,
-        columns=labels,
-    )
+    loadings = pd.DataFrame(vectors * np.sqrt(values)[None, :], index=data.columns, columns=labels)
+    scores = pd.DataFrame(analysis_data.to_numpy(dtype=float) @ vectors, index=data.index, columns=labels)
 
     return PCAResult(
-        method=method,
-        analysis_data=analysis_data,
-        matrix=matrix,
-        means=means,
-        scales=scales,
-        eigenvalues=values,
-        eigenvectors=vectors,
-        explained=explained,
-        summary=summary,
-        weights=weights,
-        loadings=loadings,
-        scores=scores,
+        method=method, analysis_data=analysis_data, matrix=matrix, means=means, scales=scales,
+        eigenvalues=values, eigenvectors=vectors, explained=explained, summary=summary, weights=weights,
+        loadings=loadings, scores=scores,
     )
 
 
@@ -196,9 +168,7 @@ def format_pca_summary(summary: pd.DataFrame) -> str:
 
 
 def _correlation_loadings(
-    data: pd.DataFrame,
-    scores: pd.DataFrame | np.ndarray,
-    columns: list[str],
+    data: pd.DataFrame, scores: pd.DataFrame | np.ndarray, columns: list[str],
 ) -> pd.DataFrame:
     """Return correlations between variables and arbitrary factor scores."""
 
@@ -213,9 +183,7 @@ def _correlation_loadings(
 
 
 def varimax(
-    loadings: pd.DataFrame | np.ndarray,
-    gamma: float = 1.0,
-    max_iterations: int = 1000,
+    loadings: pd.DataFrame | np.ndarray, gamma: float = 1.0, max_iterations: int = 1000,
     tolerance: float = 1e-7,
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """Rotate a loading matrix toward a simpler, more interpretable structure."""
@@ -235,10 +203,7 @@ def varimax(
         squared = rotated**2
         diagonal = np.diag(squared.sum(axis=0))
         target = phi.T @ (rotated**3 - (gamma / n_variables) * rotated @ diagonal)
-        left, singular_values, right_transpose = np.linalg.svd(
-            target,
-            full_matrices=False,
-        )
+        left, singular_values, right_transpose = np.linalg.svd(target, full_matrices=False)
         new_rotation = left @ right_transpose
         objective = singular_values.sum()
         rotation = new_rotation
@@ -252,11 +217,7 @@ def varimax(
     return phi @ rotation, rotation, iteration
 
 
-def fit_varimax(
-    pca_result: PCAResult,
-    n_components: int = 3,
-    gamma: float = 1.0,
-) -> VarimaxResult:
+def fit_varimax(pca_result: PCAResult, n_components: int = 3, gamma: float = 1.0) -> VarimaxResult:
     """Rotate the first PCA loadings and return scores plus diagnostics."""
 
     if n_components < 2 or n_components > pca_result.loadings.shape[1]:
@@ -264,10 +225,7 @@ def fit_varimax(
 
     selected_labels = [f"VF{i}" for i in range(1, n_components + 1)]
     base_loadings = pca_result.loadings.iloc[:, :n_components].to_numpy()
-    rotated_loadings, rotation, iterations = varimax(
-        base_loadings,
-        gamma=gamma,
-    )
+    rotated_loadings, rotation, iterations = varimax(base_loadings, gamma=gamma)
     rotated_weights = pca_result.eigenvectors[:, :n_components] @ rotation
 
     # Keep signs consistent between rotated loadings, weights, and scores.
@@ -279,31 +237,20 @@ def fit_varimax(
             rotation[:, component] *= -1
 
     scores = pd.DataFrame(
-        pca_result.analysis_data.to_numpy() @ rotated_weights,
-        index=pca_result.analysis_data.index,
+        pca_result.analysis_data.to_numpy() @ rotated_weights, index=pca_result.analysis_data.index,
         columns=selected_labels,
     )
     return VarimaxResult(
         rotated_loadings=pd.DataFrame(
-            rotated_loadings,
-            index=pca_result.loadings.index,
-            columns=selected_labels,
+            rotated_loadings, index=pca_result.loadings.index, columns=selected_labels,
         ),
         rotated_weights=pd.DataFrame(
-            rotated_weights,
-            index=pca_result.weights.index,
-            columns=selected_labels,
+            rotated_weights, index=pca_result.weights.index, columns=selected_labels,
         ),
-        score_loadings=_correlation_loadings(
-            pca_result.analysis_data,
-            scores,
-            selected_labels,
-        ),
+        score_loadings=_correlation_loadings(pca_result.analysis_data, scores, selected_labels),
         scores=scores,
         rotation=pd.DataFrame(
-            rotation,
-            index=[f"PC{i}" for i in range(1, n_components + 1)],
-            columns=selected_labels,
+            rotation, index=[f"PC{i}" for i in range(1, n_components + 1)], columns=selected_labels,
         ),
         iterations=iterations,
     )
@@ -314,13 +261,8 @@ def _soft_threshold(value: float, penalty: float) -> float:
 
 
 def _elastic_net_update(
-    gram: np.ndarray,
-    target: np.ndarray,
-    l1_penalty: float,
-    l2_penalty: float,
-    initial: np.ndarray,
-    max_iterations: int,
-    tolerance: float,
+    gram: np.ndarray, target: np.ndarray, l1_penalty: float, l2_penalty: float, initial: np.ndarray,
+    max_iterations: int, tolerance: float,
 ) -> np.ndarray:
     """Solve one small Elastic-Net coordinate-descent subproblem."""
 
@@ -335,26 +277,16 @@ def _elastic_net_update(
                 gram[variable] @ coefficients
                 - diagonal[variable] * coefficients[variable]
             )
-            coefficients[variable] = _soft_threshold(
-                partial,
-                l1_penalty,
-            ) / (diagonal[variable] + l2_penalty)
+            coefficients[variable] = _soft_threshold(partial, l1_penalty) / (diagonal[variable] + l2_penalty)
         if np.max(np.abs(coefficients - previous)) <= tolerance:
             break
     return coefficients
 
 
 def fit_elastic_net_sparse_pca(
-    data: pd.DataFrame,
-    n_components: int = 3,
-    l1_penalty: float = 0.10,
-    l2_penalty: float = 0.10,
-    initial_pca: PCAResult | None = None,
-    max_iterations: int = 1000,
-    coordinate_max_iterations: int = 1000,
-    tolerance: float = 1e-7,
-    coordinate_tolerance: float = 1e-9,
-    zero_tolerance: float = 1e-8,
+    data: pd.DataFrame, n_components: int = 3, l1_penalty: float = 0.10, l2_penalty: float = 0.10,
+    initial_pca: PCAResult | None = None, max_iterations: int = 1000, coordinate_max_iterations: int = 1000,
+    tolerance: float = 1e-7, coordinate_tolerance: float = 1e-9, zero_tolerance: float = 1e-8,
 ) -> SparsePCAResult:
     """Fit Sparse PCA with an Elastic-Net penalty using alternating updates.
 
@@ -384,20 +316,13 @@ def fit_elastic_net_sparse_pca(
         previous = coefficients.copy()
         for component in range(n_components):
             coefficients[:, component] = _elastic_net_update(
-                gram=gram,
-                target=a_matrix[:, component],
-                l1_penalty=l1_penalty,
-                l2_penalty=l2_penalty,
-                initial=coefficients[:, component],
-                max_iterations=coordinate_max_iterations,
+                gram=gram, target=a_matrix[:, component], l1_penalty=l1_penalty, l2_penalty=l2_penalty,
+                initial=coefficients[:, component], max_iterations=coordinate_max_iterations,
                 tolerance=coordinate_tolerance,
             )
 
         # Polar update: A remains orthonormal while B stays sparse.
-        left, _, right_transpose = np.linalg.svd(
-            gram @ coefficients,
-            full_matrices=False,
-        )
+        left, _, right_transpose = np.linalg.svd(gram @ coefficients, full_matrices=False)
         a_matrix = left[:, :n_components] @ right_transpose[:n_components, :]
 
         if np.max(np.abs(coefficients - previous)) <= tolerance:
@@ -408,9 +333,7 @@ def fit_elastic_net_sparse_pca(
     for component in range(n_components):
         norm = np.linalg.norm(weights[:, component])
         if norm <= zero_tolerance:
-            raise ValueError(
-                "Sparse PCA produced an empty component; reduce the L1 penalty."
-            )
+            raise ValueError("Sparse PCA produced an empty component; reduce the L1 penalty.")
         weights[:, component] /= norm
 
         pivot = np.argmax(np.abs(weights[:, component]))
@@ -420,23 +343,11 @@ def fit_elastic_net_sparse_pca(
 
     labels = [f"SPC{i}" for i in range(1, n_components + 1)]
     weight_frame = pd.DataFrame(weights, index=data.columns, columns=labels)
-    coefficient_frame = pd.DataFrame(
-        coefficients,
-        index=data.columns,
-        columns=labels,
-    )
-    scores = pd.DataFrame(
-        x @ weights,
-        index=data.index,
-        columns=labels,
-    )
+    coefficient_frame = pd.DataFrame(coefficients, index=data.columns, columns=labels)
+    scores = pd.DataFrame(x @ weights, index=data.index, columns=labels)
 
     # Least-squares reconstruction measures variance retained by the sparse scores.
-    reconstruction_coefficients = np.linalg.lstsq(
-        scores.to_numpy(),
-        x,
-        rcond=None,
-    )[0]
+    reconstruction_coefficients = np.linalg.lstsq(scores.to_numpy(), x, rcond=None)[0]
     reconstructed = scores.to_numpy() @ reconstruction_coefficients
     total_sum_of_squares = np.square(x).sum()
     reconstruction_error = np.square(x - reconstructed).sum()
@@ -450,17 +361,11 @@ def fit_elastic_net_sparse_pca(
         score_loadings=_correlation_loadings(data, scores, labels),
         scores=scores,
         reconstruction_coefficients=pd.DataFrame(
-            reconstruction_coefficients,
-            index=labels,
-            columns=data.columns,
+            reconstruction_coefficients, index=labels, columns=data.columns,
         ),
         reconstruction_pct=float(reconstruction_pct),
         score_correlation=scores.corr(),
-        weight_gram=pd.DataFrame(
-            weights.T @ weights,
-            index=labels,
-            columns=labels,
-        ),
+        weight_gram=pd.DataFrame(weights.T @ weights, index=labels, columns=labels),
         iterations=iteration,
         converged=converged,
     )

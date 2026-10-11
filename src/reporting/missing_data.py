@@ -23,9 +23,7 @@ def print_timestamp_rows(rows: pd.DataFrame, *, compact: bool = False) -> None:
 
 
 def report_missingness(
-    missing: pd.DataFrame,
-    common_gaps: pd.DataFrame,
-    dates: Iterable[str] = DATES_TO_INSPECT,
+    missing: pd.DataFrame, common_gaps: pd.DataFrame, dates: Iterable[str] = DATES_TO_INSPECT,
 ) -> None:
     """Print the human-readable diagnostics saved by this stage."""
 
@@ -33,11 +31,7 @@ def report_missingness(
     print_timestamp_rows(common_gaps)
 
     print("\n=== WORST 50 MINUTES ===\n")
-    print(
-        missing[["n_missing", "missing_pct"]]
-        .sort_values("n_missing", ascending=False)
-        .head(50)
-    )
+    print(missing[["n_missing", "missing_pct"]] .sort_values("n_missing", ascending=False) .head(50))
 
     print("\n=== WORST DAYS ===\n")
     print(daily_missing_summary(missing).head(30))

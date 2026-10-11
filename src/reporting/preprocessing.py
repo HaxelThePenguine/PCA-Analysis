@@ -26,12 +26,7 @@ def print_return_diagnostics(returns, summary, extremes) -> None:
     print("\n=== LARGEST ABSOLUTE RETURNS ===\n")
     for (timestamp, symbol), _ in extremes.items():
         value = returns.loc[timestamp, symbol]
-        print(
-            timestamp,
-            symbol,
-            f"return={value:.6f}",
-            f"pct={100 * (np.exp(value) - 1):.3f}%",
-        )
+        print(timestamp, symbol, f"return={value:.6f}", f"pct={100 * (np.exp(value) - 1):.3f}%")
 
 
 def print_cleaning_report(original: pd.DataFrame, complete: pd.DataFrame) -> None:

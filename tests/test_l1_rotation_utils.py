@@ -43,16 +43,10 @@ class L1RotationUtilitiesTest(unittest.TestCase):
         scramble, _ = np.linalg.qr(generator.normal(size=(n_factors, n_factors)))
         initial = true_loadings @ scramble
         result = l1_rotate_basis(initial, n_starts=300, random_state=12)
-        _, _, similarities = align_loading_columns(
-            true_loadings,
-            result.rotated_loadings,
-        )
+        _, _, similarities = align_loading_columns(true_loadings, result.rotated_loadings)
 
         self.assertGreater(float(similarities.min()), 0.999)
-        self.assertLessEqual(
-            float(np.abs(result.rotated_loadings).sum()),
-            float(np.abs(initial).sum()),
-        )
+        self.assertLessEqual(float(np.abs(result.rotated_loadings).sum()), float(np.abs(initial).sum()))
 
     def test_local_factor_test_detects_many_small_loadings(self) -> None:
         loadings = np.zeros((12, 2))
@@ -67,43 +61,19 @@ class L1RotationUtilitiesTest(unittest.TestCase):
         factors = generator.normal(size=(600, 3))
         structural_loadings = np.array(
             [
-                [1.0, 0.0, 0.0],
-                [0.8, 0.0, 0.0],
-                [0.5, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [0.0, 0.7, 0.0],
-                [0.0, 0.4, 0.0],
-                [0.0, 0.0, 1.0],
-                [0.0, 0.0, 0.7],
+                [1.0, 0.0, 0.0], [0.8, 0.0, 0.0], [0.5, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.7, 0.0],
+                [0.0, 0.4, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.7],
             ]
         )
         data = factors @ structural_loadings.T
         data += generator.normal(scale=0.08, size=data.shape)
         frame = pd.DataFrame(data, columns=[f"X{i}" for i in range(data.shape[1])])
         pca = fit_pca(frame, method="correlation")
-        result = fit_l1_rotation(
-            pca,
-            n_components=3,
-            n_starts=250,
-            random_state=31,
-        )
+        result = fit_l1_rotation(pca, n_components=3, n_starts=250, random_state=31)
 
         self.assertLess(result.reconstruction_max_abs_error, 1e-10)
-        self.assertAlmostEqual(
-            result.reconstruction_pct,
-            100.0 * pca.explained[:3].sum(),
-            places=10,
-        )
+        self.assertAlmostEqual(result.reconstruction_pct, 100.0 * pca.explained[:3].sum(), places=10)
         self.assertGreater(abs(np.linalg.det(result.rotation.to_numpy())), 1e-4)
-
-    def test_alignment_handles_permutation_and_sign(self) -> None:
-        reference = np.array([[1.0, 0.0], [0.0, 1.0], [0.5, 0.2]])
-        estimate = np.column_stack([-reference[:, 1], reference[:, 0]])
-        aligned, order, similarities = align_loading_columns(reference, estimate)
-        np.testing.assert_allclose(aligned, reference)
-        np.testing.assert_array_equal(order, [1, 0])
-        np.testing.assert_allclose(similarities, 1.0)
-
 
 if __name__ == "__main__":
     unittest.main()

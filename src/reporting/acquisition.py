@@ -7,14 +7,8 @@ import pandas as pd
 from config import DATASET_DIR, METADATA_DIR, RAW_SYMBOL_DIR, REPORTS_DIR, SYMBOLS
 
 QUALITY_DISPLAY_COLUMNS = [
-    "trading_days",
-    "expected_bars",
-    "observed_bars",
-    "missing_bars",
-    "total_coverage_pct",
-    "worst_daily_coverage_pct",
-    "median_volume",
-    "median_trade_count",
+    "trading_days", "expected_bars", "observed_bars", "missing_bars", "total_coverage_pct",
+    "worst_daily_coverage_pct", "median_volume", "median_trade_count",
 ]
 
 
@@ -28,11 +22,7 @@ def print_calendar_summary(calendar: pd.DataFrame) -> None:
     early_closes = calendar[calendar["expected_bars"] < 390]
     if not early_closes.empty:
         print("\nEarly closes detected:")
-        print(
-            early_closes[
-                ["date", "session_open", "session_close", "expected_bars"]
-            ].to_string(index=False)
-        )
+        print(early_closes[["date", "session_open", "session_close", "expected_bars"]].to_string(index=False))
 
 
 def print_final_report(summary: pd.DataFrame) -> None:
@@ -43,9 +33,7 @@ def print_final_report(summary: pd.DataFrame) -> None:
         + summary[QUALITY_DISPLAY_COLUMNS]
         .round(
             {
-                "total_coverage_pct": 3,
-                "worst_daily_coverage_pct": 2,
-                "median_volume": 0,
+                "total_coverage_pct": 3, "worst_daily_coverage_pct": 2, "median_volume": 0,
                 "median_trade_count": 0,
             }
         )

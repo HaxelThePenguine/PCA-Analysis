@@ -14,12 +14,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.colors import TwoSlopeNorm
 
-from utils.local_factor import (
-    BOOTSTRAP_REPLICATIONS,
-    N_COMPONENTS,
-    PRIMARY_STARTS,
-    STOCKS,
-)
+from utils.local_factor import (BOOTSTRAP_REPLICATIONS, N_COMPONENTS, PRIMARY_STARTS, STOCKS,)
 
 GRID_COLOR = "#D9DEE5"
 COLORS = {"raw": "#2F6690", "benchmark_residual": "#C26A2E"}
@@ -31,70 +26,46 @@ def plot_loading_comparison(loadings: pd.DataFrame, *, out_dir: Path) -> None:
     maximum = 0.0
     for transformation in ("raw", "benchmark_residual"):
         for method in ("principal_component_basis", "l1_rotation"):
-            subset = loadings[
-                (loadings["transformation"] == transformation)
-                & (loadings["method"] == method)
-            ]
-            pivot = subset.pivot(
-                index="stock", columns="factor_number", values="loading"
-            ).reindex(STOCKS)
+            subset = loadings[(loadings["transformation"] == transformation) & (loadings["method"] == method)]
+            pivot = subset.pivot(index="stock", columns="factor_number", values="loading").reindex(STOCKS)
             panels.append((transformation, method, pivot))
             maximum = max(maximum, float(np.abs(pivot.to_numpy()).max()))
     figure, axes = plt.subplots(2, 2, figsize=(11, 9), sharex=True, sharey=True)
     norm_scale = TwoSlopeNorm(vmin=-maximum, vcenter=0.0, vmax=maximum)
     image = None
     for axis, (transformation, method, pivot) in zip(axes.ravel(), panels):
-        image = axis.imshow(
-            pivot.to_numpy(), cmap="RdBu_r", norm=norm_scale, aspect="auto"
-        )
+        image = axis.imshow(pivot.to_numpy(), cmap="RdBu_r", norm=norm_scale, aspect="auto")
         axis.set_title(
             f"{transformation.replace('_', ' ').title()}\n{('PC basis' if method == 'principal_component_basis' else 'L1 rotation')}"
         )
-        axis.set_xticks(
-            range(N_COMPONENTS), [f"F{i}" for i in range(1, N_COMPONENTS + 1)]
-        )
+        axis.set_xticks(range(N_COMPONENTS), [f"F{i}" for i in range(1, N_COMPONENTS + 1)])
         axis.set_yticks(range(len(STOCKS)), STOCKS)
         axis.tick_params(axis="both", length=0)
         for row in range(len(STOCKS)):
             for column in range(N_COMPONENTS):
                 axis.text(
-                    column,
-                    row,
-                    f"{pivot.iloc[row, column]:.2f}",
-                    ha="center",
-                    va="center",
-                    fontsize=7,
+                    column, row, f"{pivot.iloc[row, column]:.2f}", ha="center", va="center", fontsize=7,
                     color="#252525",
                 )
         for spine in axis.spines.values():
             spine.set_visible(False)
     colorbar_axis = figure.add_axes([0.86, 0.16, 0.022, 0.68])
     figure.colorbar(image, cax=colorbar_axis, label="Structural loading")
-    figure.suptitle(
-        "L1 rotation reveals local loading directions", x=0.06, ha="left", y=0.99
-    )
+    figure.suptitle("L1 rotation reveals local loading directions", x=0.06, ha="left", y=0.99)
     figure.text(
-        0.06,
-        0.95,
+        0.06, 0.95,
         "Columns have norm sqrt(n); L1 rotation changes coordinates, not the selected PCA subspace.",
-        fontsize=9,
-        color="#666666",
+        fontsize=9, color="#666666",
     )
-    figure.subplots_adjust(
-        left=0.08, right=0.82, bottom=0.07, top=0.87, wspace=0.22, hspace=0.28
-    )
+    figure.subplots_adjust(left=0.08, right=0.82, bottom=0.07, top=0.87, wspace=0.22, hspace=0.28)
     save_figure(figure, out_dir / "13_l1_loading_comparison.png", tight_bbox=True)
 
 
 def plot_bootstrap_support(probabilities: pd.DataFrame, *, out_dir: Path) -> None:
     """Plot session-bootstrap support probabilities for residual local factors."""
-    pivot = probabilities.pivot(
-        index="stock", columns="factor", values="active_probability"
-    ).reindex(STOCKS)
+    pivot = probabilities.pivot(index="stock", columns="factor", values="active_probability").reindex(STOCKS)
     figure, axis = plt.subplots(figsize=(7.2, 7.0))
-    image = axis.imshow(
-        pivot.to_numpy(), cmap="Blues", vmin=0.0, vmax=1.0, aspect="auto"
-    )
+    image = axis.imshow(pivot.to_numpy(), cmap="Blues", vmin=0.0, vmax=1.0, aspect="auto")
     axis.set_xticks(range(N_COMPONENTS), pivot.columns)
     axis.set_yticks(range(len(STOCKS)), STOCKS)
     axis.tick_params(axis="both", length=0)
@@ -102,38 +73,23 @@ def plot_bootstrap_support(probabilities: pd.DataFrame, *, out_dir: Path) -> Non
         for column in range(N_COMPONENTS):
             probability = pivot.iloc[row, column]
             axis.text(
-                column,
-                row,
-                f"{probability:.0%}",
-                ha="center",
-                va="center",
-                fontsize=8,
+                column, row, f"{probability:.0%}", ha="center", va="center", fontsize=8,
                 color="white" if probability > 0.58 else "#252525",
             )
     for spine in axis.spines.values():
         spine.set_visible(False)
-    figure.colorbar(
-        image, ax=axis, fraction=0.045, pad=0.03, label="Active-loading probability"
-    )
-    figure.suptitle(
-        "Residual local-factor support stability", x=0.08, ha="left", y=0.98
-    )
+    figure.colorbar(image, ax=axis, fraction=0.045, pad=0.03, label="Active-loading probability")
+    figure.suptitle("Residual local-factor support stability", x=0.08, ha="left", y=0.98)
     figure.text(
-        0.08,
-        0.93,
+        0.08, 0.93,
         f"{BOOTSTRAP_REPLICATIONS} whole-session bootstrap replications; factors aligned by cosine similarity.",
-        fontsize=9,
-        color="#666666",
+        fontsize=9, color="#666666",
     )
     figure.subplots_adjust(left=0.13, right=0.88, bottom=0.08, top=0.87)
-    save_figure(
-        figure, out_dir / "13_bootstrap_support_probability.png", tight_bbox=True
-    )
+    save_figure(figure, out_dir / "13_bootstrap_support_probability.png", tight_bbox=True)
 
 
-def plot_factor_diagnostics(
-    factor_counts: pd.DataFrame, stability: pd.DataFrame, *, out_dir: Path
-) -> None:
+def plot_factor_diagnostics(factor_counts: pd.DataFrame, stability: pd.DataFrame, *, out_dir: Path) -> None:
     """Plot eigenvalue-ratio context and bootstrap factor-direction stability."""
     figure, axes = plt.subplots(1, 2, figsize=(12, 4.8))
     for transformation, color in COLORS.items():
@@ -173,9 +129,7 @@ def print_summary(fits, k_sensitivity, panel, stability, *, out_dir: Path) -> No
     print("=== L1 LOCAL FACTOR IDENTIFICATION ===")
     print(f"Complete panel: {panel.shape}")
     print(f"Period: {panel.index[0]} -> {panel.index[-1]}")
-    print(
-        f"Primary K={N_COMPONENTS}; starts={PRIMARY_STARTS}; session bootstraps={BOOTSTRAP_REPLICATIONS}"
-    )
+    print(f"Primary K={N_COMPONENTS}; starts={PRIMARY_STARTS}; session bootstraps={BOOTSTRAP_REPLICATIONS}")
     for transformation, result in fits.items():
         test = result.local_factor_test
         print(f"\n--- {transformation.replace('_', ' ').title()} ---")

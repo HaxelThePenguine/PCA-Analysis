@@ -3,17 +3,9 @@
 from __future__ import annotations
 
 from config import (
-    BENCHMARKS,
-    CORE_UNIVERSE,
-    REPORTS_DIR,
-    RETURN_MATRIX_CLEAN_FILE,
-    ensure_project_directories,
+    BENCHMARKS, CORE_UNIVERSE, REPORTS_DIR, RETURN_MATRIX_CLEAN_FILE, ensure_project_directories,
 )
-from reporting.variance import (
-    plot_global_decomposition,
-    plot_stock_decomposition,
-    print_summary,
-)
+from reporting.variance import (plot_global_decomposition, plot_stock_decomposition, print_summary,)
 from utils.data import load_panel, save_csv_tables
 from utils.variance import build_global_summary, build_variance_ledger
 
@@ -26,10 +18,7 @@ def main() -> None:
     stocks = list(CORE_UNIVERSE)
     required = stocks + list(BENCHMARKS)
     complete_panel = load_panel(
-        RETURN_MATRIX_CLEAN_FILE,
-        required,
-        context="Benchmark panel",
-        drop_incomplete=True,
+        RETURN_MATRIX_CLEAN_FILE, required, context="Benchmark panel", drop_incomplete=True,
     )
     results = build_variance_ledger(complete_panel, stocks)
     ledger = results["ledger"]

@@ -31,10 +31,7 @@ def summarize_models(scored: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def build_hac_comparisons(
-    scored: pd.DataFrame,
-    pairs: Sequence[tuple[str, str]],
-) -> pd.DataFrame:
+def build_hac_comparisons(scored: pd.DataFrame, pairs: Sequence[tuple[str, str]]) -> pd.DataFrame:
     """Test date-level mean QLIKE differences with Bartlett-HAC errors."""
 
     eligible = scored[scored["comparison_eligible"] & scored["qlike"].notna()]
@@ -45,20 +42,14 @@ def build_hac_comparisons(
         if model_a not in wide or model_b not in wide:
             continue
         difference = (
-            (wide[model_a] - wide[model_b])
-            .dropna()
-            .rename("difference")
-            .reset_index()
+            (wide[model_a] - wide[model_b]) .dropna() .rename("difference") .reset_index()
         )
         for spec_name, group in difference.groupby("spec_name"):
             date_difference = group.groupby("target_date")["difference"].mean()
             for lag in (5, 20):
                 rows.append(
                     {
-                        "spec_name": spec_name,
-                        "model_a": model_a,
-                        "model_b": model_b,
-                        "hac_lag": lag,
+                        "spec_name": spec_name, "model_a": model_a, "model_b": model_b, "hac_lag": lag,
                         **hac_mean_test(date_difference, max_lag=lag),
                     }
                 )
@@ -69,21 +60,13 @@ def build_hac_comparisons(
     result["holm_p_value_within_spec_lag"] = np.nan
     for _, indices in result.groupby(["spec_name", "hac_lag"]).groups.items():
         ordered = result.loc[indices, "p_value"].sort_values()
-        adjusted = np.maximum.accumulate(
-            ordered.to_numpy(dtype=float) * np.arange(len(ordered), 0, -1)
-        )
-        result.loc[ordered.index, "holm_p_value_within_spec_lag"] = np.clip(
-            adjusted, 0.0, 1.0
-        )
+        adjusted = np.maximum.accumulate(ordered.to_numpy(dtype=float) * np.arange(len(ordered), 0, -1))
+        result.loc[ordered.index, "holm_p_value_within_spec_lag"] = np.clip(adjusted, 0.0, 1.0)
     return result
 
 
 def write_results_markdown(
-    path: Path,
-    *,
-    manifest: Mapping[str, object],
-    model_summary: pd.DataFrame,
-    comparisons: pd.DataFrame,
+    path: Path, *, manifest: Mapping[str, object], model_summary: pd.DataFrame, comparisons: pd.DataFrame,
     hac: pd.DataFrame,
 ) -> None:
     """Save the Stage 17 model comparisons and inference tables."""

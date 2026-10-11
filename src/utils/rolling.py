@@ -23,11 +23,7 @@ def session_index(index: pd.DatetimeIndex) -> tuple[pd.DatetimeIndex, np.ndarray
     return sessions, codes
 
 
-def rolling_starts(
-    n_sessions: int,
-    window_size: int,
-    step: int = 5,
-) -> list[int]:
+def rolling_starts(n_sessions: int, window_size: int, step: int = 5) -> list[int]:
     """Return trailing-window starts and always include the final window."""
 
     if n_sessions < 0:
@@ -46,11 +42,7 @@ def rolling_starts(
     return starts
 
 
-def session_window_positions(
-    codes: np.ndarray,
-    start: int,
-    window_size: int,
-) -> np.ndarray:
+def session_window_positions(codes: np.ndarray, start: int, window_size: int) -> np.ndarray:
     """Return row positions belonging to one inclusive trailing session window."""
 
     if start < 0 or window_size <= 0:

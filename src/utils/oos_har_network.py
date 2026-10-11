@@ -18,33 +18,18 @@ import pandas as pd
 
 from config import BAD_SESSION_DATES, BENCHMARKS, CORE_UNIVERSE, NY_TZ
 from utils.factor_adjusted_residuals import FactorConfig, run_factor_adjustment
+from utils.har_records import coefficient_records, edge_records, forecast_record
 from utils.network_har import (
-    HAR_LOOKBACK,
-    HORIZONS,
-    HARConfig,
-    PenaltyTuning,
-    _predict_fit,
-    fit_network_pair,
-    fit_partialling_out,
-    hac_mean_test,
-    tune_network_penalty,
+    HAR_LOOKBACK, HORIZONS, HARConfig, PenaltyTuning, _predict_fit, fit_network_pair, fit_partialling_out,
+    hac_mean_test, tune_network_penalty,
 )
 from utils.oos_common import (
-    calendar_time_maps as _calendar_time_maps,
-    dataframe_hash,
-    normalize_calendar,
-    safe_positive_variance as _safe_positive_variance,
-    session_date_index as _session_date_index,
-    stable_hash,
-    strict_clean_return_panel,
-    training_bounds as _training_bounds,
-    utc_now_iso,
-    write_json,
+    calendar_time_maps as _calendar_time_maps, dataframe_hash, normalize_calendar,
+    session_date_index as _session_date_index, stable_hash,
+    strict_clean_return_panel, training_bounds as _training_bounds, utc_now_iso, write_json,
 )
 from utils.realized_volatility import (
-    RealizedVarianceConfig,
-    RealizedVarianceResult,
-    aggregate_realized_variance,
+    RealizedVarianceConfig, RealizedVarianceResult, aggregate_realized_variance,
 )
 
 
@@ -55,8 +40,7 @@ PERSISTENCE_MODEL = "persistence"
 NETWORK_MIN_MODEL = "network_har_l1_min_loss"
 FORECAST_MODELS = (OWN_MODEL, PRIMARY_NETWORK_MODEL, NETWORK_MIN_MODEL, PERSISTENCE_MODEL)
 GROUPS = {
-    "MS_C": ("MS", "C"),
-    "large_banks": ("JPM", "BAC", "WFC", "C"),
+    "MS_C": ("MS", "C"), "large_banks": ("JPM", "BAC", "WFC", "C"),
     "regional_banks": ("USB", "TFC", "KEY", "RF", "FITB", "CFG", "HBAN"),
 }
 
@@ -88,17 +72,9 @@ class OOSConfig:
     variance: RealizedVarianceConfig = field(default_factory=RealizedVarianceConfig)
     har: HARConfig = field(
         default_factory=lambda: HARConfig(
-            n_jobs=1,
-            min_training_observations=252,
-            rolling_training_observations=252,
-            tuning_frequency=20,
-            cv_splits=3,
-            alpha_fractions=(0.01, 0.03, 0.10, 0.30, 1.00),
-            hac_lag=5,
-            bootstrap_repetitions=200,
-            bootstrap_block_lengths=(5, 20),
-            bootstrap_checkpoint_step=126,
-            random_seed=16016,
+            n_jobs=1, min_training_observations=252, rolling_training_observations=252, tuning_frequency=20,
+            cv_splits=3, alpha_fractions=(0.01, 0.03, 0.10, 0.30, 1.00), hac_lag=5, bootstrap_repetitions=200,
+            bootstrap_block_lengths=(5, 20), bootstrap_checkpoint_step=126, random_seed=16016,
         )
     )
 
@@ -150,8 +126,7 @@ class ForecastRunResult:
 
 
 def build_calendar_har_features(
-    log_daily_variance: pd.DataFrame,
-    calendar: pd.DataFrame,
+    log_daily_variance: pd.DataFrame, calendar: pd.DataFrame,
 ) -> CalendarHARDesign:
     """Construct D/W/M features on exchange-session dates, allowing unknown targets."""
 
@@ -187,19 +162,14 @@ def build_calendar_har_features(
     response = observed.shift(-1).iloc[first_position:-1].copy()
     response.index = features.index
     return CalendarHARDesign(
-        calendar_dates=calendar_dates,
-        origins=features.index,
-        targets=calendar_dates[first_position + 1 :].rename("target_date"),
-        response=response,
-        features=features,
-        origin_positions=np.arange(first_position, len(calendar_dates) - 1, dtype=int),
+        calendar_dates=calendar_dates, origins=features.index,
+        targets=calendar_dates[first_position + 1 :].rename("target_date"), response=response,
+        features=features, origin_positions=np.arange(first_position, len(calendar_dates) - 1, dtype=int),
     )
 
 
 def _factor_assignment_table(
-    diagnostics: pd.DataFrame,
-    calendar: pd.DataFrame,
-    spec_name: str,
+    diagnostics: pd.DataFrame, calendar: pd.DataFrame, spec_name: str,
 ) -> pd.DataFrame:
     """Expand factor score blocks into one row per exchange session."""
 
@@ -214,16 +184,12 @@ def _factor_assignment_table(
             training_end = pd.Timestamp(row["training_end"])
             rows.append(
                 {
-                    "spec_name": spec_name,
-                    "session_date": session_date,
+                    "spec_name": spec_name, "session_date": session_date,
                     "factor_fit_id": f"{spec_name}:{row['update_id']}",
                     "factor_training_start": row["training_start"],
-                    "factor_training_end": row["training_end"],
-                    "factor_as_of": row["training_end"],
-                    "factor_origin": row["factor_origin"],
-                    "factor_window_sessions": row["window_sessions"],
-                    "factor_update_step_sessions": row["update_step_sessions"],
-                    "factor_components": 3,
+                    "factor_training_end": row["training_end"], "factor_as_of": row["training_end"],
+                    "factor_origin": row["factor_origin"], "factor_window_sessions": row["window_sessions"],
+                    "factor_update_step_sessions": row["update_step_sessions"], "factor_components": 3,
                     "l1_rotation_status": row.get("l1_rotation_status", "unknown"),
                     "l1_optimizer_success_rate": row.get("l1_optimizer_success_rate", np.nan),
                     "training_cutoff_invariant": bool(training_end < session_date),
@@ -238,11 +204,8 @@ def _factor_assignment_table(
 
 
 def _rv_metadata(
-    variance_result: RealizedVarianceResult,
-    factor_metadata: pd.DataFrame,
-    calendar: pd.DataFrame,
-    spec_name: str,
-    config: OOSConfig,
+    variance_result: RealizedVarianceResult, factor_metadata: pd.DataFrame, calendar: pd.DataFrame,
+    spec_name: str, config: OOSConfig,
 ) -> pd.DataFrame:
     calendar_value = normalize_calendar(calendar)
     dates = pd.DataFrame({"session_date": pd.DatetimeIndex(calendar_value["session_date"])})
@@ -250,9 +213,7 @@ def _rv_metadata(
     interval["session_date"] = _session_date_index(interval["session_date"])
     metadata = dates.merge(interval, on="session_date", how="left")
     metadata = metadata.merge(
-        factor_metadata.drop(columns=["spec_name"], errors="ignore"),
-        on="session_date",
-        how="left",
+        factor_metadata.drop(columns=["spec_name"], errors="ignore"), on="session_date", how="left",
     )
     metadata["spec_name"] = spec_name
     daily = variance_result.daily_ivar.get("factor_adjusted", pd.DataFrame())
@@ -284,55 +245,35 @@ def _rv_metadata(
 
 
 def build_factor_vintage_run(
-    complete_return_panel: pd.DataFrame,
-    calendar: pd.DataFrame,
-    *,
-    factor_window_sessions: int,
-    config: OOSConfig = OOSConfig(),
-    spec_name: str | None = None,
+    complete_return_panel: pd.DataFrame, calendar: pd.DataFrame, *, factor_window_sessions: int,
+    config: OOSConfig = OOSConfig(), spec_name: str | None = None,
 ) -> FactorVintageRun:
     """Fit a causal factor process and construct its versioned RV vintages."""
 
     name = spec_name or f"factor_adjusted_{factor_window_sessions}"
     factor_config = FactorConfig(
-        n_jobs=config.har.n_jobs,
-        window_sessions=int(factor_window_sessions),
-        update_step_sessions=config.factor_update_step,
-        n_components=config.factor_components,
-        l1_starts=config.factor_l1_starts,
-        random_seed=config.factor_seed + int(factor_window_sessions),
+        n_jobs=config.har.n_jobs, window_sessions=int(factor_window_sessions),
+        update_step_sessions=config.factor_update_step, n_components=config.factor_components,
+        l1_starts=config.factor_l1_starts, random_seed=config.factor_seed + int(factor_window_sessions),
     )
     factor_result = run_factor_adjustment(
-        complete_return_panel,
-        CORE_UNIVERSE,
-        BENCHMARKS,
-        factor_config,
-        spec_name=name,
+        complete_return_panel, CORE_UNIVERSE, BENCHMARKS, factor_config, spec_name=name,
     )
     variance_result = aggregate_realized_variance(
         {
-            "raw": factor_result.raw_returns,
-            "benchmark_residual": factor_result.benchmark_residuals,
+            "raw": factor_result.raw_returns, "benchmark_residual": factor_result.benchmark_residuals,
             "factor_adjusted": factor_result.factor_adjusted_residuals,
         },
         normalize_calendar(calendar),
         config.variance,
     )
     pca_factor_variance_result = aggregate_realized_variance(
-        {"pca_factor": factor_result.pca_factor_scores},
-        normalize_calendar(calendar),
-        config.variance,
+        {"pca_factor": factor_result.pca_factor_scores}, normalize_calendar(calendar), config.variance,
     )
     local_factor_variance_result = aggregate_realized_variance(
-        {"local_factor": factor_result.local_factor_scores},
-        normalize_calendar(calendar),
-        config.variance,
+        {"local_factor": factor_result.local_factor_scores}, normalize_calendar(calendar), config.variance,
     )
-    factor_metadata = _factor_assignment_table(
-        factor_result.diagnostics,
-        calendar,
-        name,
-    )
+    factor_metadata = _factor_assignment_table(factor_result.diagnostics, calendar, name)
     rv_metadata = _rv_metadata(variance_result, factor_metadata, calendar, name, config)
     daily_variance = variance_result.daily_ivar["factor_adjusted"].copy()
     daily_log_variance = variance_result.log_daily_ivar["factor_adjusted"].copy()
@@ -342,33 +283,20 @@ def build_factor_vintage_run(
     pca_factor_daily_log_variance = pca_factor_variance_result.log_daily_ivar["pca_factor"].copy()
     local_factor_daily_variance = local_factor_variance_result.daily_ivar["local_factor"].copy()
     local_factor_daily_log_variance = local_factor_variance_result.log_daily_ivar["local_factor"].copy()
-    aggregate_factor_daily_variance = pca_factor_daily_variance.sum(axis=1).to_frame(
-        "COMMON"
-    )
+    aggregate_factor_daily_variance = pca_factor_daily_variance.sum(axis=1).to_frame("COMMON")
     aggregate_factor_daily_log_variance = np.log(
         aggregate_factor_daily_variance.clip(lower=config.variance.variance_floor)
     )
     for frame in (
-        daily_variance,
-        daily_log_variance,
-        benchmark_daily_variance,
-        benchmark_daily_log_variance,
-        pca_factor_daily_variance,
-        pca_factor_daily_log_variance,
-        local_factor_daily_variance,
-        local_factor_daily_log_variance,
-        aggregate_factor_daily_variance,
-        aggregate_factor_daily_log_variance,
+        daily_variance, daily_log_variance, benchmark_daily_variance, benchmark_daily_log_variance,
+        pca_factor_daily_variance, pca_factor_daily_log_variance, local_factor_daily_variance,
+        local_factor_daily_log_variance, aggregate_factor_daily_variance, aggregate_factor_daily_log_variance,
     ):
         frame.index = _session_date_index(frame.index)
         frame.index.name = "session_date"
     return FactorVintageRun(
-        spec_name=name,
-        factor_window_sessions=int(factor_window_sessions),
-        factor_result=factor_result,
-        variance_result=variance_result,
-        daily_log_variance=daily_log_variance,
-        daily_variance=daily_variance,
+        spec_name=name, factor_window_sessions=int(factor_window_sessions), factor_result=factor_result,
+        variance_result=variance_result, daily_log_variance=daily_log_variance, daily_variance=daily_variance,
         benchmark_daily_log_variance=benchmark_daily_log_variance,
         benchmark_daily_variance=benchmark_daily_variance,
         pca_factor_daily_log_variance=pca_factor_daily_log_variance,
@@ -376,8 +304,7 @@ def build_factor_vintage_run(
         local_factor_daily_log_variance=local_factor_daily_log_variance,
         local_factor_daily_variance=local_factor_daily_variance,
         aggregate_factor_daily_log_variance=aggregate_factor_daily_log_variance,
-        aggregate_factor_daily_variance=aggregate_factor_daily_variance,
-        factor_metadata=factor_metadata,
+        aggregate_factor_daily_variance=aggregate_factor_daily_variance, factor_metadata=factor_metadata,
         rv_metadata=rv_metadata,
     )
 
@@ -392,11 +319,7 @@ def serialize_config(config: OOSConfig) -> dict[str, object]:
 
 
 def forecast_checkpoint_specification(
-    config: OOSConfig,
-    *,
-    har_window: str | int,
-    mode: str,
-    freeze_timestamp: str | None,
+    config: OOSConfig, *, har_window: str | int, mode: str, freeze_timestamp: str | None,
 ) -> dict[str, object]:
     """Return settings that affect forecast contents.
 
@@ -405,21 +328,14 @@ def forecast_checkpoint_specification(
 
     har = asdict(config.har)
     for name in (
-        "n_jobs",
-        "hac_lag",
-        "bootstrap_repetitions",
-        "bootstrap_block_lengths",
-        "bootstrap_checkpoint_step",
+        "n_jobs", "hac_lag", "bootstrap_repetitions", "bootstrap_block_lengths", "bootstrap_checkpoint_step",
         "random_seed",
     ):
         har.pop(name, None)
     return {
-        "protocol_version": config.protocol_version,
-        "mode": mode,
-        "har_window": har_window,
+        "protocol_version": config.protocol_version, "mode": mode, "har_window": har_window,
         "min_valid_training_observations": config.min_valid_training_observations,
-        "variance_floor": config.variance.variance_floor,
-        "har": har,
+        "variance_floor": config.variance.variance_floor, "har": har,
         "freeze_timestamp": freeze_timestamp if mode == "prospective" else None,
     }
 
@@ -431,9 +347,7 @@ def deserialize_config(value: Mapping[str, object]) -> OOSConfig:
     har_content = dict(content.pop("har", {}))
     variance_content = dict(content.pop("variance", {}))
     tuple_fields = {
-        "factor_windows",
-        "confirmation_checkpoints",
-        "loss_bootstrap_block_lengths",
+        "factor_windows", "confirmation_checkpoints", "loss_bootstrap_block_lengths",
         "edge_bootstrap_block_lengths",
     }
     for name in tuple_fields:
@@ -449,15 +363,9 @@ def deserialize_config(value: Mapping[str, object]) -> OOSConfig:
 
 
 def build_protocol_manifest(
-    config: OOSConfig,
-    *,
-    freeze_timestamp: str,
-    last_data_examined: str | None,
-    data_provenance: Mapping[str, object],
-    code_provenance: Mapping[str, object] | None = None,
-    mode: str,
-    status: str,
-    origin_calendar: Sequence[object] | None = None,
+    config: OOSConfig, *, freeze_timestamp: str, last_data_examined: str | None,
+    data_provenance: Mapping[str, object], code_provenance: Mapping[str, object] | None = None, mode: str,
+    status: str, origin_calendar: Sequence[object] | None = None,
 ) -> dict[str, object]:
     """Build the machine-readable protocol/manifest required before confirmation."""
 
@@ -476,8 +384,7 @@ def build_protocol_manifest(
         "target_formula": "RV[i,d]=sum_b(sum_{t in valid five-minute bin b}u[i,t])^2",
         "feature_convention": "D=y[d], W=mean(y[d-4:d]), M=mean(y[d-21:d]) on exchange sessions",
         "preprocessing_rules": {
-            "timezone": NY_TZ,
-            "strict_consecutive_one_minute_returns": True,
+            "timezone": NY_TZ, "strict_consecutive_one_minute_returns": True,
             "non_overlapping_five_minute_bins": True,
             "missing_intervals": "exclude; no interpolation across gaps",
             "bad_sessions_excluded": [str(value) for value in BAD_SESSION_DATES],
@@ -485,10 +392,8 @@ def build_protocol_manifest(
             "target_min_valid_bar_fraction": config.target_min_valid_bar_fraction,
         },
         "factor_schedule": {
-            "dimension": config.factor_components,
-            "window_sessions": config.factor_window_primary,
-            "update_step_sessions": config.factor_update_step,
-            "l1_rotation_starts": config.factor_l1_starts,
+            "dimension": config.factor_components, "window_sessions": config.factor_window_primary,
+            "update_step_sessions": config.factor_update_step, "l1_rotation_starts": config.factor_l1_starts,
             "l1_seed": config.factor_seed,
             "l1_role": "interpretation only; PCA projector defines target residuals",
         },
@@ -512,12 +417,9 @@ def build_protocol_manifest(
         "evaluation": {
             "primary_loss": "QLIKE(RV,RV_hat)=RV/RV_hat-log(RV/RV_hat)-1",
             "primary_comparison": f"{PRIMARY_NETWORK_MODEL} versus {OWN_MODEL} on matched dates/stocks",
-            "persistence_baseline": True,
-            "hac_primary_lag": config.har.hac_lag,
-            "hac_sensitivity_lag": 20,
+            "persistence_baseline": True, "hac_primary_lag": config.har.hac_lag, "hac_sensitivity_lag": 20,
             "loss_bootstrap_repetitions": config.loss_bootstrap_repetitions,
-            "loss_bootstrap_block_length_primary": 20,
-            "loss_bootstrap_block_length_sensitivity": 5,
+            "loss_bootstrap_block_length_primary": 20, "loss_bootstrap_block_length_sensitivity": 5,
             "edge_bootstrap_repetitions": config.edge_bootstrap_repetitions,
             "confirmation_horizon_sessions": config.confirmation_horizon_sessions,
             "confirmation_checkpoints": list(config.confirmation_checkpoints),
@@ -530,9 +432,7 @@ def build_protocol_manifest(
 
 
 def _feature_matrix(
-    design: CalendarHARDesign,
-    target: str,
-    stocks: Sequence[str],
+    design: CalendarHARDesign, target: str, stocks: Sequence[str],
 ) -> tuple[np.ndarray, np.ndarray, tuple[str, ...], list[tuple[str, str]]]:
     own_pairs = [(target, horizon) for horizon in HORIZONS]
     cross_pairs = [
@@ -547,12 +447,7 @@ def _feature_matrix(
     return own, cross, names, cross_pairs
 
 
-def _target_training_mask(
-    y: np.ndarray,
-    own: np.ndarray,
-    cross: np.ndarray,
-    end: int,
-) -> np.ndarray:
+def _target_training_mask(y: np.ndarray, own: np.ndarray, cross: np.ndarray, end: int) -> np.ndarray:
     return (
         np.isfinite(y[:end])
         & np.isfinite(own[:end]).all(axis=1)
@@ -562,29 +457,20 @@ def _target_training_mask(
 
 def _serialize_tuning(tuning: PenaltyTuning) -> dict[str, object]:
     return {
-        "alpha_max": tuning.alpha_max,
-        "min_fraction": tuning.min_fraction,
-        "one_se_fraction": tuning.one_se_fraction,
-        "min_alpha": tuning.min_alpha,
-        "one_se_alpha": tuning.one_se_alpha,
-        "cv_scores": tuning.cv_scores.to_dict("records"),
-        "status": tuning.status,
-        "n_valid_folds": tuning.n_valid_folds,
-        "requested_folds": tuning.requested_folds,
-        "fallback_reason": tuning.fallback_reason,
+        "alpha_max": tuning.alpha_max, "min_fraction": tuning.min_fraction,
+        "one_se_fraction": tuning.one_se_fraction, "min_alpha": tuning.min_alpha,
+        "one_se_alpha": tuning.one_se_alpha, "cv_scores": tuning.cv_scores.to_dict("records"),
+        "status": tuning.status, "n_valid_folds": tuning.n_valid_folds,
+        "requested_folds": tuning.requested_folds, "fallback_reason": tuning.fallback_reason,
     }
 
 
 def _deserialize_tuning(value: Mapping[str, object]) -> PenaltyTuning:
     return PenaltyTuning(
-        alpha_max=float(value["alpha_max"]),
-        min_fraction=float(value["min_fraction"]),
-        one_se_fraction=float(value["one_se_fraction"]),
-        min_alpha=float(value["min_alpha"]),
-        one_se_alpha=float(value["one_se_alpha"]),
-        cv_scores=pd.DataFrame(value.get("cv_scores", [])),
-        status=str(value.get("status", "ok")),
-        n_valid_folds=int(value.get("n_valid_folds", 0)),
+        alpha_max=float(value["alpha_max"]), min_fraction=float(value["min_fraction"]),
+        one_se_fraction=float(value["one_se_fraction"]), min_alpha=float(value["min_alpha"]),
+        one_se_alpha=float(value["one_se_alpha"]), cv_scores=pd.DataFrame(value.get("cv_scores", [])),
+        status=str(value.get("status", "ok")), n_valid_folds=int(value.get("n_valid_folds", 0)),
         requested_folds=int(value.get("requested_folds", 0)),
         fallback_reason=str(value.get("fallback_reason", "")),
     )
@@ -593,51 +479,25 @@ def _deserialize_tuning(value: Mapping[str, object]) -> PenaltyTuning:
 def _empty_forecast_frame() -> pd.DataFrame:
     return pd.DataFrame(
         columns=[
-            "protocol_version",
-            "run_id",
-            "spec_name",
-            "model",
-            "stock",
-            "forecast_origin",
-            "as_of",
-            "target_date",
-            "target_open",
-            "target_outcome_available_at",
-            "training_label_cutoff",
-            "training_label_available_at",
-            "factor_fit_id",
-            "target_data_present_at_issue",
-            "selected_penalty",
-            "predicted_log_variance",
-            "predicted_variance",
+            "protocol_version", "run_id", "spec_name", "model", "stock", "forecast_origin", "as_of",
+            "target_date", "target_open", "target_outcome_available_at", "training_label_cutoff",
+            "training_label_available_at", "factor_fit_id", "target_data_present_at_issue",
+            "selected_penalty", "predicted_log_variance", "predicted_variance",
         ]
     )
 
 
 def _write_forecast_checkpoint(
-    directory: Path,
-    *,
-    forecasts: list[dict[str, object]],
-    coefficients: list[dict[str, object]],
-    edges: list[dict[str, object]],
-    tuning_rows: list[dict[str, object]],
-    origin_rows: list[dict[str, object]],
-    state: Mapping[str, object],
+    directory: Path, *, forecasts: list[dict[str, object]], coefficients: list[dict[str, object]],
+    edges: list[dict[str, object]], tuning_rows: list[dict[str, object]],
+    origin_rows: list[dict[str, object]], state: Mapping[str, object],
 ) -> None:
     def checkpoint_frame(rows: list[dict[str, object]]) -> pd.DataFrame:
         frame = pd.DataFrame(rows)
         time_columns = (
-            "forecast_origin",
-            "as_of",
-            "target_date",
-            "target_open",
-            "target_outcome_available_at",
-            "issued_at_utc",
-            "training_label_cutoff",
-            "training_label_available_at",
-            "factor_training_end",
-            "training_start",
-            "training_end",
+            "forecast_origin", "as_of", "target_date", "target_open", "target_outcome_available_at",
+            "issued_at_utc", "training_label_cutoff", "training_label_available_at", "factor_training_end",
+            "training_start", "training_end",
         )
         for column in time_columns:
             if column in frame.columns:
@@ -690,160 +550,50 @@ class _OOSOriginFitResult:
 
 
 def _fit_oos_origin_target(task: _OOSOriginFitTask) -> _OOSOriginFitResult:
-    """Fit and format one target equation; safe for a process worker."""
-
-    fit_one_se, fit_min, fit_own = fit_network_pair(
-        task.y_train,
-        task.own_train,
-        task.cross_train,
-        one_se_alpha=task.tuning.one_se_alpha,
-        min_alpha=task.tuning.min_alpha,
-        cross_feature_names=task.feature_names,
-        config=task.config.har,
+    """Fit one target at the current origin and format its ledgers."""
+    one_se, minimum, own = fit_network_pair(
+        task.y_train, task.own_train, task.cross_train, one_se_alpha=task.tuning.one_se_alpha,
+        min_alpha=task.tuning.min_alpha, cross_feature_names=task.feature_names, config=task.config.har,
     )
-    forecasts: list[dict[str, object]] = []
-    coefficients: list[dict[str, object]] = []
-    edges: list[dict[str, object]] = []
-    model_fits = (
-        (OWN_MODEL, fit_own, np.empty((1, 0))),
-        (PRIMARY_NETWORK_MODEL, fit_one_se, task.current_cross),
-        (NETWORK_MIN_MODEL, fit_min, task.current_cross),
-    )
-    for model_name, fit, prediction_cross in model_fits:
-        predicted_log = float(_predict_fit(fit, task.current_own, prediction_cross)[0])
-        predicted_variance, exponent_clipped = _safe_positive_variance(
-            predicted_log,
-            fit.smearing_factor,
-            task.config.variance.variance_floor,
-        )
-        forecasts.append(
-            {
-                **task.common,
-                "model": model_name,
-                "selected_penalty": fit.selected_penalty,
-                "predicted_log_variance": predicted_log,
-                "predicted_variance": predicted_variance,
-                "smearing_factor": fit.smearing_factor,
-                "smearing_clipped_observations": fit.smearing_clipped_observations,
-                "prediction_exponent_clipped": exponent_clipped,
-                "design_condition_number": fit.condition_number,
-                "column_norm_ratio": fit.column_norm_ratio,
-                "lasso_converged": fit.lasso_converged,
-                "lasso_iterations": fit.lasso_iterations,
-                "lasso_kkt_max_violation": fit.lasso_kkt_max_violation,
-            }
-        )
-        coefficients.append(
-            {
-                **task.common,
-                "model": model_name,
-                "predictor_stock": task.target,
-                "horizon": "Intercept",
-                "coefficient_original": fit.intercept,
-                "coefficient_standardized": np.nan,
-                "selected": True,
-            }
-        )
-        for horizon, coefficient in zip(HORIZONS, fit.own_coefficients):
-            coefficients.append(
-                {
-                    **task.common,
-                    "model": model_name,
-                    "predictor_stock": task.target,
-                    "horizon": horizon,
-                    "coefficient_original": float(coefficient),
-                    "coefficient_standardized": np.nan,
-                    "selected": True,
-                }
-            )
-    persistence_variance, persistence_clipped = _safe_positive_variance(
-        task.origin_log,
-        1.0,
-        task.config.variance.variance_floor,
-    )
-    forecasts.append(
-        {
-            **task.common,
-            "model": PERSISTENCE_MODEL,
-            "selected_penalty": np.nan,
-            "predicted_log_variance": task.origin_log,
-            "predicted_variance": persistence_variance,
-            "smearing_factor": 1.0,
-            "smearing_clipped_observations": 0,
-            "prediction_exponent_clipped": persistence_clipped,
-            "design_condition_number": np.nan,
-            "column_norm_ratio": np.nan,
-            "lasso_converged": True,
-            "lasso_iterations": 0,
-            "lasso_kkt_max_violation": 0.0,
-        }
-    )
-    coefficients.append(
-        {
-            **task.common,
-            "model": PERSISTENCE_MODEL,
-            "predictor_stock": task.target,
-            "horizon": "Persistence",
-            "coefficient_original": np.nan,
-            "coefficient_standardized": np.nan,
-            "selected": True,
-        }
-    )
-    for model_name, fit in (
-        (PRIMARY_NETWORK_MODEL, fit_one_se),
-        (NETWORK_MIN_MODEL, fit_min),
-    ):
-        for coefficient, standardized, (source, horizon) in zip(
-            fit.network_coefficients_original,
-            fit.network_coefficients_standardized,
-            task.cross_pairs,
-        ):
-            edges.append(
-                {
-                    **task.common,
-                    "model": model_name,
-                    "source": source,
-                    "target": task.target,
-                    "edge_id": f"{source}->{task.target}",
-                    "horizon": horizon,
-                    "coefficient_original": float(coefficient),
-                    "coefficient_standardized": float(standardized),
-                    "selected": bool(
-                        abs(coefficient) > task.config.har.coefficient_tolerance
-                    ),
-                    "sign": int(np.sign(coefficient)),
-                    "selection_frequency_unit": "sequential_forecast_fit",
-                }
-            )
-    diagnostic = {
-        "spec_name": task.common["spec_name"],
-        "forecast_origin": task.common["forecast_origin"],
-        "target_date": task.common["target_date"],
-        "stock": task.target,
-        "n_train_observations": len(task.y_train),
-        "status": "issued",
-        "target_data_present_at_issue": False,
-        "factor_fit_id": task.common.get("factor_fit_id", np.nan),
-        "training_label_cutoff": task.common["training_label_cutoff"],
-        "as_of": task.common["as_of"],
-    }
+    models = ((OWN_MODEL, own, np.empty((1, 0))),
+        (PRIMARY_NETWORK_MODEL, one_se, task.current_cross),
+        (NETWORK_MIN_MODEL, minimum, task.current_cross))
+    forecasts, coefficients, edges = [], [], []
+    for model, fit, cross in models:
+        predicted = float(_predict_fit(fit, task.current_own, cross)[0])
+        forecasts.append(forecast_record(
+            task.common, model, predicted, task.config.variance.variance_floor, fit, smearing_count=True,
+        ))
+        coefficients.extend(coefficient_records(fit, task.common, model, HORIZONS, stock=task.target))
+    forecasts.append(forecast_record(
+        task.common, PERSISTENCE_MODEL, task.origin_log,
+        task.config.variance.variance_floor, smearing_count=True,
+    ))
+    coefficients.append({**task.common, "model": PERSISTENCE_MODEL,
+        "predictor_stock": task.target, "horizon": "Persistence",
+        "coefficient_original": np.nan, "coefficient_standardized": np.nan,
+        "selected": True})
+    for model, fit in ((PRIMARY_NETWORK_MODEL, one_se), (NETWORK_MIN_MODEL, minimum)):
+        edges.extend(edge_records(
+            fit, task.common, model, task.target, task.cross_pairs, task.config.har.coefficient_tolerance,
+            signs=True, unit="sequential_forecast_fit",
+        ))
+    diagnostic = {key: task.common[key] for key in
+        ("spec_name", "forecast_origin", "target_date")}
+    diagnostic.update(stock=task.target, n_train_observations=len(task.y_train),
+        status="issued", target_data_present_at_issue=False,
+        factor_fit_id=task.common.get("factor_fit_id", np.nan),
+        training_label_cutoff=task.common["training_label_cutoff"],
+        as_of=task.common["as_of"])
     return _OOSOriginFitResult(forecasts, coefficients, edges, diagnostic)
 
 
 def issue_target_free_forecasts(
-    log_daily_variance: pd.DataFrame,
-    calendar: pd.DataFrame,
-    *,
-    spec_name: str,
-    config: OOSConfig = OOSConfig(),
-    run_id: str = "uncommitted-forecast-run",
-    factor_metadata: pd.DataFrame | None = None,
-    har_window: str | int = "expanding",
-    mode: str = "historical_pseudo_oos",
-    freeze_timestamp: str | None = None,
-    issuance_timestamp: str | None = None,
-    checkpoint_dir: Path | None = None,
-    resume: bool = False,
+    log_daily_variance: pd.DataFrame, calendar: pd.DataFrame, *, spec_name: str,
+    config: OOSConfig = OOSConfig(), run_id: str = "uncommitted-forecast-run",
+    factor_metadata: pd.DataFrame | None = None, har_window: str | int = "expanding",
+    mode: str = "historical_pseudo_oos", freeze_timestamp: str | None = None,
+    issuance_timestamp: str | None = None, checkpoint_dir: Path | None = None, resume: bool = False,
     stop_after_origins: int | None = None,
 ) -> ForecastRunResult:
     """Issue forecasts from observed histories only.
@@ -869,10 +619,7 @@ def issue_target_free_forecasts(
     protocol_hash = stable_hash(serialize_config(config))
     checkpoint_specification_hash = stable_hash(
         forecast_checkpoint_specification(
-            config,
-            har_window=har_window,
-            mode=mode,
-            freeze_timestamp=freeze_timestamp,
+            config, har_window=har_window, mode=mode, freeze_timestamp=freeze_timestamp,
         )
     )
     forecasts: list[dict[str, object]] = []
@@ -888,15 +635,9 @@ def issue_target_free_forecasts(
     # Precompute each target design once; checkpoint after completed origins.
     target_design: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, tuple[str, ...], list[tuple[str, str]]]] = {}
     for target in stocks:
-        own_all, cross_all, feature_names, cross_pairs = _feature_matrix(
-            design, target, stocks
-        )
+        own_all, cross_all, feature_names, cross_pairs = _feature_matrix(design, target, stocks)
         target_design[target] = (
-            design.response[target].to_numpy(dtype=float),
-            own_all,
-            cross_all,
-            feature_names,
-            cross_pairs,
+            design.response[target].to_numpy(dtype=float), own_all, cross_all, feature_names, cross_pairs,
         )
 
     if checkpoint_dir is not None:
@@ -940,10 +681,8 @@ def issue_target_free_forecasts(
             table_format = str(state.get("table_format", "csv"))
             suffix = ".parquet" if table_format == "parquet" else ".csv"
             for stem, target in (
-                ("forecast_ledger", forecasts),
-                ("har_coefficients", coefficient_rows),
-                ("edge_history", edge_rows),
-                ("tuning_history", tuning_rows),
+                ("forecast_ledger", forecasts), ("har_coefficients", coefficient_rows),
+                ("edge_history", edge_rows), ("tuning_history", tuning_rows),
                 ("forecast_diagnostics", origin_rows),
             ):
                 path = Path(checkpoint_dir) / f"{stem}{suffix}"
@@ -968,12 +707,10 @@ def issue_target_free_forecasts(
                 forecast_frame = completed_checkpoint_frames["forecast_ledger"]
                 validate_forecast_ledger(forecast_frame)
                 return ForecastRunResult(
-                    forecasts=forecast_frame,
-                    coefficients=completed_checkpoint_frames["har_coefficients"],
+                    forecasts=forecast_frame, coefficients=completed_checkpoint_frames["har_coefficients"],
                     edge_history=completed_checkpoint_frames["edge_history"],
                     tuning_history=completed_checkpoint_frames["tuning_history"],
-                    origin_diagnostics=completed_checkpoint_frames["forecast_diagnostics"],
-                    status="complete",
+                    origin_diagnostics=completed_checkpoint_frames["forecast_diagnostics"], status="complete",
                 )
             tuning_cache = {
                 stock: _deserialize_tuning(value)
@@ -1022,9 +759,7 @@ def issue_target_free_forecasts(
         if origin_as_of is None or target_open is None or target_close is None:
             origin_rows.append(
                 {
-                    "spec_name": spec_name,
-                    "forecast_origin": origin_date,
-                    "target_date": target_date,
+                    "spec_name": spec_name, "forecast_origin": origin_date, "target_date": target_date,
                     "status": "not_issued_missing_calendar_timestamp",
                 }
             )
@@ -1035,9 +770,7 @@ def issue_target_free_forecasts(
         if mode == "prospective" and (freeze is None or target_open.tz_convert("UTC") <= freeze):
             origin_rows.append(
                 {
-                    "spec_name": spec_name,
-                    "forecast_origin": origin_date,
-                    "target_date": target_date,
+                    "spec_name": spec_name, "forecast_origin": origin_date, "target_date": target_date,
                     "status": "not_issued_before_protocol_freeze",
                 }
             )
@@ -1046,11 +779,8 @@ def issue_target_free_forecasts(
         if mode == "prospective" and issued_at >= target_open.tz_convert("UTC"):
             origin_rows.append(
                 {
-                    "spec_name": spec_name,
-                    "forecast_origin": origin_date,
-                    "target_date": target_date,
-                    "status": "not_issued_target_already_opened",
-                    "issued_at_utc": issued_at,
+                    "spec_name": spec_name, "forecast_origin": origin_date, "target_date": target_date,
+                    "status": "not_issued_target_already_opened", "issued_at_utc": issued_at,
                 }
             )
             processed_this_call += 1
@@ -1063,11 +793,8 @@ def issue_target_free_forecasts(
             if mode == "prospective" and np.isfinite(y_all[row_number]):
                 origin_rows.append(
                     {
-                        "spec_name": spec_name,
-                        "forecast_origin": origin_date,
-                        "target_date": target_date,
-                        "stock": target,
-                        "status": "not_issued_target_already_observed",
+                        "spec_name": spec_name, "forecast_origin": origin_date, "target_date": target_date,
+                        "stock": target, "status": "not_issued_target_already_observed",
                         "issued_at_utc": issued_at,
                     }
                 )
@@ -1080,11 +807,8 @@ def issue_target_free_forecasts(
             ):
                 origin_rows.append(
                     {
-                        "spec_name": spec_name,
-                        "forecast_origin": origin_date,
-                        "target_date": target_date,
-                        "stock": target,
-                        "status": "not_issued_missing_origin_features",
+                        "spec_name": spec_name, "forecast_origin": origin_date, "target_date": target_date,
+                        "stock": target, "status": "not_issued_missing_origin_features",
                     }
                 )
                 continue
@@ -1097,11 +821,8 @@ def issue_target_free_forecasts(
             if len(y_train) < config.min_valid_training_observations:
                 origin_rows.append(
                     {
-                        "spec_name": spec_name,
-                        "forecast_origin": origin_date,
-                        "target_date": target_date,
-                        "stock": target,
-                        "n_train_observations": len(y_train),
+                        "spec_name": spec_name, "forecast_origin": origin_date, "target_date": target_date,
+                        "stock": target, "n_train_observations": len(y_train),
                         "status": "not_issued_insufficient_training_history",
                     }
                 )
@@ -1114,22 +835,14 @@ def issue_target_free_forecasts(
             )
             if needs_tuning:
                 tuning_cache[target] = tune_network_penalty(
-                    y_train,
-                    own_train,
-                    cross_train,
-                    config=config.har,
-                    cross_feature_names=feature_names,
+                    y_train, own_train, cross_train, config=config.har, cross_feature_names=feature_names,
                 )
                 last_tuned_count[target] = issued_counts[target]
                 for row in tuning_cache[target].cv_scores.to_dict("records"):
                     tuning_rows.append(
                         {
-                            **row,
-                            "protocol_version": config.protocol_version,
-                            "run_id": run_id,
-                            "spec_name": spec_name,
-                            "stock": target,
-                            "forecast_origin": origin_date,
+                            **row, "protocol_version": config.protocol_version, "run_id": run_id,
+                            "spec_name": spec_name, "stock": target, "forecast_origin": origin_date,
                             "training_start": design.origins[train_start],
                             "training_end": design.origins[train_end - 1],
                             "selected_one_se_fraction": tuning_cache[target].one_se_fraction,
@@ -1149,41 +862,24 @@ def issue_target_free_forecasts(
             if not training_label_available_at <= origin_as_of < target_open:
                 raise ValueError("Forecast information-clock invariant failed.")
             common = {
-                "protocol_version": config.protocol_version,
-                "run_id": run_id,
-                "spec_name": spec_name,
-                "har_window": har_window,
-                "stock": target,
-                "forecast_origin": origin_date,
-                "as_of": origin_as_of,
-                "target_date": target_date,
-                "target_open": target_open,
-                "target_outcome_available_at": target_close,
-                "issued_at_utc": issued_at,
+                "protocol_version": config.protocol_version, "run_id": run_id, "spec_name": spec_name,
+                "har_window": har_window, "stock": target, "forecast_origin": origin_date,
+                "as_of": origin_as_of, "target_date": target_date, "target_open": target_open,
+                "target_outcome_available_at": target_close, "issued_at_utc": issued_at,
                 "training_label_cutoff": training_label_cutoff,
                 "training_label_available_at": training_label_available_at,
                 "factor_fit_id": factor_row.get("factor_fit_id", np.nan),
                 "factor_training_end": factor_row.get("factor_training_end", np.nan),
-                "target_data_present_at_issue": False,
-                "n_train_observations": len(y_train),
-                "cv_status": tuning.status,
-                "cv_fallback_reason": tuning.fallback_reason,
+                "target_data_present_at_issue": False, "n_train_observations": len(y_train),
+                "cv_status": tuning.status, "cv_fallback_reason": tuning.fallback_reason,
                 "alpha_max_full_sample": tuning.alpha_max,
                 "factor_window_sessions": factor_row.get("factor_window_sessions", np.nan),
             }
             fit_tasks.append(
                 _OOSOriginFitTask(
-                    y_train=y_train,
-                    own_train=own_train,
-                    cross_train=cross_train,
-                    current_own=current_own,
-                    current_cross=current_cross,
-                    feature_names=feature_names,
-                    cross_pairs=cross_pairs,
-                    tuning=tuning,
-                    common=common,
-                    target=target,
-                    origin_log=float(current_own[0, 0]),
+                    y_train=y_train, own_train=own_train, cross_train=cross_train, current_own=current_own,
+                    current_cross=current_cross, feature_names=feature_names, cross_pairs=cross_pairs,
+                    tuning=tuning, common=common, target=target, origin_log=float(current_own[0, 0]),
                     config=config,
                 )
             )
@@ -1211,28 +907,17 @@ def issue_target_free_forecasts(
                 ["session_date", "session_open", "session_close"],
             ]
             state = {
-                "protocol_hash": protocol_hash,
-                "forecast_specification_hash": checkpoint_specification_hash,
-                "protocol_version": config.protocol_version,
-                "run_id": run_id,
-                "spec_name": spec_name,
-                "next_row": row_number + 1,
-                "last_completed_origin": origin_date,
+                "protocol_hash": protocol_hash, "forecast_specification_hash": checkpoint_specification_hash,
+                "protocol_version": config.protocol_version, "run_id": run_id, "spec_name": spec_name,
+                "next_row": row_number + 1, "last_completed_origin": origin_date,
                 "data_prefix_hash": dataframe_hash(source),
-                "calendar_prefix_hash": dataframe_hash(calendar_prefix),
-                "table_format": "parquet",
+                "calendar_prefix_hash": dataframe_hash(calendar_prefix), "table_format": "parquet",
                 "tuning_cache": {stock: _serialize_tuning(value) for stock, value in tuning_cache.items()},
-                "last_tuned_count": last_tuned_count,
-                "issued_counts": issued_counts,
+                "last_tuned_count": last_tuned_count, "issued_counts": issued_counts,
             }
             _write_forecast_checkpoint(
-                Path(checkpoint_dir),
-                forecasts=forecasts,
-                coefficients=coefficient_rows,
-                edges=edge_rows,
-                tuning_rows=tuning_rows,
-                origin_rows=origin_rows,
-                state=state,
+                Path(checkpoint_dir), forecasts=forecasts, coefficients=coefficient_rows, edges=edge_rows,
+                tuning_rows=tuning_rows, origin_rows=origin_rows, state=state,
             )
             if len(design.origins) >= 200:
                 print(
@@ -1247,11 +932,8 @@ def issue_target_free_forecasts(
     status = "complete" if start_row + processed_this_call >= len(design.origins) else "checkpointed_partial"
     return ForecastRunResult(
         forecasts=pd.DataFrame(forecasts) if forecasts else _empty_forecast_frame(),
-        coefficients=pd.DataFrame(coefficient_rows),
-        edge_history=pd.DataFrame(edge_rows),
-        tuning_history=pd.DataFrame(tuning_rows),
-        origin_diagnostics=pd.DataFrame(origin_rows),
-        status=status,
+        coefficients=pd.DataFrame(coefficient_rows), edge_history=pd.DataFrame(edge_rows),
+        tuning_history=pd.DataFrame(tuning_rows), origin_diagnostics=pd.DataFrame(origin_rows), status=status,
     )
 
 
@@ -1263,20 +945,12 @@ def validate_forecast_ledger(forecasts: pd.DataFrame) -> None:
     """Validate an immutable forecast ledger and reject accidental target joins."""
 
     required = set(FORECAST_KEY_COLUMNS) | {
-        "as_of",
-        "predicted_log_variance",
-        "predicted_variance",
-        "target_data_present_at_issue",
+        "as_of", "predicted_log_variance", "predicted_variance", "target_data_present_at_issue",
     }
     missing = required.difference(forecasts.columns)
     if missing:
         raise ValueError(f"Forecast ledger is missing columns: {sorted(missing)}")
-    forbidden = {
-        "actual_rv",
-        "actual_log_variance",
-        "qlike",
-        "loss_difference",
-    }
+    forbidden = {"actual_rv", "actual_log_variance", "qlike", "loss_difference"}
     present = forbidden.intersection(forecasts.columns)
     if present:
         raise ValueError(f"Forecast ledger must not contain scored outcome columns: {sorted(present)}")
@@ -1289,8 +963,7 @@ def validate_forecast_ledger(forecasts: pd.DataFrame) -> None:
 
 
 def validate_identical_model_keys(
-    forecasts: pd.DataFrame,
-    models: Sequence[str] = FORECAST_MODELS,
+    forecasts: pd.DataFrame, models: Sequence[str] = FORECAST_MODELS,
 ) -> pd.DataFrame:
     """Return model-key counts and fail if a model silently drops a key."""
 
@@ -1311,9 +984,7 @@ def validate_identical_model_keys(
     requested_forecasts = forecasts.loc[requested_rows].copy()
     requested_forecasts["model"] = model_labels.loc[requested_rows]
     rows = (
-        requested_forecasts
-        .groupby(list(MODEL_KEY_COLUMNS), dropna=False)["model"]
-        .nunique(dropna=True)
+        requested_forecasts .groupby(list(MODEL_KEY_COLUMNS), dropna=False)["model"] .nunique(dropna=True)
         .rename("n_models")
         .reset_index()
     )
@@ -1325,9 +996,7 @@ def validate_identical_model_keys(
 
 def _target_metadata_lookup(metadata: pd.DataFrame | None) -> pd.DataFrame:
     if metadata is None or metadata.empty:
-        return pd.DataFrame(
-            columns=["session_date", "target_quality_eligible", "target_quality_reason"]
-        )
+        return pd.DataFrame(columns=["session_date", "target_quality_eligible", "target_quality_reason"])
     value = metadata.copy()
     if "session_date" not in value.columns:
         raise ValueError("RV metadata must contain session_date.")
@@ -1343,11 +1012,8 @@ def _qlike_positive(actual_rv: float, predicted_rv: float) -> float:
 
 
 def score_forecasts(
-    forecasts: pd.DataFrame,
-    realized_variance_by_spec: Mapping[str, pd.DataFrame],
-    metadata_by_spec: Mapping[str, pd.DataFrame] | None = None,
-    *,
-    config: OOSConfig = OOSConfig(),
+    forecasts: pd.DataFrame, realized_variance_by_spec: Mapping[str, pd.DataFrame],
+    metadata_by_spec: Mapping[str, pd.DataFrame] | None = None, *, config: OOSConfig = OOSConfig(),
     models: Sequence[str] = FORECAST_MODELS,
 ) -> pd.DataFrame:
     """Join realized outcomes and record their scoring status.
@@ -1378,8 +1044,7 @@ def score_forecasts(
         if rv_value.columns.has_duplicates:
             raise ValueError(f"Realized variance columns are duplicated for {spec_name}.")
         long = (
-            rv_value.rename_axis("target_date")
-            .reset_index()
+            rv_value.rename_axis("target_date") .reset_index()
             .melt(id_vars=["target_date"], var_name="stock", value_name="actual_rv")
         )
         long["target_date"] = _session_date_index(long["target_date"])
@@ -1422,8 +1087,7 @@ def score_forecasts(
             ~np.isfinite(actual),
             "outcome_unavailable",
             np.where(
-                ~quality,
-                value.loc[target_indices, "target_quality_reason"],
+                ~quality, value.loc[target_indices, "target_quality_reason"],
                 np.where(~positive, "nonpositive_target", "scored"),
             ),
         )
@@ -1434,8 +1098,7 @@ def score_forecasts(
         qlike = np.full(len(actual), np.nan)
         qlike[score_ok] = [
             _qlike_positive(
-                float(actual[index]),
-                float(value.loc[target_indices[index], "predicted_variance"]),
+                float(actual[index]), float(value.loc[target_indices[index], "predicted_variance"]),
             )
             for index in np.flatnonzero(score_ok)
         ]
@@ -1448,24 +1111,15 @@ def score_forecasts(
         )
     scored_key_check = value.drop(
         columns=[
-            "actual_rv",
-            "actual_log_rv",
-            "actual_rv_floor_applied",
-            "score_status",
-            "target_quality_eligible",
-            "target_quality_reason",
-            "qlike",
-            "log_mse",
-            "log_mae",
+            "actual_rv", "actual_log_rv", "actual_rv_floor_applied", "score_status",
+            "target_quality_eligible", "target_quality_reason", "qlike", "log_mse", "log_mae",
         ],
         errors="ignore",
     )
     validate_identical_model_keys(scored_key_check, models)
     # Compare a date/stock only when every model has an eligible outcome.
     scored_counts = (
-        value[value["score_status"] == "scored"]
-        .groupby(list(MODEL_KEY_COLUMNS), dropna=False)
-        .size()
+        value[value["score_status"] == "scored"] .groupby(list(MODEL_KEY_COLUMNS), dropna=False) .size()
         .rename("n_models_scored")
         .reset_index()
     )
@@ -1502,10 +1156,7 @@ def _holm_adjust(p_values: Sequence[float]) -> np.ndarray:
 
 
 def paired_loss_differentials(
-    scored: pd.DataFrame,
-    *,
-    network_model: str = PRIMARY_NETWORK_MODEL,
-    own_model: str = OWN_MODEL,
+    scored: pd.DataFrame, *, network_model: str = PRIMARY_NETWORK_MODEL, own_model: str = OWN_MODEL,
 ) -> pd.DataFrame:
     """Return matched network-minus-own QLIKE/log-loss differences."""
 
@@ -1517,10 +1168,7 @@ def paired_loss_differentials(
     value = value[value["model"].isin([own_model, network_model])]
     index_columns = list(MODEL_KEY_COLUMNS)
     wide = value.pivot_table(
-        index=index_columns,
-        columns="model",
-        values=["qlike", "log_mse", "log_mae"],
-        aggfunc="first",
+        index=index_columns, columns="model", values=["qlike", "log_mse", "log_mae"], aggfunc="first",
     )
     needed = [(metric, own_model) for metric in ("qlike", "log_mse", "log_mae")] + [
         (metric, network_model) for metric in ("qlike", "log_mse", "log_mae")
@@ -1540,8 +1188,7 @@ def paired_loss_differentials(
 
 
 def summarize_scored_forecasts(
-    scored: pd.DataFrame,
-    dimensions: Sequence[str] = ("spec_name", "model"),
+    scored: pd.DataFrame, dimensions: Sequence[str] = ("spec_name", "model"),
 ) -> pd.DataFrame:
     """Summarize only realized, eligible observations."""
 
@@ -1567,19 +1214,12 @@ def summarize_scored_forecasts(
 
 
 def build_hac_inference(
-    scored: pd.DataFrame,
-    *,
-    max_lags: Sequence[int] = (5, 20),
-    network_model: str = PRIMARY_NETWORK_MODEL,
+    scored: pd.DataFrame, *, max_lags: Sequence[int] = (5, 20), network_model: str = PRIMARY_NETWORK_MODEL,
     own_model: str = OWN_MODEL,
 ) -> pd.DataFrame:
     """Aggregate the stock panel by date before HAC inference."""
 
-    differences = paired_loss_differentials(
-        scored,
-        network_model=network_model,
-        own_model=own_model,
-    )
+    differences = paired_loss_differentials(scored, network_model=network_model, own_model=own_model)
     if differences.empty:
         return pd.DataFrame()
     rows: list[dict[str, object]] = []
@@ -1647,11 +1287,7 @@ def build_hac_inference(
     return pd.DataFrame(rows)
 
 
-def moving_block_indices(
-    n_dates: int,
-    block_length: int,
-    rng: np.random.Generator,
-) -> np.ndarray:
+def moving_block_indices(n_dates: int, block_length: int, rng: np.random.Generator) -> np.ndarray:
     """Draw one circular moving-block index vector."""
 
     if n_dates <= 0:
@@ -1666,30 +1302,18 @@ def moving_block_indices(
     return np.concatenate(blocks)[:n_dates]
 
 
-def draw_shared_date_indices(
-    n_dates: int,
-    repetitions: int,
-    block_length: int,
-    seed: int,
-) -> np.ndarray:
+def draw_shared_date_indices(n_dates: int, repetitions: int, block_length: int, seed: int) -> np.ndarray:
     """Draw date indices shared across every stock/equation in a replicate."""
 
     if repetitions <= 0:
         raise ValueError("repetitions must be positive.")
     rng = np.random.default_rng(seed)
-    return np.vstack(
-        [moving_block_indices(n_dates, block_length, rng) for _ in range(repetitions)]
-    )
+    return np.vstack([moving_block_indices(n_dates, block_length, rng) for _ in range(repetitions)])
 
 
 def bootstrap_loss_series(
-    scored: pd.DataFrame,
-    *,
-    repetitions: int = 2_000,
-    block_length: int = 20,
-    seed: int = 16016,
-    network_model: str = PRIMARY_NETWORK_MODEL,
-    own_model: str = OWN_MODEL,
+    scored: pd.DataFrame, *, repetitions: int = 2_000, block_length: int = 20, seed: int = 16016,
+    network_model: str = PRIMARY_NETWORK_MODEL, own_model: str = OWN_MODEL,
 ) -> pd.DataFrame:
     """Paired moving-block bootstrap of date-aggregated QLIKE differences.
 
@@ -1698,11 +1322,7 @@ def bootstrap_loss_series(
     p-value uses the centered null distribution.
     """
 
-    differences = paired_loss_differentials(
-        scored,
-        network_model=network_model,
-        own_model=own_model,
-    )
+    differences = paired_loss_differentials(scored, network_model=network_model, own_model=own_model)
     if differences.empty:
         return pd.DataFrame()
     rows: list[dict[str, object]] = []
@@ -1741,29 +1361,16 @@ def bootstrap_loss_series(
 
 
 def _target_arrays_for_design(
-    design: CalendarHARDesign,
-    target: str,
-    stocks: Sequence[str],
-) -> tuple[
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    tuple[str, ...],
-    list[tuple[str, str]],
-]:
+    design: CalendarHARDesign, target: str, stocks: Sequence[str],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, tuple[str, ...], list[tuple[str, str]]]:
     own, cross, names, pairs = _feature_matrix(design, target, stocks)
     return design.response[target].to_numpy(dtype=float), own, cross, names, pairs
 
 
 def conditional_edge_bootstrap(
-    log_daily_variance: pd.DataFrame,
-    calendar: pd.DataFrame,
-    *,
-    spec_name: str,
-    config: OOSConfig = OOSConfig(),
-    repetitions: int | None = None,
-    block_lengths: Sequence[int] | None = None,
-    checkpoint_step: int | None = None,
+    log_daily_variance: pd.DataFrame, calendar: pd.DataFrame, *, spec_name: str,
+    config: OOSConfig = OOSConfig(), repetitions: int | None = None,
+    block_lengths: Sequence[int] | None = None, checkpoint_step: int | None = None,
 ) -> pd.DataFrame:
     """Estimate edge-selection frequency by resampling training rows.
 
@@ -1777,11 +1384,7 @@ def conditional_edge_bootstrap(
         if repetitions is None
         else int(repetitions)
     )
-    block_lengths = tuple(
-        config.edge_bootstrap_block_lengths
-        if block_lengths is None
-        else block_lengths
-    )
+    block_lengths = tuple(config.edge_bootstrap_block_lengths if block_lengths is None else block_lengths)
     checkpoint_step = (
         config.edge_bootstrap_checkpoint_step
         if checkpoint_step is None
@@ -1795,33 +1398,18 @@ def conditional_edge_bootstrap(
     for checkpoint in checkpoints:
         target_info: dict[
             str,
-            tuple[
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                tuple[str, ...],
-                list[tuple[str, str]],
-                PenaltyTuning,
-            ],
+            tuple[np.ndarray, np.ndarray, np.ndarray, tuple[str, ...], list[tuple[str, str]], PenaltyTuning],
         ] = {}
         n_training_by_target: dict[str, int] = {}
         for target in stocks:
-            y_all, own_all, cross_all, names, pairs = _target_arrays_for_design(
-                design, target, stocks
-            )
+            y_all, own_all, cross_all, names, pairs = _target_arrays_for_design(design, target, stocks)
             mask = _target_training_mask(y_all, own_all, cross_all, checkpoint)
             y = y_all[:checkpoint][mask]
             own = own_all[:checkpoint][mask]
             cross = cross_all[:checkpoint][mask]
             if len(y) < config.min_valid_training_observations:
                 continue
-            tuning = tune_network_penalty(
-                y,
-                own,
-                cross,
-                config=config.har,
-                cross_feature_names=names,
-            )
+            tuning = tune_network_penalty(y, own, cross, config=config.har, cross_feature_names=names)
             target_info[target] = (y, own, cross, names, pairs, tuning)
             n_training_by_target[target] = len(y)
         if not target_info:
@@ -1830,8 +1418,7 @@ def conditional_edge_bootstrap(
         for block_length in block_lengths:
             samples_by_rep = {
                 rep: moving_block_indices(
-                    max(n_training_by_target.values()),
-                    int(block_length),
+                    max(n_training_by_target.values()), int(block_length),
                     np.random.default_rng(rng_seed + rep),
                 )
                 for rep in range(repetitions)
@@ -1843,17 +1430,10 @@ def conditional_edge_bootstrap(
                 for target, (y, own, cross, names, pairs, tuning) in target_info.items():
                     sample = samples_by_rep[rep] % len(y)
                     fit = fit_partialling_out(
-                        y[sample],
-                        own[sample],
-                        cross[sample],
-                        alpha=tuning.one_se_alpha,
-                        cross_feature_names=names,
-                        config=config.har,
+                        y[sample], own[sample], cross[sample], alpha=tuning.one_se_alpha,
+                        cross_feature_names=names, config=config.har,
                     )
-                    for coefficient, (source, horizon) in zip(
-                        fit.network_coefficients_original,
-                        pairs,
-                    ):
+                    for coefficient, (source, horizon) in zip(fit.network_coefficients_original, pairs):
                         key = (source, target, horizon)
                         selections.setdefault(key, []).append(
                             bool(abs(coefficient) > config.har.coefficient_tolerance)
